@@ -19,7 +19,7 @@ resources:
   - ingressroute.yaml
 
   # LLM Inference
-  - ollama/
+  # - ollama/  # DISABLED: was on talos06, using external inference now
   - litellm/
 
   # UI Applications

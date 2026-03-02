@@ -1,9 +1,11 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# NOTE: Consider removing cluster ollama - NUCs are underpowered for LLM inference
-# Mac with Metal GPU or EC2 workers are better options
-# See deployment.yaml TODO comment
+# DISABLED: Ollama removed from main kustomization
+# Was running on talos06, now using external inference endpoints
+# NUCs underpowered for LLM inference - Mac with Metal or EC2 workers better
+#
+# To re-enable: uncomment ollama/ in ../kustomization.yaml
 
 resources:
   - models-configmap.yaml
