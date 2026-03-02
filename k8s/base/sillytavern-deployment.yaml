@@ -33,7 +33,7 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /home/node/app/data
-            - name: config-writable
+            - name: data
               mountPath: /home/node/app/config.yaml
               subPath: config.yaml
           resources:
@@ -55,24 +55,10 @@ spec:
               port: http
             initialDelaySeconds: 10
             periodSeconds: 10
-      initContainers:
-        - name: copy-config
-          image: busybox:1.36
-          command: ['sh', '-c', 'cp /config-readonly/config.yaml /config-writable/config.yaml']
-          volumeMounts:
-            - name: config
-              mountPath: /config-readonly
-            - name: config-writable
-              mountPath: /config-writable
       volumes:
         - name: data
           persistentVolumeClaim:
             claimName: sillytavern-data
-        - name: config
-          configMap:
-            name: sillytavern-config
-        - name: config-writable
-          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
