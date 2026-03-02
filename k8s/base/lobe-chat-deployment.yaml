@@ -45,11 +45,11 @@ spec:
               mountPath: /root/.lobe-chat
           resources:
             requests:
-              memory: "256Mi"
+              memory: "512Mi"
               cpu: "100m"
             limits:
-              memory: "1Gi"
-              cpu: "500m"
+              memory: "2Gi"
+              cpu: "1000m"
           livenessProbe:
             httpGet:
               path: /api/health
