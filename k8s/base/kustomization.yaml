@@ -24,7 +24,7 @@ resources:
 
   # UI Applications
   - open-webui-deployment.yaml
-  - sillytavern-deployment.yaml
+  # - sillytavern-deployment.yaml  # TODO: reimplement from scratch
   - lobe-chat-deployment.yaml
   - searxng-deployment.yaml
 
