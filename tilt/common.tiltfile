@@ -1,0 +1,255 @@
+# Common Tiltfile - Shared resources and UI buttons for both dev and live modes
+#
+# Usage: Loaded by main Tiltfile via load()
+
+load('ext://uibutton', 'cmd_button', 'location', 'text_input', 'choice_input')
+
+# ============================================
+# Model Lists (shared across modes)
+# ============================================
+
+MODELS_CREATIVE = [
+    'davidau/llama-3.2-8x3b-moe-dark-champion',
+    'dolphin-mixtral:8x7b',
+    'huihui_ai/gemma3-abliterated:27b',
+    'nous-hermes2:34b',
+    'dolphin-mistral:7b',
+    'wizardlm-uncensored:13b',
+]
+
+MODELS_DARKRP = [
+    'davidau/llama-3.2-8x3b-moe-dark-champion',
+    'theazazel/l3.2-moe-dark-champion-inst-18.4b-uncen-ablit',
+    'huihui_ai/gemma3-abliterated:27b',
+    'mythomax-l2:13b',
+]
+
+# ============================================
+# Model Management Buttons (for ollama resource)
+# ============================================
+
+def setup_ollama_buttons():
+    """Add model management buttons to ollama resource."""
+
+    cmd_button(
+        name='btn-pull-model',
+        resource='ollama',
+        argv=['sh', '-c', 'ollama pull $MODEL'],
+        text='Pull Model',
+        icon_name='download',
+        inputs=[
+            choice_input('MODEL', 'Model', [
+                'davidau/llama-3.2-8x3b-moe-dark-champion',
+                'theazazel/l3.2-moe-dark-champion-inst-18.4b-uncen-ablit',
+                'dolphin-mixtral:8x7b',
+                'huihui_ai/gemma3-abliterated:27b',
+                'nous-hermes2:34b',
+                'mythomax-l2:13b',
+                'dolphin-mistral:7b',
+                'wizardlm-uncensored:13b',
+                'llama2-uncensored:7b',
+                'codellama:34b',
+            ])
+        ]
+    )
+
+    cmd_button(
+        name='btn-list-models',
+        resource='ollama',
+        argv=['ollama', 'list'],
+        text='List Models',
+        icon_name='list'
+    )
+
+    cmd_button(
+        name='btn-running-models',
+        resource='ollama',
+        argv=['ollama', 'ps'],
+        text='Running Models',
+        icon_name='play_circle'
+    )
+
+    cmd_button(
+        name='btn-delete-model',
+        resource='ollama',
+        argv=['sh', '-c', 'ollama rm $MODEL'],
+        text='Delete Model',
+        icon_name='delete',
+        inputs=[
+            text_input('MODEL', 'Model name', placeholder='model:tag')
+        ],
+        requires_confirmation=True
+    )
+
+    cmd_button(
+        name='btn-model-info',
+        resource='ollama',
+        argv=['sh', '-c', 'ollama show $MODEL'],
+        text='Model Info',
+        icon_name='info',
+        inputs=[
+            text_input('MODEL', 'Model name', placeholder='dolphin-mistral:7b')
+        ]
+    )
+
+    cmd_button(
+        name='btn-ollama-cli',
+        resource='ollama',
+        argv=['sh', '-c', 'echo "To chat via CLI, run:" && echo "  ollama run $MODEL" && echo "" && echo "Available models:" && ollama list'],
+        text='CLI Instructions',
+        icon_name='terminal',
+        inputs=[
+            choice_input('MODEL', 'Model', [
+                'davidau/llama-3.2-8x3b-moe-dark-champion',
+                'dolphin-mixtral:8x7b',
+                'dolphin-mistral:7b',
+                'wizardlm-uncensored:13b',
+            ])
+        ]
+    )
+
+    # Download all recommended creative writing models
+    cmd_button(
+        name='btn-download-all-creative',
+        resource='ollama',
+        argv=['sh', '-c', '''
+echo "Downloading creative writing models (~80GB)..."
+echo ""
+for model in davidau/llama-3.2-8x3b-moe-dark-champion dolphin-mixtral:8x7b huihui_ai/gemma3-abliterated:27b nous-hermes2:34b dolphin-mistral:7b wizardlm-uncensored:13b; do
+    echo "==> Pulling $model..."
+    ollama pull $model
+done
+echo ""
+echo "Done!"
+ollama list
+'''],
+        text='DL Creative',
+        icon_name='cloud_download',
+        requires_confirmation=True
+    )
+
+    # Download dark roleplay models
+    cmd_button(
+        name='btn-download-darkrp',
+        resource='ollama',
+        argv=['sh', '-c', '''
+echo "Downloading dark roleplay models (~50GB)..."
+echo ""
+for model in davidau/llama-3.2-8x3b-moe-dark-champion theazazel/l3.2-moe-dark-champion-inst-18.4b-uncen-ablit huihui_ai/gemma3-abliterated:27b mythomax-l2:13b; do
+    echo "==> Pulling $model..."
+    ollama pull $model
+done
+echo ""
+echo "Done!"
+ollama list
+'''],
+        text='DL Dark RP',
+        icon_name='whatshot',
+        requires_confirmation=True
+    )
+
+    cmd_button(
+        name='btn-test-api',
+        resource='ollama',
+        argv=['sh', '-c', '''curl -s http://localhost:11434/api/tags | jq '.models[].name' '''],
+        text='Test API',
+        icon_name='science'
+    )
+
+    cmd_button(
+        name='btn-disk-usage',
+        resource='ollama',
+        argv=['sh', '-c', 'echo "Model storage:" && du -sh ~/.ollama/models 2>/dev/null || echo "No models yet"'],
+        text='Disk Usage',
+        icon_name='storage'
+    )
+
+    cmd_button(
+        name='btn-gpu-info',
+        resource='ollama',
+        argv=['sh', '-c', 'echo "GPU Info:" && system_profiler SPDisplaysDataType | grep -A5 "Chipset Model"'],
+        text='GPU Info',
+        icon_name='memory'
+    )
+
+# ============================================
+# Service UI Buttons (generic helpers)
+# ============================================
+
+def add_open_browser_button(resource_name, url, port_label=''):
+    """Add an 'Open Browser' button to a resource."""
+    cmd_button(
+        name='btn-open-' + resource_name,
+        resource=resource_name,
+        argv=['open', url],
+        text='Open Browser',
+        icon_name='open_in_new'
+    )
+
+def add_restart_button(resource_name, container_name=None):
+    """Add a 'Restart' button to a docker resource."""
+    container = container_name or resource_name
+    cmd_button(
+        name='btn-restart-' + resource_name,
+        resource=resource_name,
+        argv=['docker', 'restart', container],
+        text='Restart',
+        icon_name='refresh'
+    )
+
+# ============================================
+# Print Helpers
+# ============================================
+
+def print_mode_banner(mode):
+    """Print mode-specific banner."""
+    if mode == 'live':
+        print("""
+╔═══════════════════════════════════════════════════════════════╗
+║  Catalyst LLM - LIVE/CLUSTER Mode                             ║
+╠═══════════════════════════════════════════════════════════════╣
+║  Deploying to Kubernetes cluster (talos)                      ║
+║  Services: OpenClaw, Poisonarr, etc.                          ║
+╚═══════════════════════════════════════════════════════════════╝
+""")
+    else:
+        print("""
+╔═══════════════════════════════════════════════════════════════╗
+║  Catalyst LLM - DEV Mode (Local Development)                  ║
+╠═══════════════════════════════════════════════════════════════╣
+║  Ollama: Native (Metal GPU) - managed by Tilt                 ║
+║  Open WebUI, SillyTavern, LobeChat: Docker containers         ║
+║  NOT deploying to Kubernetes cluster                          ║
+╚═══════════════════════════════════════════════════════════════╝
+""")
+
+def print_quick_start():
+    """Print quick start guide."""
+    print("""
+Quick Start:
+  1. Wait for all services to start (green checkmarks)
+  2. Click "DL Creative" or "DL Dark RP" to download models
+  3. Use Open WebUI for general chat, SillyTavern for roleplay
+
+Your System: M1 Max (32 GPU cores, 64GB RAM) - OPTIMAL FOR LLMs
+
+Uncensored Models:
+  - Dark-Champion (18GB)      - MoE, exceptional prose/fiction
+  - Dark-Champion Abliterated - Abliterated variant
+  - gemma3-abliterated (16GB) - Modern, surgical uncensoring
+  - mythomax-l2 (7.4GB)       - Classic RP, rich stories
+
+Web UIs:
+  - Prompt Play:  http://localhost:5174 (dev playground + streaming)
+  - Open WebUI:   http://localhost:3030 (chat + RAG + web search)
+  - LobeChat:     http://localhost:3210 (modern UI + plugins)
+  - SillyTavern:  http://localhost:8000 (roleplay, character cards)
+  - SearXNG:      http://localhost:8888 (web search engine)
+  - LiteLLM:      http://localhost:4000 (proxy API + UI)
+  - Ollama API:   http://localhost:11434
+
+Web Search: Open WebUI can search the web via SearXNG.
+            Enable "Web Search" toggle in the chat interface.
+
+CLI: ollama run davidau/llama-3.2-8x3b-moe-dark-champion
+""")

@@ -1,0 +1,128 @@
+---
+# Main configuration for catalyst-llm services
+# OLLAMA_BASE_URL should point to your Ollama instance:
+#   - For local Mac: http://host.docker.internal:11434 (via port-forward or nodeport)
+#   - For cluster Ollama: http://ollama.catalyst-llm.svc.cluster.local:11434
+#   - For external Ollama: http://<external-ip>:11434
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: catalyst-llm-config
+  namespace: catalyst-llm
+  labels:
+    app.kubernetes.io/name: catalyst-llm-config
+    app.kubernetes.io/part-of: catalyst-llm
+data:
+  # Ollama API URL - adjust based on your deployment
+  # Options:
+  #   - External (your Mac): Use ExternalName service or direct IP
+  #   - In-cluster: http://ollama:11434
+  OLLAMA_BASE_URL: "http://ollama:11434"
+
+  # SearXNG base URL for external access (via Traefik)
+  SEARXNG_BASE_URL: "http://searxng.talos00/"
+---
+# SearXNG configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: searxng-config
+  namespace: catalyst-llm
+  labels:
+    app.kubernetes.io/name: searxng
+    app.kubernetes.io/part-of: catalyst-llm
+data:
+  settings.yml: |
+    # SearXNG settings
+    use_default_settings: true
+
+    general:
+      instance_name: "Catalyst LLM Search"
+
+    search:
+      safe_search: 0
+      autocomplete: "duckduckgo"
+      default_lang: "en"
+      formats:
+        - html
+        - json
+
+    server:
+      limiter: false
+      image_proxy: true
+      http_protocol_version: "1.0"
+      secret_key: "catalyst-llm-searxng-secret-change-me"
+
+    ui:
+      static_use_hash: true
+      default_theme: simple
+      theme_args:
+        simple_style: dark
+
+    engines:
+      - name: google
+        engine: google
+        shortcut: g
+        disabled: false
+
+      - name: duckduckgo
+        engine: duckduckgo
+        shortcut: ddg
+        disabled: false
+
+      - name: brave
+        engine: brave
+        shortcut: br
+        disabled: false
+
+      - name: github
+        engine: github
+        shortcut: gh
+        disabled: false
+
+      - name: stackoverflow
+        engine: stackoverflow
+        shortcut: so
+        disabled: false
+
+      - name: wikipedia
+        engine: wikipedia
+        shortcut: wp
+        disabled: false
+---
+# SillyTavern configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sillytavern-config
+  namespace: catalyst-llm
+  labels:
+    app.kubernetes.io/name: sillytavern
+    app.kubernetes.io/part-of: catalyst-llm
+data:
+  config.yaml: |
+    # SillyTavern Configuration
+    # Basic server settings
+    listen: true
+    port: 8000
+
+    # Whitelist settings (allow all for cluster access)
+    whitelistMode: false
+    whitelist: []
+
+    # Security
+    basicAuthMode: false
+
+    # Enable all user features
+    enableUserAccounts: true
+    enableExtensions: true
+
+    # Autorun settings
+    autorun: false
+
+    # Proxy settings (use cluster DNS)
+    requestProxy:
+      enabled: false
+
+    # Default API connections
+    # Users will configure Ollama endpoint in the UI

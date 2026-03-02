@@ -1,0 +1,216 @@
+# Dev Tiltfile - Local development with Docker Compose
+#
+# This mode runs services locally for development:
+# - Ollama: Native process with Metal GPU acceleration
+# - Open WebUI, SillyTavern, LobeChat, SearXNG: Docker containers
+# - LiteLLM: Docker container as unified proxy
+# - Prompt Playground: Local Vite dev server
+#
+# Usage: tilt up (default) or tilt up -- --mode=dev
+
+load('ext://uibutton', 'cmd_button', 'location', 'text_input', 'choice_input')
+load('ext://local_output', 'local_output')
+
+def setup_dev():
+    """Configure all dev mode resources."""
+
+    # ============================================
+    # Native Ollama (GPU Accelerated)
+    # ============================================
+    local_resource(
+        name='ollama',
+        labels=['llm'],
+        serve_cmd='./scripts/ollama-serve.sh',
+        readiness_probe=probe(
+            http_get=http_get_action(port=11434, path='/api/tags'),
+            initial_delay_secs=3,
+            period_secs=5,
+        ),
+        links=[
+            link('http://localhost:11434', 'Ollama API'),
+        ],
+    )
+
+    # ============================================
+    # Docker Compose Services
+    # ============================================
+    docker_compose('./docker-compose.yaml')
+
+    # Open WebUI
+    dc_resource('open-webui',
+        labels=['llm'],
+        resource_deps=['ollama', 'litellm'],
+        links=[
+            link('http://localhost:3030', 'Open WebUI'),
+        ]
+    )
+
+    cmd_button(
+        name='btn-open-webui',
+        resource='open-webui',
+        argv=['open', 'http://localhost:3030'],
+        text='Open Browser',
+        icon_name='open_in_new'
+    )
+
+    cmd_button(
+        name='btn-restart-webui',
+        resource='open-webui',
+        argv=['docker', 'restart', 'open-webui'],
+        text='Restart',
+        icon_name='refresh'
+    )
+
+    # SillyTavern
+    dc_resource('sillytavern',
+        labels=['llm'],
+        resource_deps=['ollama'],
+        links=[
+            link('http://localhost:8000', 'SillyTavern'),
+        ]
+    )
+
+    cmd_button(
+        name='btn-open-sillytavern',
+        resource='sillytavern',
+        argv=['open', 'http://localhost:8000'],
+        text='Open Browser',
+        icon_name='open_in_new'
+    )
+
+    cmd_button(
+        name='btn-restart-sillytavern',
+        resource='sillytavern',
+        argv=['docker', 'restart', 'sillytavern'],
+        text='Restart',
+        icon_name='refresh'
+    )
+
+    cmd_button(
+        name='btn-setup-sillytavern',
+        resource='sillytavern',
+        argv=['./scripts/setup-sillytavern.sh'],
+        text='Setup Presets',
+        icon_name='settings'
+    )
+
+    cmd_button(
+        name='btn-backup-sillytavern',
+        resource='sillytavern',
+        argv=['sh', '-c', 'tar -czvf data/sillytavern-backup-$(date +%Y%m%d-%H%M%S).tar.gz data/sillytavern/ && echo "Backup created!"'],
+        text='Backup Data',
+        icon_name='backup'
+    )
+
+    # SearXNG
+    dc_resource('searxng',
+        labels=['tools'],
+        links=[
+            link('http://localhost:8888', 'SearXNG Search'),
+        ]
+    )
+
+    cmd_button(
+        name='btn-open-searxng',
+        resource='searxng',
+        argv=['open', 'http://localhost:8888'],
+        text='Open Browser',
+        icon_name='open_in_new'
+    )
+
+    cmd_button(
+        name='btn-test-searxng',
+        resource='searxng',
+        argv=['sh', '-c', 'curl -s "http://localhost:8888/search?q=test&format=json" | jq ".results[:3]"'],
+        text='Test JSON API',
+        icon_name='science'
+    )
+
+    # LobeChat
+    dc_resource('lobe-chat',
+        labels=['llm'],
+        resource_deps=['ollama', 'litellm'],
+        links=[
+            link('http://localhost:3210', 'LobeChat'),
+        ]
+    )
+
+    cmd_button(
+        name='btn-open-lobechat',
+        resource='lobe-chat',
+        argv=['open', 'http://localhost:3210'],
+        text='Open Browser',
+        icon_name='open_in_new'
+    )
+
+    cmd_button(
+        name='btn-restart-lobechat',
+        resource='lobe-chat',
+        argv=['docker', 'restart', 'lobe-chat'],
+        text='Restart',
+        icon_name='refresh'
+    )
+
+    # LiteLLM
+    dc_resource('litellm',
+        labels=['llm'],
+        resource_deps=['ollama'],
+        links=[
+            link('http://localhost:4000', 'LiteLLM API'),
+            link('http://localhost:4000/ui', 'LiteLLM UI'),
+        ]
+    )
+
+    cmd_button(
+        name='btn-open-litellm',
+        resource='litellm',
+        argv=['open', 'http://localhost:4000/ui'],
+        text='Open UI',
+        icon_name='open_in_new'
+    )
+
+    cmd_button(
+        name='btn-restart-litellm',
+        resource='litellm',
+        argv=['docker', 'restart', 'litellm'],
+        text='Restart',
+        icon_name='refresh'
+    )
+
+    cmd_button(
+        name='btn-litellm-models',
+        resource='litellm',
+        argv=['sh', '-c', 'curl -s http://localhost:4000/v1/models | jq ".data[].id"'],
+        text='List Models',
+        icon_name='list'
+    )
+
+    # ============================================
+    # Prompt Playground (React Dev UI)
+    # ============================================
+    local_resource(
+        name='prompt-playground',
+        labels=['ui'],
+        serve_cmd='yarn dev --port 5174 --host',
+        serve_dir=os.path.join(os.getcwd(), 'apps/prompt-playground'),
+        deps=['apps/prompt-playground/src'],
+        links=[
+            link('http://localhost:5174', 'Prompt Playground'),
+        ],
+    )
+
+    cmd_button(
+        name='btn-open-playground',
+        resource='prompt-playground',
+        argv=['open', 'http://localhost:5174'],
+        text='Open Browser',
+        icon_name='open_in_new'
+    )
+
+    cmd_button(
+        name='btn-playground-install',
+        resource='prompt-playground',
+        argv=['sh', '-c', 'cd apps/prompt-playground && yarn install'],
+        text='yarn install',
+        icon_name='download'
+    )

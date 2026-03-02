@@ -1,0 +1,38 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: catalyst-llm
+  labels:
+    app.kubernetes.io/name: catalyst-llm
+    app.kubernetes.io/part-of: catalyst
+
+namespace: catalyst-llm
+
+resources:
+  # Core infrastructure
+  - namespace.yaml
+  - pvc.yaml
+  - service.yaml
+  - configmap.yaml
+  - ingressroute.yaml
+
+  # LLM Inference
+  - ollama/
+  - litellm/
+
+  # UI Applications
+  - open-webui-deployment.yaml
+  - sillytavern-deployment.yaml
+  - lobe-chat-deployment.yaml
+  - searxng-deployment.yaml
+
+  # AI Assistants & Tools
+  - openclaw/
+  # Poisonarr has its own namespace - deploy separately or include here
+  # - poisonarr/
+
+commonLabels:
+  app.kubernetes.io/managed-by: argocd
+  app.kubernetes.io/part-of: catalyst-llm

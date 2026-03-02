@@ -1,0 +1,35 @@
+model_list:
+  # --- Local Ollama (native on Mac) ---
+  - model_name: "dolphin-mistral"
+    litellm_params:
+      model: "ollama/dolphin-mistral:7b"
+      api_base: "http://host.docker.internal:11434"
+  - model_name: "llama3.2"
+    litellm_params:
+      model: "ollama/llama3.2"
+      api_base: "http://host.docker.internal:11434"
+  - model_name: "mistral"
+    litellm_params:
+      model: "ollama/mistral"
+      api_base: "http://host.docker.internal:11434"
+  - model_name: "qwen2.5-coder:7b"
+    litellm_params:
+      model: "ollama/qwen2.5-coder:7b"
+      api_base: "http://host.docker.internal:11434"
+
+  # --- Cloud providers (when API keys are configured) ---
+  - model_name: "gpt-4o"
+    litellm_params:
+      model: "openai/gpt-4o"
+  - model_name: "gpt-4o-mini"
+    litellm_params:
+      model: "openai/gpt-4o-mini"
+  - model_name: "claude-sonnet-4"
+    litellm_params:
+      model: "anthropic/claude-sonnet-4-20250514"
+  - model_name: "claude-opus-4"
+    litellm_params:
+      model: "anthropic/claude-opus-4-20250514"
+
+litellm_settings:
+  drop_params: true

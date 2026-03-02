@@ -1,0 +1,277 @@
+# Live Tiltfile - Kubernetes cluster deployment
+#
+# This mode deploys catalyst-llm to the talos Kubernetes cluster using
+# the k8s manifests in this repo (k8s/base/).
+#
+# Usage: tilt up -- --mode=live
+#
+# Prerequisites:
+# - kubectl configured for talos cluster (admin@catalyst-cluster)
+# - ArgoCD Application deployed, OR run with Tilt managing k8s resources
+#
+# For ArgoCD: Deploy k8s/argocd-application.yaml to argocd namespace
+# For Tilt:   This file manages the k8s resources directly
+
+load('ext://uibutton', 'cmd_button', 'location', 'text_input')
+
+# Paths
+K8S_BASE = './k8s/base'
+
+# Namespaces
+NS_CATALYST_LLM = 'catalyst-llm'
+
+# Label groups
+LABEL_LLM = 'llm'
+LABEL_UI = 'ui'
+LABEL_TOOLS = 'tools'
+
+def setup_live():
+    """Configure live/cluster mode - deploy k8s resources."""
+
+    # Cluster context
+    allow_k8s_contexts('admin@catalyst-cluster')
+
+    # ============================================
+    # Deploy K8s Manifests via Kustomize
+    # ============================================
+    k8s_yaml(kustomize(K8S_BASE))
+
+    # ============================================
+    # Service Links (Cluster Ingresses)
+    # ============================================
+    local_resource(
+        'cluster-links',
+        cmd='echo "Catalyst LLM services via cluster ingress"',
+        labels=['links'],
+        auto_init=False,
+        links=[
+            link('http://chat.talos00', 'Open WebUI (Chat)'),
+            link('http://sillytavern.talos00', 'SillyTavern'),
+            link('http://searxng.talos00', 'SearXNG Search'),
+            link('http://llm.talos00', 'LiteLLM API'),
+            link('http://ollama.talos00', 'Ollama API'),
+        ]
+    )
+
+    # ============================================
+    # Ollama (Cluster - talos06 with Intel Arc GPU)
+    # ============================================
+    k8s_resource(
+        'ollama',
+        labels=[LABEL_LLM],
+        port_forwards=['11434:11434'],
+        links=[
+            link('http://localhost:11434', 'Ollama API (Local)'),
+            link('http://ollama.talos00', 'Ollama (Ingress)'),
+        ]
+    )
+
+    cmd_button(
+        name='btn-ollama-list',
+        resource='ollama',
+        argv=['sh', '-c', 'kubectl exec -n catalyst-llm deploy/ollama -- ollama list'],
+        text='List Models',
+        icon_name='list'
+    )
+
+    cmd_button(
+        name='btn-ollama-ps',
+        resource='ollama',
+        argv=['sh', '-c', 'kubectl exec -n catalyst-llm deploy/ollama -- ollama ps'],
+        text='Running Models',
+        icon_name='play_circle'
+    )
+
+    cmd_button(
+        name='btn-ollama-pull',
+        resource='ollama',
+        argv=['sh', '-c', '''
+            if [ -z "$MODEL" ]; then
+                echo "Error: Enter a model name"
+                exit 1
+            fi
+            kubectl exec -n catalyst-llm deploy/ollama -- ollama pull "$MODEL"
+        '''],
+        text='Pull Model',
+        icon_name='download',
+        inputs=[
+            text_input('MODEL', 'Model name', placeholder='llama3.2')
+        ]
+    )
+
+    # ============================================
+    # LiteLLM (Cluster)
+    # ============================================
+    k8s_resource(
+        'litellm',
+        labels=[LABEL_LLM],
+        port_forwards=['4000:4000'],
+        links=[
+            link('http://localhost:4000', 'LiteLLM API'),
+            link('http://localhost:4000/ui', 'LiteLLM UI'),
+            link('http://llm.talos00', 'LiteLLM (Ingress)'),
+        ]
+    )
+
+    cmd_button(
+        name='btn-litellm-models',
+        resource='litellm',
+        argv=['sh', '-c', 'curl -s http://localhost:4000/v1/models | jq ".data[].id"'],
+        text='List Models',
+        icon_name='list'
+    )
+
+    # ============================================
+    # Open WebUI (Cluster)
+    # ============================================
+    k8s_resource(
+        'open-webui',
+        labels=[LABEL_UI],
+        port_forwards=['3030:8080'],
+        links=[
+            link('http://localhost:3030', 'Open WebUI (Local)'),
+            link('http://chat.talos00', 'Open WebUI (Ingress)'),
+        ]
+    )
+
+    # ============================================
+    # SillyTavern (Cluster)
+    # ============================================
+    k8s_resource(
+        'sillytavern',
+        labels=[LABEL_UI],
+        port_forwards=['8088:8000'],
+        links=[
+            link('http://localhost:8088', 'SillyTavern (Local)'),
+            link('http://sillytavern.talos00', 'SillyTavern (Ingress)'),
+        ]
+    )
+
+    # ============================================
+    # LobeChat (Cluster)
+    # ============================================
+    k8s_resource(
+        'lobe-chat',
+        labels=[LABEL_UI],
+        port_forwards=['3210:3210'],
+        links=[
+            link('http://localhost:3210', 'LobeChat (Local)'),
+        ]
+    )
+
+    # ============================================
+    # SearXNG (Cluster)
+    # ============================================
+    k8s_resource(
+        'searxng',
+        labels=[LABEL_TOOLS],
+        port_forwards=['8888:8080'],
+        links=[
+            link('http://localhost:8888', 'SearXNG (Local)'),
+            link('http://searxng.talos00', 'SearXNG (Ingress)'),
+        ]
+    )
+
+    # ============================================
+    # OpenClaw - AI Personal Assistant Gateway
+    # ============================================
+    k8s_resource(
+        'openclaw',
+        labels=[LABEL_LLM],
+        port_forwards=['18789:18789'],
+        links=[
+            link('http://localhost:18789', 'OpenClaw Gateway'),
+        ]
+    )
+
+    cmd_button(
+        name='btn-openclaw-logs',
+        resource='openclaw',
+        argv=['kubectl', 'logs', '-f', '-l', 'app=openclaw', '-n', 'catalyst-llm', '--tail=100'],
+        text='Stream Logs',
+        icon_name='description'
+    )
+
+    # ============================================
+    # Cluster Utilities
+    # ============================================
+    local_resource(
+        name='cluster-info',
+        labels=['cluster'],
+        cmd='kubectl cluster-info && echo "" && kubectl get nodes -o wide',
+        auto_init=True,
+    )
+
+    cmd_button(
+        name='btn-catalyst-llm-pods',
+        resource='cluster-info',
+        argv=['kubectl', 'get', 'pods', '-n', 'catalyst-llm', '-o', 'wide'],
+        text='LLM Pods',
+        icon_name='apps'
+    )
+
+    cmd_button(
+        name='btn-catalyst-llm-svc',
+        resource='cluster-info',
+        argv=['kubectl', 'get', 'svc', '-n', 'catalyst-llm'],
+        text='LLM Services',
+        icon_name='hub'
+    )
+
+    cmd_button(
+        name='btn-argocd-sync',
+        resource='cluster-info',
+        argv=['sh', '-c', 'argocd app sync catalyst-llm 2>/dev/null || echo "ArgoCD CLI not available or app not deployed"'],
+        text='ArgoCD Sync',
+        icon_name='sync'
+    )
+
+    # ============================================
+    # Prompt Playground (Local Dev UI against Cluster)
+    # ============================================
+    # Run prompt-playground locally but connect to cluster LiteLLM
+    local_resource(
+        name='prompt-playground',
+        labels=['ui'],
+        serve_cmd='VITE_LITELLM_URL=http://localhost:4000 yarn dev --port 5174 --host',
+        serve_dir=os.path.join(os.getcwd(), 'apps/prompt-playground'),
+        deps=['apps/prompt-playground/src'],
+        resource_deps=['litellm'],  # Wait for port-forward
+        links=[
+            link('http://localhost:5174', 'Prompt Playground'),
+        ],
+    )
+
+    cmd_button(
+        name='btn-open-playground',
+        resource='prompt-playground',
+        argv=['open', 'http://localhost:5174'],
+        text='Open Browser',
+        icon_name='open_in_new'
+    )
+
+    # Print live mode info
+    print("""
+Live Mode - Deploying to Talos Cluster
+======================================
+
+K8s Resources: ./k8s/base/ (deployed via Kustomize)
+
+Cluster Services (via port-forward):
+  - LiteLLM:      http://localhost:4000 (API + UI)
+  - Open WebUI:   http://localhost:3030
+  - SillyTavern:  http://localhost:8088
+  - LobeChat:     http://localhost:3210
+  - SearXNG:      http://localhost:8888
+  - Ollama:       http://localhost:11434
+  - OpenClaw:     http://localhost:18789
+
+Cluster Services (via ingress):
+  - chat.talos00, sillytavern.talos00, searxng.talos00, llm.talos00
+
+Dev Tools:
+  - Prompt Playground: http://localhost:5174 (local dev → cluster LiteLLM)
+
+ArgoCD Application:
+  Deploy k8s/argocd-application.yaml to enable GitOps sync
+""")

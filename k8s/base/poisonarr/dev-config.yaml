@@ -1,0 +1,48 @@
+# Development config for local testing
+# Uses shorter delays and limited sites
+
+litellm_url: "http://localhost:11434/v1"  # Local Mac Ollama
+
+# Two-model architecture
+navigator_model: "qwen2.5:7b-instruct"   # Small/fast for browser actions
+reasoner_model: "qwen2.5:32b"   # Large/smart for reasoning (researcher mode)
+
+# Agent mode: poisonarr, researcher, monitor
+mode: "poisonarr"
+
+# Faster timing for dev
+min_delay_seconds: 10
+max_delay_seconds: 30
+
+active_hours:
+  start: "00:00"
+  end: "23:59"
+
+timezone: "America/Los_Angeles"
+
+# Browser persistence - saves cookies, sessions, login state
+browser:
+  persist_sessions: true
+  user_data_dir: "/tmp/poisonarr-browser-data"  # Local dev path
+
+# Activity weights
+activities:
+  news: 30
+  shopping: 20
+  tech: 30
+  search: 20
+
+# Limited sites for testing
+# sites:
+  # news:
+  #   - bbc.com
+  #   - reuters.com
+  # shopping:
+  #   - amazon.com
+  # tech:
+  #   - github.com
+  #   - news.ycombinator.com
+  # search_engines:
+  #   - duckduckgo.com
+  # social:
+  #   - reddit.com

@@ -1,0 +1,158 @@
+/* Tailwind CSS v4 */
+@import "tailwindcss";
+@plugin "tailwindcss-animate";
+
+/* Cybersynthpunk Fonts */
+@import url("https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap");
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --font-sans: "Rajdhani", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Orbitron", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Space Mono", ui-monospace, monospace;
+
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+}
+
+@layer base {
+  /* Catalyst theme - Light mode */
+  :root {
+    --background: hsl(30 30% 82%);
+    --foreground: hsl(270 50% 12%);
+    --card: hsl(330 35% 88%);
+    --card-foreground: hsl(270 50% 12%);
+    --popover: hsl(330 35% 88%);
+    --popover-foreground: hsl(270 50% 12%);
+    --primary: hsl(180 70% 32%);
+    --primary-foreground: hsl(0 0% 100%);
+    --secondary: hsl(290 70% 45%);
+    --secondary-foreground: hsl(0 0% 100%);
+    --muted: hsl(30 25% 75%);
+    --muted-foreground: hsl(270 35% 30%);
+    --accent: hsl(320 50% 82%);
+    --accent-foreground: hsl(270 55% 20%);
+    --destructive: hsl(340 75% 50%);
+    --destructive-foreground: hsl(0 0% 100%);
+    --border: hsl(320 30% 70%);
+    --input: hsl(30 25% 80%);
+    --ring: hsl(290 70% 45%);
+    --radius: 0.5rem;
+    --neon-cyan: hsl(180 85% 45%);
+    --neon-purple: hsl(290 80% 55%);
+  }
+
+  /* Catalyst theme - Dark mode */
+  .dark {
+    --background: #0a0a0f;
+    --foreground: #e4e4e7;
+    --card: #16161d;
+    --card-foreground: #e4e4e7;
+    --popover: #16161d;
+    --popover-foreground: #e4e4e7;
+    --primary: #00fcd6;
+    --primary-foreground: #0a0a0f;
+    --secondary: #c026d3;
+    --secondary-foreground: #fafafa;
+    --muted: #27272a;
+    --muted-foreground: #a1a1aa;
+    --accent: #1e1e24;
+    --accent-foreground: #fafafa;
+    --destructive: #ff2975;
+    --destructive-foreground: #fafafa;
+    --border: #27272a;
+    --input: #1e1e24;
+    --ring: #00fcd6;
+    --radius: 0.5rem;
+    --neon-cyan: #00fcd6;
+    --neon-purple: #c026d3;
+  }
+
+  * {
+    border-color: var(--border);
+  }
+
+  html, body {
+    background-color: var(--background);
+    color: var(--foreground);
+  }
+
+  body {
+    font-family: var(--font-sans);
+    font-weight: 500;
+    letter-spacing: 0.015em;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  code, pre {
+    font-family: var(--font-mono);
+  }
+}
+
+/* Gradient headings for dark mode */
+.dark h1, .dark h2, .dark h3 {
+  background: linear-gradient(135deg, var(--neon-cyan) 0%, var(--neon-purple) 50%, var(--neon-cyan) 100%);
+  background-size: 200% 200%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Tab active state */
+[role="tab"][data-state="active"] {
+  border-bottom: 2px solid var(--primary);
+}
+
+/* Streaming cursor */
+.streaming-cursor::after {
+  content: '\25AE';
+  animation: blink 1s infinite;
+  color: var(--primary);
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--muted);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--muted-foreground);
+  border-radius: 9999px;
+}

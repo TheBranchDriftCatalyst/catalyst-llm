@@ -1,0 +1,12 @@
+# SearXNG Rate Limiter Configuration
+# Disabled for private instance - no external access
+
+[botdetection.ip_limit]
+# Disable IP-based rate limiting
+link_token = false
+
+[botdetection.ip_lists]
+# No blocked networks for private instance
+pass_ip = [
+    "0.0.0.0/0",
+]

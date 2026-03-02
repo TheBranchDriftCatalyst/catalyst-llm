@@ -1,0 +1,100 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sillytavern
+  namespace: catalyst-llm
+  labels:
+    app.kubernetes.io/name: sillytavern
+    app.kubernetes.io/component: roleplay-ui
+    app.kubernetes.io/part-of: catalyst-llm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sillytavern
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sillytavern
+        app.kubernetes.io/component: roleplay-ui
+        app.kubernetes.io/part-of: catalyst-llm
+    spec:
+      containers:
+        - name: sillytavern
+          image: ghcr.io/sillytavern/sillytavern:latest
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          env:
+            - name: TZ
+              value: "America/Los_Angeles"
+          volumeMounts:
+            - name: data
+              mountPath: /home/node/app/data
+            - name: config
+              mountPath: /home/node/app/config.yaml
+              subPath: config.yaml
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: sillytavern-data
+        - name: config
+          configMap:
+            name: sillytavern-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sillytavern
+  namespace: catalyst-llm
+  labels:
+    app.kubernetes.io/name: sillytavern
+    app.kubernetes.io/component: roleplay-ui
+    app.kubernetes.io/part-of: catalyst-llm
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: sillytavern
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sillytavern-data
+  namespace: catalyst-llm
+  labels:
+    app.kubernetes.io/name: sillytavern
+    app.kubernetes.io/component: llm-ui
+    app.kubernetes.io/part-of: catalyst-llm
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 10Gi

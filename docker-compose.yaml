@@ -1,0 +1,161 @@
+# Catalyst LLM - Web UIs for Local LLMs
+#
+# Connects to native ollama on host for GPU-accelerated inference.
+# Used by Tiltfile - ollama is managed as a local_resource
+#
+# Services:
+#   - open-webui: General purpose chat UI with RAG and web search
+#   - sillytavern: Roleplay-focused UI with character cards
+#   - lobe-chat: Modern chat UI with plugin support
+#   - searxng: Privacy-focused metasearch engine for web search
+#   - litellm: OpenAI-compatible proxy for all LLM providers
+
+services:
+  # ============================================
+  # SearXNG - Web Search Engine
+  # ============================================
+  # Privacy-focused metasearch engine that aggregates results
+  # from multiple search engines. Used by Open WebUI for web search.
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8888:8080"
+    volumes:
+      - ./config/searxng:/etc/searxng:rw
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8888/
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================
+  # Open WebUI - General Purpose Chat
+  # ============================================
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3030:8080"
+    volumes:
+      - ./data/open-webui:/app/backend/data
+    environment:
+      # Connect via LiteLLM proxy for unified API access
+      - OLLAMA_BASE_URL=http://litellm:4000
+      # Disable telemetry
+      - SCARF_NO_ANALYTICS=true
+      - DO_NOT_TRACK=true
+      # Auth settings
+      - WEBUI_AUTH=true
+      # API settings
+      - ENABLE_OPENAI_API=false
+      - ENABLE_OLLAMA_API=true
+      # RAG settings
+      - RAG_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+      - CHUNK_SIZE=1000
+      - CHUNK_OVERLAP=100
+      # Web Search via SearXNG
+      - ENABLE_RAG_WEB_SEARCH=true
+      - RAG_WEB_SEARCH_ENGINE=searxng
+      - SEARXNG_QUERY_URL=http://searxng:8080/search?q=<query>
+      - RAG_WEB_SEARCH_RESULT_COUNT=5
+      - RAG_WEB_SEARCH_CONCURRENT_REQUESTS=5
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - searxng
+      - litellm
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ============================================
+  # SillyTavern - Roleplay & Character Chat
+  # ============================================
+  sillytavern:
+    image: ghcr.io/sillytavern/sillytavern:latest
+    container_name: sillytavern
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./data/sillytavern:/home/node/app/data
+      - ./config/sillytavern-config.yaml:/home/node/app/config.yaml
+    environment:
+      - TZ=America/Los_Angeles
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ============================================
+  # LobeChat - Modern Chat UI with Plugins
+  # ============================================
+  # Feature-rich chat UI with plugin ecosystem, multi-model support,
+  # and modern UX. Alternative to Open WebUI with different strengths.
+  lobe-chat:
+    image: lobehub/lobe-chat:latest
+    container_name: lobe-chat
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3210:3210"
+    volumes:
+      - ./data/lobe-chat:/root/.lobe-chat
+    environment:
+      # Connect via LiteLLM proxy for unified API access
+      - OLLAMA_PROXY_URL=http://litellm:4000
+      # Enable Ollama as default provider
+      - ENABLED_OLLAMA=1
+      # Access code (optional - set for basic auth)
+      # - ACCESS_CODE=your-access-code
+      # Disable analytics
+      - NEXT_TELEMETRY_DISABLED=1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - litellm
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3210/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ============================================
+  # LiteLLM - OpenAI-compatible Proxy
+  # ============================================
+  # Unified proxy for all LLM providers (Ollama, OpenAI, Anthropic).
+  # Provides OpenAI-compatible API at http://localhost:4000
+  # UI available at http://localhost:4000/ui
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: litellm
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4000:4000"
+    volumes:
+      - ./config/litellm:/app/config:ro
+    environment:
+      - LITELLM_CONFIG=/app/config/config.yaml
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-litellm-local-dev}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health/liveliness"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s

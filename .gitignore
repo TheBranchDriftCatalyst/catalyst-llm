@@ -1,0 +1,35 @@
+# Data directories (large, local only)
+data/
+
+# Environment files (contain secrets)
+.env
+.env.local
+.env.production
+apps/*/.env
+apps/*/.env.local
+
+# macOS
+.DS_Store
+
+# Node
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+
+# Build output
+dist/
+build/
+
+# Logs
+*.log
+
+# Beads local state
+.beads/
+
+# Claude Code local settings
+.claude/
+
+# Local development symlinks
+apps/prompt-playground/catalyst-ui

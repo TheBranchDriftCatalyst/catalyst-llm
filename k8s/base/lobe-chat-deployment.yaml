@@ -1,0 +1,104 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lobe-chat
+  namespace: catalyst-llm
+  labels:
+    app.kubernetes.io/name: lobe-chat
+    app.kubernetes.io/component: chat-ui
+    app.kubernetes.io/part-of: catalyst-llm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: lobe-chat
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: lobe-chat
+        app.kubernetes.io/component: chat-ui
+        app.kubernetes.io/part-of: catalyst-llm
+    spec:
+      containers:
+        - name: lobe-chat
+          image: lobehub/lobe-chat:latest
+          ports:
+            - name: http
+              containerPort: 3210
+              protocol: TCP
+          env:
+            # Ollama connection - configurable via configmap
+            - name: OLLAMA_PROXY_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: catalyst-llm-config
+                  key: OLLAMA_BASE_URL
+            # Enable Ollama as default provider
+            - name: ENABLED_OLLAMA
+              value: "1"
+            # Disable analytics
+            - name: NEXT_TELEMETRY_DISABLED
+              value: "1"
+          volumeMounts:
+            - name: data
+              mountPath: /root/.lobe-chat
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: lobe-chat-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lobe-chat
+  namespace: catalyst-llm
+  labels:
+    app.kubernetes.io/name: lobe-chat
+    app.kubernetes.io/component: chat-ui
+    app.kubernetes.io/part-of: catalyst-llm
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: lobe-chat
+  ports:
+    - name: http
+      port: 3210
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lobe-chat-data
+  namespace: catalyst-llm
+  labels:
+    app.kubernetes.io/name: lobe-chat
+    app.kubernetes.io/component: chat-ui
+    app.kubernetes.io/part-of: catalyst-llm
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 5Gi
