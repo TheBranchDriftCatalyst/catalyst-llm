@@ -33,7 +33,7 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /home/node/app/data
-            - name: data
+            - name: config
               mountPath: /home/node/app/config.yaml
               subPath: config.yaml
           resources:
@@ -55,10 +55,31 @@ spec:
               port: http
             initialDelaySeconds: 10
             periodSeconds: 10
+      initContainers:
+        - name: init-config
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              cat > /config/config.yaml << 'EOF'
+              listen: true
+              port: 8000
+              whitelistMode: false
+              whitelist: []
+              basicAuthMode: false
+              enableUserAccounts: true
+              autorun: false
+              EOF
+          volumeMounts:
+            - name: config
+              mountPath: /config
       volumes:
         - name: data
           persistentVolumeClaim:
             claimName: sillytavern-data
+        - name: config
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
