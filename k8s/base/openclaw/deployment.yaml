@@ -74,18 +74,22 @@ spec:
                 secretKeyRef:
                   name: openclaw-secrets
                   key: gateway-token
-            # Anthropic API key for the default agent (anthropic/claude-opus-4-5)
-            - name: ANTHROPIC_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: litellm-secrets
-                  key: anthropic-api-key
-            # OpenAI API key for OpenAI models
+            # Route all LLM requests through litellm proxy
+            - name: OPENAI_API_BASE
+              value: "http://litellm:4000"
+            - name: ANTHROPIC_API_BASE
+              value: "http://litellm:4000"
+            # API key for litellm (master key)
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: litellm-secrets
-                  key: openai-api-key
+                  key: master-key
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-secrets
+                  key: master-key
             # Notion API key for Notion skill
             - name: NOTION_API_KEY
               valueFrom:
