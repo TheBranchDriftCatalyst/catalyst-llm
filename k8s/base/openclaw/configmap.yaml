@@ -22,7 +22,7 @@ data:
       "gateway": {
         "bind": "lan",
         "auth": {
-          "mode": "token"
+          "mode": "none"
         },
         "trustedProxies": ["10.244.0.0/16", "10.96.0.0/12"],
         "controlUi": {

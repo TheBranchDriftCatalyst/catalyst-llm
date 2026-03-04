@@ -67,7 +67,7 @@ spec:
           imagePullPolicy: IfNotPresent
           # Image CMD: node dist/index.js --allow-unconfigured
           # gateway.bind: "lan" set in config (container default)
-          args: ["node", "dist/index.js", "gateway", "--allow-unconfigured"]
+          args: ["node", "dist/index.js", "gateway", "--allow-unconfigured", "--allow-insecure-bind"]
           env:
             - name: OPENCLAW_GATEWAY_TOKEN
               valueFrom:
