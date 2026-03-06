@@ -80,6 +80,8 @@ gets a different MCP allowlist. OpenClaw configures this in `config.json5` via
 | PromptInjectionAgent | R | R | Y | - | - | - | - |
 | PRReviewAgent | R | R | Y | - | RW | - | - |
 | DocumentationAgent | R | RW | Y | R | R | - | - |
+| DocConsistencyAgent | R | R | Y | - | R | - | - |
+| DocArchiverAgent | R | RW | Y | - | - | - | - |
 | ReflectionAgent | R | RW | Y | - | - | - | - |
 | MemoryCuratorAgent | R | RW | Y | - | - | - | - |
 | ExperimentationAgent | RW | RW | Y | R | - | R | - |
@@ -168,6 +170,41 @@ This is critical for dev agents to look up API docs, framework patterns, and bes
 
 ---
 
+## vector-memory MCP (Future — Phase 3+)
+
+A custom MCP server that provides semantic search across the entire documentation
+and memory corpus. This replaces keyword-based `memory_search` with vector similarity.
+
+### Architecture
+```
+DocArchiverAgent → progressive summarization → embeddings
+                                                    ↓
+Agent queries vector-memory MCP → ranked doc chunks with file refs
+                                                    ↓
+Agent reads full files for detailed context
+```
+
+### Planned Features
+- Index all `docs/`, `memory/`, `beads/archive/`, `contexts/` into vector embeddings
+- Semantic search: "how did we handle tenant filtering?" → returns relevant reflections + specs
+- Auto-reindex on file changes (filesystem watcher)
+- Embedding model: local (e.g., nomic-embed) or via LiteLLM
+- Storage: SQLite + HNSW index (lightweight, file-based, git-friendly)
+
+### MCP Interface
+```
+vector-memory.index:    Trigger reindexing of a file or directory
+vector-memory.search:   Semantic search with query string, returns ranked chunks
+vector-memory.similar:  Find files similar to a given file
+vector-memory.stats:    Index statistics (doc count, last indexed, coverage)
+```
+
+### Agent Access
+All agents get read access to `vector-memory`. Only DocArchiverAgent and
+MemoryCuratorAgent get write access (indexing).
+
+---
+
 ## Restrictions
 - Agents may only write to their designated artifact directories
 - Shell access requires Tier 3 authorization
@@ -175,3 +212,4 @@ This is critical for dev agents to look up API docs, framework patterns, and bes
 - No agent may modify another agent's SOUL.md
 - `context7` is read-only by nature (documentation queries only)
 - `github` write access limited to PRs and issues (no force push, no branch deletion)
+- `vector-memory` write access (indexing) limited to DocArchiverAgent and MemoryCuratorAgent
