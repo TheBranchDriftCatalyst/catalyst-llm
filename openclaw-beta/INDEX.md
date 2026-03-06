@@ -213,10 +213,47 @@
 
 ---
 
+## Bead Protocol (Task Capsules)
+
+| File | Purpose |
+|------|---------|
+| `templates/bead-schema.md` | **THE CONTRACT** — Definitive schema for all bead files (status machine, gates, reflexion hooks) |
+| `templates/bead-index.md` | Template for feature-level bead index files |
+| `templates/bead-task.md` | Template for individual task bead files |
+| `templates/repo-context.md` | Template for per-repo development context |
+| `sops/bead-protocol.md` | SOP — How agents scan, claim, execute, and update beads |
+
+### Contexts (Shared Agent Knowledge)
+
+| File | Purpose |
+|------|---------|
+| `contexts/shared-dev.md` | Common context for ALL dev agents — workflow, standards, tech stack |
+| `contexts/<repo-name>.md` | Per-repo context (architecture, patterns, conventions) — created per project |
+
+### Example Bead: HELLO_WORLD (Proof-of-Life)
+
+| File | Purpose |
+|------|---------|
+| `beads/HELLO_WORLD/index.md` | Feature index — goal, subtask DAG, status |
+| `beads/HELLO_WORLD/BEAD-001-code.md` | Task: write hello world program (assigned: DeveloperAgent) |
+| `beads/HELLO_WORLD/BEAD-002-tests.md` | Task: write tests (assigned: QAUnitTestAgent, depends on BEAD-001) |
+| `beads/HELLO_WORLD/BEAD-003-reflection.md` | Task: reflect on loop execution (assigned: ReflectionAgent) |
+
+### Workflows (Lobster Pipelines)
+
+| File | Purpose |
+|------|---------|
+| `workflows/README.md` | Planned Lobster workflow files for deterministic agent pipelines |
+
+---
+
 ## Shared Directories
 
 | Directory | Purpose |
 |-----------|---------|
+| `beads/` | **Task protocol layer** — bead files that bridge planning and execution |
+| `contexts/` | Shared agent knowledge — dev context, repo contexts |
+| `workflows/` | Lobster workflow YAML files (Phase 2+) |
 | `memory/` | Shared system memory — daily logs, user intent |
 | `memory/reflections/` | Episodic reflection entries from ReflectionAgent |
 | `docs/product/` | Product design documents |
@@ -239,8 +276,11 @@
 | Agent HEARTBEAT.md files | 3 (L1-L3) |
 | Agent TOOLS.md files | 3 |
 | Gateway-level files | 7 |
+| Bead templates + schema | 3 |
+| Example beads (HELLO_WORLD) | 4 |
+| Context files | 1 (+ per-repo) |
 | Patterns | 3 |
-| SOPs | 4 |
-| Templates | 4 |
-| **Total files** | **~51** |
-| Memory/artifact directories | 10+ |
+| SOPs | 5 |
+| Templates | 8 |
+| **Total files** | **~65** |
+| Memory/artifact directories | 12+ |
