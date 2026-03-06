@@ -4,7 +4,7 @@
 
 ## Overview
 
-Claw Orchestrator implements a **23-agent hierarchy** organized into 7 teams that execute two major operational loops:
+Claw Orchestrator implements a **27-agent hierarchy** organized into 8 teams that execute two major operational loops:
 
 1. **Planning Loop** — Feature idea → Product design → Use cases → Requirements → Architecture → Implementation tickets
 2. **Development Loop** — Ticket → Implementation → QA → Security scan → PR review → Merge → Reflection
@@ -61,7 +61,8 @@ The system uses **Reflexion-style memory** to learn from every task execution, s
 ### Development Team (L4) — Sonnet model tier
 | Agent | Role | Artifacts |
 |-------|------|-----------|
-| DeveloperAgent | Primary code implementation | `src/*`, `tests/*` |
+| DeveloperAgent | Primary code implementation, team lead | `src/*`, `tests/*` |
+| IndianDev | Claude Code CLI headless delegate | Source code via CLI |
 | FrontendDesignAgent | React/UI components, Storybook | `src/ui/*`, `stories/*` |
 | BackendAgent | APIs, services, data access | `src/api/*`, `services/*` |
 | InfrastructureAgent | K8s manifests, Tiltfiles, CI/CD | `infra/*`, `k8s/*` |
@@ -84,7 +85,9 @@ The system uses **Reflexion-style memory** to learn from every task execution, s
 | Agent | Role | Artifacts |
 |-------|------|-----------|
 | PRReviewAgent | Code review, standards enforcement | `reviews/*` |
-| DocumentationAgent | Doc maintenance, API docs | `docs/*` |
+| DocumentationAgent | Doc maintenance, API docs, team lead | `docs/*` |
+| DocConsistencyAgent | Doc-code parity checking | `docs/consistency_reports/` |
+| DocArchiverAgent | Progressive summarization, memory archival | `memory/archive/` |
 
 ### Learning Team (L4)
 | Agent | Role | Artifacts |
@@ -165,6 +168,67 @@ DISCOVERY → PLANNING → DEVELOPMENT → QA → SECURITY → REVIEW → MERGED
 | 4: Full Teams | All L4 agents active, both loops wired | Planned |
 | 5: Governance | Alpha/Bravo routing, PR review enforcement | Planned |
 | 6: UI Sidecar | React + D3 visualization of beads DAG | Future |
+
+## OpenClaw Ecosystem — Plugins & Skills to Investigate
+
+Battle-tested OpenClaw extensions worth evaluating for the Claw Orchestrator. These
+survived months of real usage and would slot into specific agent capabilities.
+
+### Plugins (Gateway-Level)
+
+| Plugin | What It Does | Relevant Agents | Priority |
+|--------|-------------|-----------------|----------|
+| **memory-lancedb** | Vector memory with auto-recall and capture. Set `plugins.slots.memory = "memory-lancedb"` and agents stop forgetting. Better than default memory slot. | All agents — replaces our planned vector-memory MCP | **HIGH** |
+| **composio** | Managed OAuth for 860+ apps. No API keys in env. Handles auth for Gmail, Slack, GitHub, Notion, and most services. | PersonalAssistant, CongressionalSpy, any agent needing external APIs | **HIGH** |
+| **memOS cloud** | Recalls before runs, saves after. Async, cross-agent isolated, configurable limits. Good when lancedb alone isn't enough. | Learning team (Reflection, MemoryCurator) | MEDIUM |
+| **openclaw-foundry** | Agent observes your workflows, finds patterns, writes new tools into itself. The self-modification loop actually works. | ExperimentationAgent — this IS the capability evolver | MEDIUM |
+| **openclaw-better-gateway** | Stock gateway drops connections. This one holds. Auto-reconnect, embedded IDE, browser terminal, file API. | Gateway infrastructure | MEDIUM |
+| **voice-call** | Outbound voice notifications, multi-turn through gateway. Twilio in prod, log fallback for testing. | PersonalAssistant — DJ notification channel | LOW |
+| **microsoft-teams** | Plugin-only channel since Jan 2026. Thread awareness, mention support. | PersonalAssistant — if Teams is a communication channel | LOW |
+| **nostr-channel** | Official channel plugin for Nostr network. Self-sovereign comms. | PersonalAssistant — niche but interesting | LOW |
+
+### Skills (Agent-Level)
+
+| Skill | Installs | What It Does | Relevant Agents | Priority |
+|-------|----------|-------------|-----------------|----------|
+| **capability-evolver** | 35K | Agent improves its own capabilities over time. #1 on ClawHub. | All agents — meta-improvement loop | **HIGH** |
+| **self-improving-agent** | 15K | Learns from every interaction, optimizes responses. 132 stars, highest rated. Pairs with capability evolver. | All agents — pairs with Reflexion loop | **HIGH** |
+| **gog** | 14K | Gmail, Calendar, Drive, Contacts, Sheets, Docs in one skill. | PersonalAssistant, DocumentationAgent | MEDIUM |
+| **n8n-workflow** | — | Create, trigger, monitor n8n workflows from OpenClaw. Creds stay in n8n, never touch the agent. | InfrastructureAgent, RepoControlAI — CI/CD integration | MEDIUM |
+| **agentzero-bridge** | — | Delegates complex tasks to Agent Zero framework, reports back. For heavy lifting OpenClaw can't handle inline. | IndianDev — alternative to Claude CLI delegation | MEDIUM |
+| **wacli** | 16K | WhatsApp integration, message contacts, search history. | PersonalAssistant — DJ notification channel | LOW |
+| **ouraclaw** | — | Oura Ring data (sleep, readiness, activity) in your agent. | PersonalAssistant — health automation | LOW |
+
+### Evaluation Plan
+
+**Phase 2 (Core Loop)**:
+- [ ] Install `memory-lancedb` — replaces our planned vector-memory MCP with a proven solution
+- [ ] Install `composio` — solves OAuth for all external API integrations
+- [ ] Install `capability-evolver` + `self-improving-agent` — pairs with our Reflexion loop
+
+**Phase 3 (Reflexion)**:
+- [ ] Evaluate `memOS cloud` for cross-agent memory isolation
+- [ ] Evaluate `openclaw-foundry` for ExperimentationAgent's self-modification loop
+
+**Phase 4 (Full Teams)**:
+- [ ] Install `gog` for Google Workspace integration
+- [ ] Install `n8n-workflow` for CI/CD pipeline triggers
+- [ ] Evaluate `better-gateway` if stock gateway has stability issues
+
+### Key Insight: memory-lancedb vs Our vector-memory MCP
+
+We planned to build a custom `vector-memory` MCP for semantic search. `memory-lancedb`
+already does this as a drop-in plugin:
+- Auto-captures memories from conversations
+- Auto-recalls relevant memories before each run
+- Vector similarity search (LanceDB)
+- No custom MCP development needed
+
+**Recommendation**: Use `memory-lancedb` as the memory backend, skip building custom
+vector-memory MCP. DocArchiverAgent still handles progressive summarization — it just
+feeds into LanceDB instead of a custom index.
+
+---
 
 ## Key References
 
