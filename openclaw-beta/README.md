@@ -230,12 +230,70 @@ feeds into LanceDB instead of a custom index.
 
 ---
 
-## Key References
+## Links & References Index
 
-- [AgentMesh: Multi-Agent SWE Framework](https://arxiv.org/abs/2507.19902)
-- [TOM-SWE: User Mental Modeling](https://arxiv.org/abs/2510.21903)
-- [Agyn: Team-Based Autonomous SWE](https://arxiv.org/abs/2602.01465)
-- [Reflexion: Verbal Reinforcement Learning](https://arxiv.org/abs/2303.11366)
+### Core Infrastructure
+
+| Component | Description | Link |
+|-----------|-------------|------|
+| OpenClaw | AI agent platform (gateway + agents) | [github.com/openclaw/openclaw](https://github.com/openclaw/openclaw) |
+| Lobster | OpenClaw workflow engine for multi-agent pipelines | [github.com/openclaw/lobster](https://github.com/openclaw/lobster) |
+| LiteLLM | LLM proxy with model routing, fallbacks, cost tracking | [github.com/BerriAI/litellm](https://github.com/BerriAI/litellm) |
+| ClawHub | OpenClaw skills marketplace | [clawhub.ai](https://clawhub.ai/) |
+
+### MCP Servers
+
+| MCP Server | Description | Link |
+|------------|-------------|------|
+| context7 | Library documentation search and retrieval | [github.com/upstash/context7](https://github.com/upstash/context7) |
+| playwright | Browser automation and E2E testing | [github.com/microsoft/playwright-mcp](https://github.com/microsoft/playwright-mcp) |
+| github | GitHub API integration (PRs, issues, repos) | [github.com/github/github-mcp-server](https://github.com/github/github-mcp-server) |
+| fetch | HTTP fetching for web content retrieval | [github.com/modelcontextprotocol/servers/fetch](https://github.com/modelcontextprotocol/servers/tree/main/src/fetch) |
+| filesystem | Local filesystem read/write access | [github.com/modelcontextprotocol/servers/filesystem](https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem) |
+| time | Timestamps and time operations | [github.com/modelcontextprotocol/servers/time](https://github.com/modelcontextprotocol/servers/tree/main/src/time) |
+
+### OpenClaw Plugins (Gateway-Level)
+
+| Plugin | Description | Link |
+|--------|-------------|------|
+| memory-lancedb | Vector memory with auto-recall/capture (LanceDB) | [openclaw/extensions/memory-lancedb](https://github.com/openclaw/openclaw/blob/main/extensions/memory-lancedb/index.ts) |
+| composio | Managed OAuth for 860+ apps | [github.com/ComposioHQ/openclaw-composio](https://github.com/ComposioHQ/openclaw-composio) |
+| memOS cloud | Cross-agent isolated memory with async recall/save | [github.com/MemTensor/MemOS-Cloud-OpenClaw-Plugin](https://github.com/MemTensor/MemOS-Cloud-OpenClaw-Plugin) |
+| openclaw-foundry | Self-modifying agent tool generation | [github.com/lekt9/openclaw-foundry](https://github.com/lekt9/openclaw-foundry) |
+| better-gateway | Auto-reconnect gateway with embedded IDE | [github.com/ThisIsJeron/openclaw-better-gateway](https://github.com/ThisIsJeron/openclaw-better-gateway) |
+| voice-call | Outbound voice notifications via Twilio | [docs.openclaw.ai/plugins/voice-call](https://docs.openclaw.ai/plugins/voice-call) |
+| microsoft-teams | MS Teams channel plugin | [docs.openclaw.ai/channels/msteams](https://docs.openclaw.ai/channels/msteams) |
+| nostr | Nostr network channel plugin | [docs.openclaw.ai/channels/nostr](https://docs.openclaw.ai/channels/nostr) |
+
+### OpenClaw Skills (Agent-Level)
+
+| Skill | Description | Link |
+|-------|-------------|------|
+| capability-evolver | Agent self-improvement over time (35K installs) | [clawhub.ai/autogame-17/capability-evolver](https://clawhub.ai/autogame-17/capability-evolver) |
+| self-improving-agent | Learn from interactions, optimize responses (15K installs) | [clawhub.ai/pskoett/self-improving-agent](https://clawhub.ai/pskoett/self-improving-agent) |
+| gog | Gmail, Calendar, Drive, Contacts, Sheets, Docs | [openclaw/skills/gog](https://github.com/openclaw/skills/blob/main/skills/steipete/gog/SKILL.md) |
+| n8n-workflow | Create/trigger/monitor n8n workflows | [openclaw/skills/n8n](https://github.com/openclaw/skills/blob/main/skills/thomasansems/n8n/SKILL.md) |
+| agentzero-bridge | Delegate tasks to Agent Zero framework | [playbooks.com/skills/agent-zero-bridge](https://playbooks.com/skills/openclaw/skills/agent-zero-bridge) |
+| wacli | WhatsApp integration (16K installs) | [openclaw/skills/wacli](https://github.com/openclaw/openclaw/blob/main/skills/wacli/SKILL.md) |
+| ouraclaw | Oura Ring health data integration | [github.com/rickybloomfield/OuraClaw](https://github.com/rickybloomfield/OuraClaw) |
+
+### Supporting Libraries
+
+| Library | Description | Link |
+|---------|-------------|------|
+| LanceDB | Vector database for memory-lancedb plugin | [github.com/lancedb/lancedb](https://github.com/lancedb/lancedb) |
+| Composio | OAuth platform (composio plugin backend) | [github.com/ComposioHQ/composio](https://github.com/ComposioHQ/composio) |
+
+### Research Papers
+
+| Paper | Topic | Link |
+|-------|-------|------|
+| AgentMesh | Multi-Agent SWE Framework | [arxiv.org/abs/2507.19902](https://arxiv.org/abs/2507.19902) |
+| TOM-SWE | User Mental Modeling for SWE Agents | [arxiv.org/abs/2510.21903](https://arxiv.org/abs/2510.21903) |
+| Agyn | Team-Based Autonomous SWE | [arxiv.org/abs/2602.01465](https://arxiv.org/abs/2602.01465) |
+| Reflexion | Verbal Reinforcement Learning for Agents | [arxiv.org/abs/2303.11366](https://arxiv.org/abs/2303.11366) |
+
+---
 
 ## Quick Start
 
