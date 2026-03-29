@@ -17,6 +17,13 @@ model_list:
       model: "ollama/qwen2.5-coder:7b"
       api_base: "http://host.docker.internal:11434"
 
+  # --- RunPod Serverless ---
+  - model_name: "runpod-dolphin"
+    litellm_params:
+      model: "openai/dolphin-mistral-24b-venice-edition"
+      api_base: "https://api.runpod.ai/v2/ex90fskokg2840/run"
+      api_key: "$RUNPOD_API_KEY"
+
   # --- Cloud providers (when API keys are configured) ---
   - model_name: "gpt-4o"
     litellm_params:
@@ -30,6 +37,10 @@ model_list:
   - model_name: "claude-opus-4"
     litellm_params:
       model: "anthropic/claude-opus-4-20250514"
+
+general_settings:
+  store_model_in_db: true
+  store_prompts_in_spend_logs: true
 
 litellm_settings:
   drop_params: true
