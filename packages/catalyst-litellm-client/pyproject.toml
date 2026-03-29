@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "catalyst-litellm-client"
+version = "0.1.0"
+description = "Unified LLM API access through LiteLLM proxy for all Catalyst projects"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+    { name = "Catalyst Team" }
+]
+
+dependencies = [
+    "langchain-openai>=0.1.0",
+    "langchain-core>=0.2.0",
+    "httpx>=0.24.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["catalyst_litellm_client*"]
+
+[tool.setuptools.package-data]
+catalyst_litellm_client = ["py.typed"]
