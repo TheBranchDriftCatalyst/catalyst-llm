@@ -116,11 +116,11 @@ data:
           api_base: "http://192.168.1.86:11434"
 
       # --- Custom Inference Endpoints (RunPod/EC2/vLLM) ---
-      # RunPod Serverless - Dolphin Mistral 24B Venice
+      # RunPod Serverless - Dolphin Mistral 24B Venice (OpenAI-compatible)
       - model_name: "runpod-dolphin"
         litellm_params:
           model: "openai/dolphin-mistral-24b-venice-edition"
-          api_base: "https://api.runpod.io/v2/ex90fskokg2840/openai/v1"
+          api_base: "https://api.runpod.ai/v2/ex90fskokg2840/openai/v1"
           api_key: "os.environ/RUNPOD_API_KEY"
 
       # EC2/Self-hosted vLLM (example, uncomment when ready):
