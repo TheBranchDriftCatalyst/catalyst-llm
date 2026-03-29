@@ -119,7 +119,7 @@ data:
       # RunPod Serverless - Dolphin Mistral 24B Venice (OpenAI-compatible)
       - model_name: "runpod-dolphin"
         litellm_params:
-          model: "openai/dolphin-mistral-24b-venice-edition"
+          model: "openai/dphn/dolphin-mistral-24b-venice-edition"
           api_base: "https://api.runpod.ai/v2/ex90fskokg2840/openai/v1"
           api_key: "os.environ/RUNPOD_API_KEY"
 
