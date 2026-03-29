@@ -116,16 +116,14 @@ data:
           api_base: "http://192.168.1.86:11434"
 
       # --- Custom Inference Endpoints (RunPod/EC2/vLLM) ---
-      # Uncomment and configure when endpoint is ready
-      #
-      # RunPod Serverless:
-      # - model_name: "deepseek-r1"
-      #   litellm_params:
-      #     model: "openai/deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"
-      #     api_base: "https://api.runpod.ai/v2/<ENDPOINT_ID>/openai/v1"
-      #     api_key: "os.environ/RUNPOD_API_KEY"
-      #
-      # EC2/Self-hosted vLLM:
+      # RunPod Serverless - Dolphin Mistral 24B Venice
+      - model_name: "runpod-dolphin"
+        litellm_params:
+          model: "openai/dolphin-mistral-24b-venice-edition"
+          api_base: "https://api.runpod.ai/v2/ex90fskokg2840/run"
+          api_key: "os.environ/RUNPOD_API_KEY"
+
+      # EC2/Self-hosted vLLM (example, uncomment when ready):
       # - model_name: "deepseek-r1"
       #   litellm_params:
       #     model: "openai/deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"
