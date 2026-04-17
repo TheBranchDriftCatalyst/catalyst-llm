@@ -1,59 +1,98 @@
 model_list:
-  # --- Local Ollama (native on Mac) ---
-  - model_name: "dolphin-mistral"
-    litellm_params:
-      model: "ollama/dolphin-mistral:7b"
-      api_base: "http://host.docker.internal:11434"
-  - model_name: "llama3.2"
-    litellm_params:
-      model: "ollama/llama3.2"
-      api_base: "http://host.docker.internal:11434"
-  - model_name: "mistral"
-    litellm_params:
-      model: "ollama/mistral"
-      api_base: "http://host.docker.internal:11434"
-  - model_name: "qwen2.5-coder:7b"
-    litellm_params:
-      model: "ollama/qwen2.5-coder:7b"
-      api_base: "http://host.docker.internal:11434"
-
-  # --- RunPod Serverless ---
-  - model_name: "runpod-dolphin"
-    litellm_params:
-      model: "openai/dolphin-mistral-24b-venice-edition"
-      api_base: "https://api.runpod.ai/v2/ex90fskokg2840/run"
-      api_key: "$RUNPOD_API_KEY"
-
-  # --- Cloud providers (when API keys are configured) ---
-  - model_name: "gpt-4o"
+  # --- Cloud providers ---
+  - model_name: "openai/gpt-4o"
     litellm_params:
       model: "openai/gpt-4o"
       rpm: 400
       tpm: 25000
-  - model_name: "gpt-4o-mini"
+  - model_name: "openai/gpt-4o-mini"
     litellm_params:
       model: "openai/gpt-4o-mini"
       rpm: 400
       tpm: 180000
-  - model_name: "o3-mini"
+  - model_name: "openai/o3-mini"
     litellm_params:
       model: "openai/o3-mini"
       rpm: 400
       tpm: 180000
-  - model_name: "claude-sonnet-4"
+  - model_name: "anthropic/claude-sonnet-4"
     litellm_params:
       model: "anthropic/claude-sonnet-4-20250514"
-  - model_name: "claude-opus-4"
+  - model_name: "anthropic/claude-opus-4"
     litellm_params:
       model: "anthropic/claude-opus-4-20250514"
+  - model_name: "anthropic/claude-3-5-haiku"
+    litellm_params:
+      model: "anthropic/claude-3-5-haiku-20241022"
 
-  # --- Embeddings ---
-  - model_name: "text-embedding-3-small"
+  # --- RunPod Serverless ---
+  - model_name: "runpod/dolphin-mistral-24b"
+    litellm_params:
+      model: "openai/dphn/dolphin-mistral-24b-venice-edition"
+      api_base: "https://api.runpod.ai/v2/ex90fskokg2840/openai/v1"
+      api_key: "$RUNPOD_API_KEY"
+
+  # --- Ollama (Mac M3 Max Pro @ 192.168.1.85) ---
+  - model_name: "ollama-mac/qwen3:30b-a3b"
+    litellm_params:
+      model: "ollama/qwen3:30b-a3b"
+      api_base: "http://192.168.1.85:11434"
+  - model_name: "ollama-mac/qwen2.5:32b"
+    litellm_params:
+      model: "ollama/qwen2.5:32b"
+      api_base: "http://192.168.1.85:11434"
+  - model_name: "ollama-mac/llama3.3"
+    litellm_params:
+      model: "ollama/llama3.3:latest"
+      api_base: "http://192.168.1.85:11434"
+  - model_name: "ollama-mac/qwen2.5-coder:7b"
+    litellm_params:
+      model: "ollama/qwen2.5-coder:7b"
+      api_base: "http://192.168.1.85:11434"
+  - model_name: "ollama-mac/hermes3:8b"
+    litellm_params:
+      model: "ollama/hermes3:8b"
+      api_base: "http://192.168.1.85:11434"
+  - model_name: "ollama-mac/dolphin-mistral"
+    litellm_params:
+      model: "ollama/dolphin-mistral:7b"
+      api_base: "http://192.168.1.85:11434"
+  - model_name: "ollama-mac/deepseek-r1:7b"
+    litellm_params:
+      model: "ollama/deepseek-r1:7b"
+      api_base: "http://192.168.1.85:11434"
+  - model_name: "ollama-mac/dolphin3:8b"
+    litellm_params:
+      model: "ollama/dolphin3:8b"
+      api_base: "http://192.168.1.85:11434"
+  - model_name: "ollama-mac/llava:13b"
+    litellm_params:
+      model: "ollama/llava:13b"
+      api_base: "http://192.168.1.85:11434"
+
+  # --- Ollama (cluster fallback) ---
+  - model_name: "ollama-cluster/mistral"
+    litellm_params:
+      model: "ollama/mistral"
+      api_base: "http://ollama.catalyst-llm.svc.cluster.local:11434"
+
+  # --- Embedding Models (local - free, no quota) ---
+  - model_name: "ollama-mac/nomic-embed-text"
+    litellm_params:
+      model: "ollama/nomic-embed-text"
+      api_base: "http://192.168.1.85:11434"
+  - model_name: "ollama-mac/mxbai-embed-large"
+    litellm_params:
+      model: "ollama/mxbai-embed-large"
+      api_base: "http://192.168.1.85:11434"
+
+  # --- Embedding Models (OpenAI - fallback) ---
+  - model_name: "openai/text-embedding-3-small"
     litellm_params:
       model: "openai/text-embedding-3-small"
       rpm: 400
       tpm: 180000
-  - model_name: "text-embedding-3-large"
+  - model_name: "openai/text-embedding-3-large"
     litellm_params:
       model: "openai/text-embedding-3-large"
       rpm: 400
