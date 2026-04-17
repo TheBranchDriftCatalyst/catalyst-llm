@@ -26,10 +26,10 @@ model_list:
       model: "anthropic/claude-3-5-haiku-20241022"
 
   # --- RunPod Serverless ---
-  - model_name: "runpod/dolphin-mistral-24b"
+  - model_name: "runpod/qwen3:30b-a3b"
     litellm_params:
-      model: "openai/dphn/dolphin-mistral-24b-venice-edition"
-      api_base: "https://api.runpod.ai/v2/ex90fskokg2840/openai/v1"
+      model: "openai/Qwen/Qwen3-30B-A3B-Instruct-2507"
+      api_base: "https://api.runpod.ai/v2/vvcncuivef9qzo/openai/v1"
       api_key: "$RUNPOD_API_KEY"
 
   # --- Ollama (Mac M3 Max Pro @ 192.168.1.85) ---
