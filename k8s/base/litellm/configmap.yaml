@@ -116,6 +116,11 @@ data:
           api_base: "http://192.168.1.85:11434"
 
       # --- Custom Inference Endpoints (RunPod/EC2/vLLM) ---
+      - model_name: "runpod/gemma-4-31b-it"
+        litellm_params:
+          model: "openai/google/gemma-4-31B-it"
+          api_base: "https://api.runpod.ai/v2/vvcncuivef9qzo/openai/v1"
+          api_key: "os.environ/RUNPOD_API_KEY"
       - model_name: "runpod/qwen3:30b-a3b"
         litellm_params:
           model: "openai/qwen/qwen3-30b-a3b-instruct-2507"
