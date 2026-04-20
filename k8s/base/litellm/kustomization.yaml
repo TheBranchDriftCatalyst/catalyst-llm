@@ -3,10 +3,15 @@ kind: Kustomization
 
 resources:
   - external-secret.yaml
-  - configmap.yaml
   - postgresql.yaml
-  # TODO: Build and push litellm-pgvector image to local registry, then enable
-  # - pgvector-service.yaml
   - deployment.yaml
   - service.yaml
   - ingressroute.yaml
+
+# configMapGenerator appends a content hash suffix to the ConfigMap name.
+# Kustomize auto-updates all volume refs in deployment.yaml.
+# Result: any config.yaml change triggers a pod rollout automatically.
+configMapGenerator:
+  - name: litellm-config
+    files:
+      - config.yaml
