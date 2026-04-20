@@ -26,6 +26,11 @@ model_list:
       model: "anthropic/claude-3-5-haiku-20241022"
 
   # --- RunPod Serverless ---
+  - model_name: "runpod/gemma-4-31b-it"
+    litellm_params:
+      model: "openai/google/gemma-4-31B-it"
+      api_base: "https://api.runpod.ai/v2/vvcncuivef9qzo/openai/v1"
+      api_key: "$RUNPOD_API_KEY"
   - model_name: "runpod/qwen3:30b-a3b"
     litellm_params:
       model: "openai/qwen/qwen3-30b-a3b-instruct-2507"
