@@ -33,3 +33,8 @@ build/
 
 # Local development symlinks
 apps/prompt-playground/catalyst-ui
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
