@@ -1,0 +1,46 @@
+version: "0.1.1"
+name: "catalyst-llm"
+description: "Self-hosted LLM infrastructure stack with unified multi-provider proxy (LiteLLM), multiple chat UIs, web search (SearXNG), and a multi-agent orchestration framework (OpenClaw)"
+repo_url: "https://github.com/TheBranchDriftCatalyst/catalyst-llm"
+private: true
+status: "active"
+
+tech_stack:
+  languages:
+    - "python"
+    - "typescript"
+    - "yaml"
+    - "starlark"
+  frameworks:
+    - "react"
+    - "langchain"
+    - "vite"
+    - "tailwindcss"
+  tools:
+    - "docker"
+    - "tilt"
+    - "kubernetes"
+    - "argocd"
+    - "ollama"
+    - "litellm"
+    - "open-webui"
+    - "searxng"
+
+groups:
+  - "ai-ml"
+  - "tools"
+  - "catalyst-core"
+
+badges:
+  stars: true
+  issues: true
+  prs: true
+  license: true
+
+highlights:
+  - "Unified LLM proxy (LiteLLM) routing local Ollama, OpenAI, Anthropic, and RunPod models through a single OpenAI-compatible API"
+  - "Three chat UIs for different use cases: Open WebUI (RAG + web search), LobeChat (plugins), SillyTavern (roleplay)"
+  - "OpenClaw multi-agent orchestration framework with 23 specialized agents organized into L1-L4 hierarchy"
+  - "Prompt Playground React app for interactive model testing with shared catalyst-ui components"
+  - "Python SDK (catalyst-litellm-client) providing LangChain-compatible access to all configured LLM providers"
+  - "Tilt-based dev environment with mode switching between local Docker Compose and Kubernetes cluster deployment"
