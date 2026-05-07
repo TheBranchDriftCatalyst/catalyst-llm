@@ -17,6 +17,27 @@ node:
   ip: "192.168.1.200"
   chip: "M5 Max"
 
+# ─── Image generation (ComfyUI + OpenAI shim) ───────────────────────
+# The shim speaks OpenAI-compatible /v1/images/generations and forwards
+# to a local ComfyUI instance. Each pipeline below is a workflow JSON
+# template under packages/mac-node/services/comfyui-shim/pipelines/.
+image_gen:
+  shim_port: 8012
+  comfyui_port: 8188
+
+  pipelines:
+    - name: flux-dev-pro
+      alias: flux-pro
+      description: "Flux Dev FP8 + 4x ESRGAN -> downscale 2048 — PRO quality preset (~35s on M5 Max)"
+      tags: [image_gen, flux, pro]
+      workflow: flux_dev_pro.json
+
+    - name: flux-schnell-fast
+      alias: flux-fast
+      description: "Flux Schnell FP8 — 4-step euler, 1024x1024 (~6s on M5 Max)"
+      tags: [image_gen, flux, fast]
+      workflow: flux_schnell_fast.json
+
 ollama:
   port: 11434
 

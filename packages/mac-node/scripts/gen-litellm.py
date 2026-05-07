@@ -131,16 +131,61 @@ def build_vllm_entries(cfg: dict) -> list[str]:
     return out
 
 
+def build_image_gen_entries(cfg: dict) -> list[str]:
+    """Render LiteLLM entries for ComfyUI shim pipelines.
+
+    Each pipeline emits one entry under ``mac/<alias>`` with
+    ``mode: image_generation`` so LiteLLM routes /v1/images/generations
+    requests through. Same ``extra_aliases`` pattern as ollama/vllm.
+    """
+    image_cfg = cfg.get("image_gen") or {}
+    pipelines = image_cfg.get("pipelines") or []
+    if not pipelines:
+        return []
+    node_ip = cfg["node"]["ip"]
+    chip = cfg["node"]["chip"]
+    shim_port = image_cfg.get("shim_port", 8012)
+    out: list[str] = []
+    for p in pipelines:
+        litellm_params = {
+            "model": f"openai/{p['name']}",
+            "api_base": f"http://{node_ip}:{shim_port}/v1",
+            "api_key": "not-needed",
+        }
+        out.append(render_entry({
+            "model_name": f"mac/{p['alias']}",
+            "litellm_params": dict(litellm_params),
+            "model_info": {
+                "description": f"{p['description']} via ComfyUI shim - Mac {chip} Metal",
+                "mode": "image_generation",
+            },
+        }))
+        for extra in p.get("extra_aliases", []) or []:
+            out.append(render_entry({
+                "model_name": f"mac/{extra}",
+                "litellm_params": dict(litellm_params),
+                "model_info": {
+                    "description": (
+                        f"alias of mac/{p['alias']} ({p['name']}) "
+                        f"via ComfyUI shim - Mac {chip} Metal"
+                    ),
+                    "mode": "image_generation",
+                },
+            }))
+    return out
+
+
 def main() -> int:
     cfg = yaml.safe_load(models_path.read_text())
     ollama = build_ollama_entries(cfg)
     vllm = build_vllm_entries(cfg)
+    image_gen = build_image_gen_entries(cfg)
 
     block_lines = [
         f"{INDENT}{START}",
         f"{INDENT}# DO NOT EDIT — managed by packages/mac-node/scripts/gen-litellm.py",
         f"{INDENT}# Source of truth: packages/mac-node/models.yaml "
-        f"({len(ollama)} ollama, {len(vllm)} vllm-mlx)",
+        f"({len(ollama)} ollama, {len(vllm)} vllm-mlx, {len(image_gen)} image_gen)",
         f"{INDENT}# Regenerate: cd packages/mac-node && task generate",
         "",
         f"{INDENT}# ─── Ollama (Metal accelerated) ───────────────────────────────────",
@@ -148,8 +193,14 @@ def main() -> int:
         "",
         f"{INDENT}# ─── vLLM-MLX (high throughput, OpenAI-compatible) ────────────────",
         *_interleave_blank(vllm),
-        f"{INDENT}{END}",
     ]
+    if image_gen:
+        block_lines += [
+            "",
+            f"{INDENT}# ─── Image generation (ComfyUI shim, OpenAI-compatible) ───────────",
+            *_interleave_blank(image_gen),
+        ]
+    block_lines.append(f"{INDENT}{END}")
     new_block = "\n".join(block_lines)
 
     if not target.exists():
@@ -173,7 +224,10 @@ def main() -> int:
         print(f"  No changes to {target.relative_to(Path.cwd()) if target.is_relative_to(Path.cwd()) else target}")
     else:
         target.write_text(new_text)
-        print(f"  Spliced {len(ollama) + len(vllm)} models into {target}")
+        print(
+            f"  Spliced {len(ollama) + len(vllm) + len(image_gen)} models "
+            f"into {target}"
+        )
 
 
 def _interleave_blank(entries: list[str]) -> list[str]:
