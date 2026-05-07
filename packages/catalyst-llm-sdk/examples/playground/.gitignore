@@ -1,0 +1,12 @@
+node_modules
+dist
+.tsbuildinfo
+
+# Local secrets — sourced via direnv from workspace/talos-homelab/.envrc
+.envrc
+.env
+.env.local
+
+# Playwright MCP debug artifacts
+.playwright-mcp/
+playground-*.png

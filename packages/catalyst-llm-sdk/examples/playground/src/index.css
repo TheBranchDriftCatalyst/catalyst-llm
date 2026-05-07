@@ -1,11 +1,20 @@
 /* Tailwind CSS v4 */
 @import "tailwindcss";
 
+/* Fonts — must come before any @import that bundles other rules. */
 @import url("https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap");
 
-@custom-variant dark (&:is(.dark *));
+/* Catalyst-UI theme (CSS variables only — applied via .theme-catalyst.dark on <html>) */
+@import "../node_modules/@thebranchdriftcatalyst/catalyst-ui/dist/themes/catalyst.css";
 
-@theme {
+/* Scan symlinked SDK dist + catalyst-ui dist so utility classes used in their compiled JS are emitted. */
+@source "../../../dist";
+@source "../../../src";
+@source "../../../node_modules/@thebranchdriftcatalyst/catalyst-ui/dist";
+
+@custom-variant dark (&:is(.dark, .theme-catalyst.dark, .theme-catalyst.dark *));
+
+@theme inline {
   --font-sans: "Rajdhani", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Orbitron", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Space Mono", ui-monospace, monospace;
@@ -36,74 +45,25 @@
 }
 
 @layer base {
-  :root {
-    --background: hsl(30 30% 82%);
-    --foreground: hsl(270 50% 12%);
-    --card: hsl(330 35% 88%);
-    --card-foreground: hsl(270 50% 12%);
-    --popover: hsl(330 35% 88%);
-    --popover-foreground: hsl(270 50% 12%);
-    --primary: hsl(180 70% 32%);
-    --primary-foreground: hsl(0 0% 100%);
-    --secondary: hsl(290 70% 45%);
-    --secondary-foreground: hsl(0 0% 100%);
-    --muted: hsl(30 25% 75%);
-    --muted-foreground: hsl(270 35% 30%);
-    --accent: hsl(320 50% 82%);
-    --accent-foreground: hsl(270 55% 20%);
-    --destructive: hsl(340 75% 50%);
-    --destructive-foreground: hsl(0 0% 100%);
-    --border: hsl(320 30% 70%);
-    --input: hsl(30 25% 80%);
-    --ring: hsl(290 70% 45%);
-    --radius: 0.5rem;
-    --neon-cyan: hsl(180 85% 45%);
-    --neon-purple: hsl(290 80% 55%);
-  }
-
-  .dark {
-    --background: #0a0a0f;
-    --foreground: #e4e4e7;
-    --card: #16161d;
-    --card-foreground: #e4e4e7;
-    --popover: #16161d;
-    --popover-foreground: #e4e4e7;
-    --primary: #00fcd6;
-    --primary-foreground: #0a0a0f;
-    --secondary: #c026d3;
-    --secondary-foreground: #fafafa;
-    --muted: #27272a;
-    --muted-foreground: #a1a1aa;
-    --accent: #1e1e24;
-    --accent-foreground: #fafafa;
-    --destructive: #ff2975;
-    --destructive-foreground: #fafafa;
-    --border: #27272a;
-    --input: #1e1e24;
-    --ring: #00fcd6;
-    --radius: 0.5rem;
-    --neon-cyan: #00fcd6;
-    --neon-purple: #c026d3;
-  }
-
   * {
     border-color: var(--border);
   }
 
-  html, body {
+  html, body, #root {
     background-color: var(--background);
     color: var(--foreground);
+    min-height: 100vh;
   }
 
   body {
-    font-family: var(--font-sans);
+    font-family: var(--font-body, var(--font-sans));
     font-weight: 500;
     letter-spacing: 0.015em;
     -webkit-font-smoothing: antialiased;
   }
 
   h1, h2, h3, h4, h5, h6 {
-    font-family: var(--font-display);
+    font-family: var(--font-heading, var(--font-display));
     font-weight: 700;
     letter-spacing: 0.05em;
     text-transform: uppercase;
@@ -114,7 +74,9 @@
   }
 }
 
-.dark h1, .dark h2, .dark h3 {
+.theme-catalyst.dark h1,
+.theme-catalyst.dark h2,
+.theme-catalyst.dark h3 {
   background: linear-gradient(135deg, var(--neon-cyan) 0%, var(--neon-purple) 50%, var(--neon-cyan) 100%);
   background-size: 200% 200%;
   -webkit-background-clip: text;

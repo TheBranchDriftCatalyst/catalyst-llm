@@ -49,7 +49,8 @@ export class LLMConfig {
         "@catalyst/llm-sdk: no fetch implementation found. Provide one via config.fetch or use a runtime that ships fetch (Node 18+, Bun, browsers).",
       );
     }
-    this.fetchImpl = init.fetch ?? fetch;
+    // Bind global fetch so it isn't invoked as a method on `this.config` (browsers throw "Illegal invocation").
+    this.fetchImpl = init.fetch ?? fetch.bind(globalThis);
   }
 
   get isRemote(): boolean {
