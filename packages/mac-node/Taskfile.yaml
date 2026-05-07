@@ -1,0 +1,229 @@
+version: "3"
+
+includes:
+  runpod: ./runpod/Taskfile.yaml
+
+vars:
+  MAC_IP:
+    sh: echo "${MAC_NODE_IP:-$(ipconfig getifaddr en0 2>/dev/null || echo '192.168.1.200')}"
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  # ─── Setup ──────────────────────────────────────────────────────
+
+  setup:
+    desc: Full setup (brew + venv + launchd + models)
+    cmds:
+      - bash scripts/install-deps.sh
+
+  # ─── Service Management ────────────────────────────────────────
+
+  start:
+    desc: Start all services
+    cmds:
+      - launchctl start com.ollama.server
+      - launchctl start com.open-webui.server
+      - launchctl start com.whisper-api.server
+      - bash scripts/vllm-ctl.sh start
+
+  stop:
+    desc: Stop all services
+    cmds:
+      - launchctl stop com.ollama.server || true
+      - launchctl stop com.open-webui.server || true
+      - launchctl stop com.whisper-api.server || true
+      - bash scripts/vllm-ctl.sh stop
+
+  restart:
+    desc: Restart all services
+    cmds:
+      - task: stop
+      - sleep 2
+      - task: start
+
+  # ─── Health & Status ───────────────────────────────────────────
+
+  health:
+    desc: Check health of all services
+    cmds:
+      - bash scripts/health.sh
+
+  status:
+    desc: Show launchd service status
+    cmds:
+      - |
+        vllm_svcs=$(bash scripts/vllm-ctl.sh services 2>/dev/null | tr '\n' ' ')
+        for svc in com.ollama.server com.open-webui.server com.whisper-api.server $vllm_svcs; do
+          info=$(launchctl list 2>/dev/null | grep "$svc" || echo "- - $svc")
+          pid=$(echo "$info" | awk '{print $1}')
+          label=$(echo "$info" | awk '{print $3}')
+          if [ "$pid" = "-" ]; then
+            echo "$label: loaded (not running)"
+          elif [ -z "$pid" ]; then
+            echo "$svc: not installed"
+          else
+            echo "$label: running (pid $pid)"
+          fi
+        done
+
+  logs:
+    desc: "Tail logs (usage: task logs -- ollama|webui|whisper|vllm)"
+    cmds:
+      - |
+        tail -f /tmp/{{.CLI_ARGS}}.log /tmp/{{.CLI_ARGS}}.err 2>/dev/null || \
+        tail -f /tmp/{{.CLI_ARGS}}-api.log /tmp/{{.CLI_ARGS}}-api.err 2>/dev/null || \
+        echo "No logs for '{{.CLI_ARGS}}'. Try: ollama, open-webui, whisper-api, vllm-mlx"
+
+  # ─── Ollama ────────────────────────────────────────────────────
+  # Per-service controls for the most-frequently-wedging service.
+  # Use `kickstart -k` (kill + start atomically) for force-restarts —
+  # `launchctl stop && start` races and can land in a degraded state
+  # when the daemon is hung on a TCP read instead of crashed cleanly.
+
+  ollama:restart:
+    desc: "Force-restart Ollama (kickstart -k). Use when /api/tags hangs or returns non-JSON."
+    cmds:
+      - launchctl kickstart -k gui/$(id -u)/com.ollama.server
+      - sleep 2
+      - task: ollama:health
+
+  ollama:start:
+    desc: Start Ollama via launchd
+    cmds:
+      - launchctl start com.ollama.server
+
+  ollama:stop:
+    desc: Stop Ollama via launchd
+    cmds:
+      - launchctl stop com.ollama.server || true
+
+  ollama:status:
+    desc: Show Ollama launchd status (pid + restart count)
+    cmds:
+      - launchctl list | grep com.ollama.server || echo "com.ollama.server not loaded"
+
+  ollama:health:
+    desc: "HTTP health probe — fails loudly if /api/tags doesn't return valid JSON"
+    cmds:
+      - |
+        # Note: do NOT merge curl's stderr into stdout — local curlrc may
+        # set --verbose which would dump headers and break JSON parsing.
+        body=$(curl -fsS --max-time 3 http://localhost:11434/api/tags 2>/dev/null) || {
+          echo "✗ Ollama unreachable on :11434 — try: task ollama:restart"
+          exit 1
+        }
+        n=$(printf '%s' "$body" | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d.get('models',[])))" 2>/dev/null) || {
+          echo "✗ /api/tags returned non-JSON (server is wedged) — try: task ollama:restart"
+          exit 1
+        }
+        echo "✓ Ollama healthy — $n models loaded"
+
+  ollama:logs:
+    desc: Tail Ollama stdout + stderr
+    cmds:
+      - tail -f /tmp/ollama.log /tmp/ollama.err
+
+  # ─── vLLM-MLX ──────────────────────────────────────────────────
+
+  vllm:start:
+    desc: Start all vLLM-MLX model servers
+    cmds:
+      - bash scripts/vllm-ctl.sh start
+
+  vllm:stop:
+    desc: Stop all vLLM-MLX model servers
+    cmds:
+      - bash scripts/vllm-ctl.sh stop
+
+  vllm:status:
+    desc: Show vLLM-MLX model server status
+    cmds:
+      - bash scripts/vllm-ctl.sh status
+
+  # ─── Models ────────────────────────────────────────────────────
+
+  generate:
+    desc: "Splice mac/* models into k8s/base/litellm/config.yaml + regenerate pull list"
+    cmds:
+      - python3 scripts/gen-litellm.py
+      - python3 scripts/gen-pull-models.py
+
+  models:
+    desc: Show all models (Ollama + vLLM) with live status
+    cmds:
+      - bash scripts/list-models.sh
+
+  models:ollama:
+    desc: List Ollama models (raw)
+    cmds:
+      - ollama list
+
+  models:pull:
+    desc: "Pull Ollama model (usage: task models:pull -- <model>)"
+    cmds:
+      - ollama pull {{.CLI_ARGS}}
+
+  models:running:
+    desc: Show models loaded in memory
+    cmds:
+      - ollama ps
+
+  # ─── Testing ───────────────────────────────────────────────────
+
+  test:
+    desc: Run full test suite
+    cmds:
+      - bash tests/test-all.sh localhost
+
+  test:ollama:
+    desc: Test Ollama
+    cmds:
+      - bash tests/test-ollama.sh localhost
+
+  test:webui:
+    desc: Test Open WebUI
+    cmds:
+      - bash tests/test-open-webui.sh localhost
+
+  test:whisper:
+    desc: Test Whisper
+    cmds:
+      - bash tests/test-whisper.sh localhost
+
+  test:vllm:
+    desc: Test vLLM-MLX
+    cmds:
+      - bash tests/test-vllm.sh localhost
+
+  test:lan:
+    desc: Test all services from LAN IP
+    cmds:
+      - bash tests/test-all.sh {{.MAC_IP}}
+
+  # ─── K8s ───────────────────────────────────────────────────────
+
+  k8s:apply:
+    desc: Apply K8s manifests to Talos cluster (or let ArgoCD handle it)
+    cmds:
+      - kubectl apply -k k8s/base/
+
+  k8s:remove:
+    desc: Remove K8s manifests
+    cmds:
+      - kubectl delete -k k8s/base/ --ignore-not-found
+
+  # ─── Cleanup ───────────────────────────────────────────────────
+
+  uninstall:
+    desc: Unload all launchd services
+    cmds:
+      - |
+        vllm_svcs=$(bash scripts/vllm-ctl.sh services 2>/dev/null | tr '\n' ' ')
+        for plist in com.ollama.server com.open-webui.server com.whisper-api.server $vllm_svcs; do
+          launchctl unload ~/Library/LaunchAgents/${plist}.plist 2>/dev/null && echo "Unloaded $plist" || true
+          rm -f ~/Library/LaunchAgents/${plist}.plist
+        done

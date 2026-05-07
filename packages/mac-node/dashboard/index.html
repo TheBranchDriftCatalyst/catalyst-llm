@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mac Node</title>
+<style>
+  :root { --bg: #0a0a0a; --card: #141414; --border: #222; --green: #22c55e; --red: #ef4444; --yellow: #eab308; --dim: #555; --text: #e5e5e5; --accent: #60a5fa; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--text); padding: 2rem; max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 0.2rem; }
+  .subtitle { color: var(--dim); font-size: 0.8rem; margin-bottom: 1.5rem; }
+  .ws-status { font-size: 0.7rem; padding: 2px 8px; border-radius: 99px; }
+  .ws-status.connected { background: #16291a; color: var(--green); }
+  .ws-status.disconnected { background: #2a1515; color: var(--red); }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem; }
+
+  .sys-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1.5rem; }
+  @media (max-width: 700px) { .sys-grid { grid-template-columns: repeat(2, 1fr); } }
+  .sys-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }
+  .sys-label { font-size: 0.65rem; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.3rem; }
+  .sys-value { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .sys-sub { font-size: 0.7rem; color: var(--dim); margin-top: 0.15rem; }
+  .bar { height: 3px; background: var(--border); border-radius: 2px; margin-top: 0.5rem; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 2px; transition: width 0.4s ease; }
+
+  .section-title { font-size: 0.75rem; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.75rem; }
+  .svc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.75rem; margin-bottom: 1.5rem; }
+  #vllm-cards { display: contents; }
+  .svc { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }
+  .svc-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; }
+  .svc-name { font-weight: 600; font-size: 0.9rem; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .dot.up { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .dot.down { background: var(--red); }
+  .svc-meta { font-size: 0.7rem; color: var(--dim); }
+  .svc-stat { font-size: 0.75rem; color: var(--dim); margin-top: 0.4rem; }
+  .svc-stat span { color: var(--text); }
+  .svc-links { margin-top: 0.6rem; }
+  .svc-links a { font-size: 0.7rem; color: var(--accent); text-decoration: none; padding: 2px 7px; border: 1px solid #1e3a5f; border-radius: 3px; margin-right: 0.3rem; }
+  .svc-links a:hover { background: #1e3a5f; }
+  .svc-footer { margin-top: 0.6rem; display: flex; align-items: center; gap: 0.4rem; }
+  .svc-footer a { font-size: 0.7rem; color: var(--accent); text-decoration: none; padding: 2px 7px; border: 1px solid #1e3a5f; border-radius: 3px; }
+  .svc-footer a:hover { background: #1e3a5f; }
+  .svc-pid { font-size: 0.65rem; color: #556; font-family: monospace; }
+  .svc-restart { font-size: 0.65rem; color: #f77; background: none; border: 1px solid #533; border-radius: 3px; padding: 1px 6px; cursor: pointer; }
+  .svc-restart:hover { background: #331a1a; border-color: #f77; }
+  .svc-restart.restarting { color: #fa0; border-color: #553; cursor: wait; }
+  .svc-toggle { font-size: 0.65rem; background: none; border: 1px solid var(--border); border-radius: 3px; padding: 1px 6px; cursor: pointer; margin-left: auto; }
+  .svc-toggle.stop { color: var(--yellow); border-color: #553; }
+  .svc-toggle.stop:hover { background: #2a2510; border-color: var(--yellow); }
+  .svc-toggle.start { color: var(--green); border-color: #253; }
+  .svc-toggle.start:hover { background: #102a15; border-color: var(--green); }
+  .svc-toggle.busy { color: var(--dim); cursor: wait; }
+  .svc.disabled { opacity: 0.45; }
+  .svc.disabled .svc-name { text-decoration: line-through; }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; }
+  @media (max-width: 700px) { .two-col { grid-template-columns: 1fr; } }
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }
+  .panel-title { font-size: 0.75rem; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.5rem; }
+  .model-list { font-size: 0.8rem; max-height: 280px; overflow-y: auto; }
+  .model-item { padding: 3px 0; border-bottom: 1px solid #1a1a1a; display: flex; justify-content: space-between; align-items: center; }
+  .model-name { color: var(--text); }
+  .model-size { color: var(--dim); font-size: 0.7rem; }
+  .model-loaded { color: var(--green); font-size: 0.65rem; font-weight: 600; margin-left: 0.4rem; }
+  .running-item { padding: 5px 0; border-bottom: 1px solid #1a1a1a; display: flex; justify-content: space-between; }
+  .running-name { color: var(--green); font-size: 0.85rem; }
+  .running-vram { color: var(--dim); font-size: 0.75rem; }
+  .empty { color: var(--dim); font-size: 0.8rem; font-style: italic; }
+
+  .log-panel { background: var(--card); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 1.5rem; overflow: hidden; }
+  .log-tabs { display: flex; border-bottom: 1px solid var(--border); }
+  .log-tab { padding: 8px 16px; font-size: 0.75rem; cursor: pointer; color: var(--dim); border: none; background: none; border-bottom: 2px solid transparent; }
+  .log-tab:hover { color: var(--text); }
+  .log-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .log-tab .tab-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+  .log-tab .tab-dot.up { background: var(--green); }
+  .log-tab .tab-dot.down { background: var(--red); }
+  .log-toolbar { display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--border); }
+  .log-toolbar button { background: none; border: 1px solid var(--border); color: var(--dim); padding: 2px 8px; border-radius: 3px; cursor: pointer; font-size: 0.7rem; }
+  .log-toolbar button:hover { color: var(--text); border-color: var(--dim); }
+  .log-toolbar .log-info { font-size: 0.7rem; color: var(--dim); }
+  .log-content { height: 350px; overflow-y: auto; padding: 8px 12px; font-family: 'SF Mono', 'Menlo', 'Monaco', monospace; font-size: 0.72rem; line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
+  .log-line { color: var(--text); }
+  .log-line.stderr { color: var(--yellow); }
+  .log-line:hover { background: #1a1a1a; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>Mac Node</h1>
+    <p class="subtitle" id="subtitle">Connecting...</p>
+  </div>
+  <span class="ws-status disconnected" id="ws-badge">disconnected</span>
+</div>
+
+<div class="sys-grid">
+  <div class="sys-card">
+    <div class="sys-label">Memory</div>
+    <div class="sys-value" id="mem-val">--%</div>
+    <div class="sys-sub" id="mem-sub"></div>
+    <div class="bar"><div class="bar-fill" id="mem-bar" style="width:0%;background:var(--green)"></div></div>
+  </div>
+  <div class="sys-card">
+    <div class="sys-label">CPU Load (1m)</div>
+    <div class="sys-value" id="cpu-val">--</div>
+    <div class="sys-sub" id="cpu-sub"></div>
+    <div class="bar"><div class="bar-fill" id="cpu-bar" style="width:0%;background:var(--green)"></div></div>
+  </div>
+  <div class="sys-card">
+    <div class="sys-label">GPU</div>
+    <div class="sys-value" id="gpu-val" style="font-size:1rem">--</div>
+    <div class="sys-sub" id="gpu-sub"></div>
+  </div>
+  <div class="sys-card">
+    <div class="sys-label">Uptime</div>
+    <div class="sys-value" id="uptime-val">--</div>
+  </div>
+</div>
+
+<div class="section-title">Services</div>
+<div class="svc-grid">
+  <div class="svc" id="svc-ollama">
+    <div class="svc-header"><span class="svc-name">Ollama</span><span class="dot" id="dot-ollama"></span></div>
+    <div class="svc-meta">:11434 &mdash; Metal inference</div>
+    <div class="svc-stat">Models: <span id="ollama-count">--</span> &middot; Log: <span id="ollama-log">--</span></div>
+    <div class="svc-footer"><span class="svc-pid" id="pid-ollama"></span><a href="http://localhost:11434" target="_blank">API</a> <button class="svc-restart" onclick="restartSvc('ollama',this)">restart</button><button class="svc-toggle stop" id="toggle-ollama" onclick="toggleSvc('ollama',this)">stop</button></div>
+  </div>
+  <div class="svc" id="svc-webui">
+    <div class="svc-header"><span class="svc-name">Open WebUI</span><span class="dot" id="dot-webui"></span></div>
+    <div class="svc-meta">:3000 &mdash; Chat + Model browser</div>
+    <div class="svc-stat">Log: <span id="webui-log">--</span></div>
+    <div class="svc-footer"><span class="svc-pid" id="pid-webui"></span><a href="http://localhost:3000" target="_blank">Open UI</a> <button class="svc-restart" onclick="restartSvc('webui',this)">restart</button><button class="svc-toggle stop" id="toggle-webui" onclick="toggleSvc('webui',this)">stop</button></div>
+  </div>
+  <div class="svc" id="svc-whisper">
+    <div class="svc-header"><span class="svc-name">Whisper</span><span class="dot" id="dot-whisper"></span></div>
+    <div class="svc-meta">:8787 &mdash; whisper.cpp + diarize</div>
+    <div class="svc-stat">Log: <span id="whisper-log">--</span></div>
+    <div class="svc-footer"><span class="svc-pid" id="pid-whisper"></span><a href="http://localhost:8787" target="_blank">API</a> <button class="svc-restart" onclick="restartSvc('whisper',this)">restart</button><button class="svc-toggle stop" id="toggle-whisper" onclick="toggleSvc('whisper',this)">stop</button></div>
+  </div>
+  <!-- vLLM instances populated from /api/config -->
+  <div id="vllm-cards"></div>
+</div>
+
+<!-- Log Viewer -->
+<div class="section-title">Logs</div>
+<div class="log-panel">
+  <div class="log-tabs">
+    <button class="log-tab active" onclick="switchLog('ollama',this)"><span class="tab-dot" id="logdot-ollama"></span>Ollama</button>
+    <button class="log-tab" onclick="switchLog('webui',this)"><span class="tab-dot" id="logdot-webui"></span>WebUI</button>
+    <button class="log-tab" onclick="switchLog('whisper',this)"><span class="tab-dot" id="logdot-whisper"></span>Whisper</button>
+    <!-- vLLM log tabs populated from /api/config -->
+    <span id="vllm-log-tabs"></span>
+  </div>
+  <div class="log-toolbar">
+    <span class="log-info" id="log-info">--</span>
+    <div>
+      <button onclick="clearLogView()">Clear</button>
+      <button onclick="toggleAutoScroll()" id="autoscroll-btn">Auto-scroll: ON</button>
+    </div>
+  </div>
+  <div class="log-content" id="log-content"></div>
+</div>
+
+<div class="two-col">
+  <div class="panel">
+    <div class="panel-title">Loaded in Memory</div>
+    <div id="running-models"><span class="empty">none</span></div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">All Models (<span id="total-models">0</span>)</div>
+    <div class="model-list" id="model-list"><span class="empty">loading...</span></div>
+  </div>
+</div>
+
+<script>
+let prevLogs = {};
+let ws;
+let modelListCache = null;
+
+function barColor(pct) {
+  return pct > 90 ? 'var(--red)' : pct > 70 ? 'var(--yellow)' : 'var(--green)';
+}
+
+function update(s) {
+  // Memory
+  const mp = s.memory.percent.toFixed(0);
+  document.getElementById('mem-val').textContent = mp + '%';
+  document.getElementById('mem-sub').textContent = `${s.memory.used_gb.toFixed(1)} / ${s.memory.total_gb.toFixed(0)} GB`;
+  const mb = document.getElementById('mem-bar');
+  mb.style.width = mp + '%';
+  mb.style.background = barColor(s.memory.percent);
+
+  // CPU
+  const cpuPct = Math.min(100, s.cpu.load_1m / s.cpu.cores * 100);
+  document.getElementById('cpu-val').textContent = s.cpu.load_1m.toFixed(2);
+  document.getElementById('cpu-sub').textContent = `${s.cpu.cores} cores \u00b7 ${cpuPct.toFixed(0)}%`;
+  const cb = document.getElementById('cpu-bar');
+  cb.style.width = cpuPct + '%';
+  cb.style.background = barColor(cpuPct);
+
+  // GPU
+  document.getElementById('gpu-val').textContent = s.gpu.name || '--';
+  document.getElementById('gpu-sub').textContent = s.gpu.cores ? s.gpu.cores + ' cores' : '';
+
+  // Uptime
+  document.getElementById('uptime-val').textContent = s.uptime;
+
+  // Subtitle
+  document.getElementById('subtitle').textContent =
+    `${s.gpu.name || 'Apple Silicon'} \u00b7 ${s.memory.total_gb.toFixed(0)} GB \u00b7 up ${s.uptime}`;
+
+  // Services
+  for (const [svc, up] of Object.entries(s.services)) {
+    const dot = document.getElementById('dot-' + svc);
+    if (dot) { dot.className = 'dot ' + (up ? 'up' : 'down'); }
+  }
+
+  // Model count
+  document.getElementById('ollama-count').textContent = s.model_count;
+  document.getElementById('total-models').textContent = s.model_count;
+
+  // Log lines with delta
+  for (const [svc, count] of Object.entries(s.log_lines)) {
+    const el = document.getElementById(svc + '-log');
+    if (!el) continue;
+    const prev = prevLogs[svc] || count;
+    const d = count - prev;
+    el.textContent = d > 0 ? `${count} (+${d})` : count;
+    prevLogs[svc] = count;
+  }
+
+  // PIDs
+  for (const [svc, pid] of Object.entries(s.pids || {})) {
+    const el = document.getElementById('pid-' + svc);
+    if (el) el.textContent = 'pid ' + pid;
+  }
+
+  // Running models
+  const rEl = document.getElementById('running-models');
+  const running = s.running_models || [];
+  const runSet = new Set(running.map(m => m.name));
+  if (!running.length) {
+    rEl.innerHTML = '<span class="empty">no models in memory</span>';
+  } else {
+    rEl.innerHTML = running.map(m =>
+      `<div class="running-item"><span class="running-name">${m.name}</span><span class="running-vram">${m.vram_gb.toFixed(1)} GB</span></div>`
+    ).join('');
+  }
+
+  // Fetch full model list less frequently (only if we don't have it yet or count changed)
+  if (!modelListCache || modelListCache.length !== s.model_count) {
+    fetch('http://localhost:11434/api/tags').then(r => r.json()).then(d => {
+      modelListCache = d.models || [];
+      renderModels(modelListCache, runSet);
+    }).catch(() => {});
+  } else {
+    renderModels(modelListCache, runSet);
+  }
+}
+
+function renderModels(models, runSet) {
+  const el = document.getElementById('model-list');
+  if (!models.length) { el.innerHTML = '<span class="empty">no models</span>'; return; }
+  el.innerHTML = models
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map(m => {
+      const gb = (m.size / 1e9).toFixed(1);
+      const loaded = runSet.has(m.name) ? '<span class="model-loaded">LOADED</span>' : '';
+      return `<div class="model-item"><span><span class="model-name">${m.name}</span>${loaded}</span><span class="model-size">${gb} GB</span></div>`;
+    }).join('');
+}
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}/ws`);
+
+  ws.onopen = () => {
+    const b = document.getElementById('ws-badge');
+    b.textContent = 'live';
+    b.className = 'ws-status connected';
+  };
+
+  ws.onmessage = (e) => {
+    try { update(JSON.parse(e.data)); } catch {}
+  };
+
+  ws.onclose = () => {
+    const b = document.getElementById('ws-badge');
+    b.textContent = 'reconnecting...';
+    b.className = 'ws-status disconnected';
+    setTimeout(connect, 3000);
+  };
+}
+
+// ─── Log Streaming (WebSocket) ───────────────────────────────────
+let activeLog = 'ollama';
+let autoScroll = true;
+let logWs = null;
+let lineCount = 0;
+const MAX_LINES = 2000;
+
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function appendLine(entry) {
+  const el = document.getElementById('log-content');
+  const cls = entry.source === 'stderr' ? 'log-line stderr' : 'log-line';
+  const div = document.createElement('div');
+  div.className = cls;
+  div.textContent = entry.line;
+  el.appendChild(div);
+  lineCount++;
+
+  // Trim old lines if over limit
+  while (el.childElementCount > MAX_LINES) {
+    el.removeChild(el.firstChild);
+    lineCount--;
+  }
+
+  document.getElementById('log-info').textContent = `${lineCount} lines \u00b7 streaming`;
+  if (autoScroll) el.scrollTop = el.scrollHeight;
+}
+
+function connectLogWs(svc) {
+  if (logWs) { logWs.close(); logWs = null; }
+
+  const el = document.getElementById('log-content');
+  el.innerHTML = '';
+  lineCount = 0;
+  document.getElementById('log-info').textContent = 'connecting...';
+
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  logWs = new WebSocket(`${proto}//${location.host}/ws/logs?service=${svc}`);
+
+  logWs.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      if (Array.isArray(data)) {
+        // Backlog batch
+        data.forEach(appendLine);
+      } else {
+        // Single streaming line
+        appendLine(data);
+      }
+    } catch {}
+  };
+
+  logWs.onopen = () => {
+    document.getElementById('log-info').textContent = 'connected \u00b7 waiting for data...';
+  };
+
+  logWs.onclose = () => {
+    document.getElementById('log-info').textContent = `${lineCount} lines \u00b7 disconnected`;
+  };
+}
+
+function switchLog(svc, btn) {
+  activeLog = svc;
+  document.querySelectorAll('.log-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  connectLogWs(svc);
+}
+
+function clearLogView() {
+  document.getElementById('log-content').innerHTML = '';
+  lineCount = 0;
+  document.getElementById('log-info').textContent = '0 lines \u00b7 streaming';
+}
+
+function toggleAutoScroll() {
+  autoScroll = !autoScroll;
+  document.getElementById('autoscroll-btn').textContent = `Auto-scroll: ${autoScroll ? 'ON' : 'OFF'}`;
+  if (autoScroll) {
+    const el = document.getElementById('log-content');
+    el.scrollTop = el.scrollHeight;
+  }
+}
+
+// Update log tab dots from service status
+function updateLogDots(services) {
+  for (const [svc, up] of Object.entries(services)) {
+    const dot = document.getElementById('logdot-' + svc);
+    if (dot) dot.className = 'tab-dot ' + (up ? 'up' : 'down');
+  }
+}
+
+// Hook log dots + toggle state into the main update
+const _origUpdate = update;
+update = function(s) {
+  _origUpdate(s);
+  if (s.services) {
+    updateLogDots(s.services);
+    for (const [svc, up] of Object.entries(s.services)) {
+      const btn = document.getElementById('toggle-' + svc);
+      if (btn && !btn.classList.contains('busy')) {
+        updateToggleState(svc, up);
+      }
+    }
+  }
+};
+
+// ─── Service Restart ───────────────────────────────────────────
+function restartSvc(svc, btn) {
+  if (btn.classList.contains('restarting')) return;
+  btn.classList.add('restarting');
+  btn.textContent = 'restarting...';
+  fetch('/api/restart', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({service: svc})
+  })
+  .then(r => r.json())
+  .then(res => {
+    btn.textContent = res.status === 'ok' ? 'restarted' : 'failed';
+    const pidEl = document.getElementById('pid-' + svc);
+    if (pidEl && res.pid) pidEl.textContent = 'pid ' + res.pid;
+    setTimeout(() => {
+      btn.textContent = 'restart';
+      btn.classList.remove('restarting');
+    }, 3000);
+  })
+  .catch(() => {
+    btn.textContent = 'failed';
+    setTimeout(() => {
+      btn.textContent = 'restart';
+      btn.classList.remove('restarting');
+    }, 3000);
+  });
+}
+
+// ─── Service Toggle (stop/start) ────────────────────────────────
+function toggleSvc(svc, btn) {
+  if (btn.classList.contains('busy')) return;
+  const action = btn.classList.contains('stop') ? 'stop' : 'start';
+  btn.classList.add('busy');
+  btn.textContent = action === 'stop' ? 'stopping...' : 'starting...';
+  fetch('/api/toggle', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({service: svc, action: action})
+  })
+  .then(r => r.json())
+  .then(res => {
+    if (res.status === 'ok') {
+      updateToggleState(svc, action === 'start');
+    } else {
+      btn.textContent = 'failed';
+    }
+    btn.classList.remove('busy');
+    setTimeout(() => updateToggleState(svc, action === 'start'), 3000);
+  })
+  .catch(() => {
+    btn.textContent = 'failed';
+    btn.classList.remove('busy');
+  });
+}
+
+function updateToggleState(svc, isUp) {
+  const btn = document.getElementById('toggle-' + svc);
+  const card = document.getElementById('svc-' + svc);
+  if (!btn) return;
+  if (isUp) {
+    btn.className = 'svc-toggle stop';
+    btn.textContent = 'stop';
+    if (card) card.classList.remove('disabled');
+  } else {
+    btn.className = 'svc-toggle start';
+    btn.textContent = 'start';
+    if (card) card.classList.add('disabled');
+  }
+}
+
+// ─── Dynamic Config Loading ────────────────────────────────────
+function buildVLLMCards(instances) {
+  const container = document.getElementById('vllm-cards');
+  const tabContainer = document.getElementById('vllm-log-tabs');
+  if (!container || !tabContainer) return;
+
+  container.innerHTML = instances.map(inst => `
+    <div class="svc" id="svc-${inst.label}">
+      <div class="svc-header"><span class="svc-name">${inst.description}</span><span class="dot" id="dot-${inst.label}"></span></div>
+      <div class="svc-meta">:${inst.port} &mdash; ${(inst.tags || []).join(', ')}</div>
+      <div class="svc-stat">Log: <span id="${inst.label}-log">--</span></div>
+      <div class="svc-footer"><span class="svc-pid" id="pid-${inst.label}"></span><a href="http://localhost:${inst.port}/v1/models" target="_blank">API</a> <button class="svc-restart" onclick="restartSvc('${inst.label}',this)">restart</button><button class="svc-toggle stop" id="toggle-${inst.label}" onclick="toggleSvc('${inst.label}',this)">stop</button></div>
+    </div>
+  `).join('');
+
+  tabContainer.innerHTML = instances.map(inst =>
+    `<button class="log-tab" onclick="switchLog('${inst.label}',this)"><span class="tab-dot" id="logdot-${inst.label}"></span>${inst.label}</button>`
+  ).join('');
+}
+
+fetch('/api/config')
+  .then(r => r.json())
+  .then(cfg => {
+    if (cfg.vllm && cfg.vllm.instances) {
+      buildVLLMCards(cfg.vllm.instances);
+    }
+  })
+  .catch(() => {});
+
+// Start streaming default tab
+connectLogWs('ollama');
+
+connect();
+</script>
+</body>
+</html>

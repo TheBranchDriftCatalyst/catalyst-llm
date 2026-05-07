@@ -1,0 +1,42 @@
+# Exposes the Mac's bare-metal Ollama as a Kubernetes service.
+# Pods in the Talos cluster can reach it at:
+#   ollama-mac.mac-node.svc.cluster.local:11434
+#
+# This uses manual Endpoints (not ExternalName) because:
+# - ExternalName requires DNS resolution, which can be flaky with /etc/hosts
+# - Endpoints with a static IP is more reliable on a LAN
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: ollama-mac
+  namespace: mac-node
+  labels:
+    app.kubernetes.io/name: ollama
+    app.kubernetes.io/component: inference
+    app.kubernetes.io/part-of: mac-node
+    node: mac-m3
+subsets:
+  - addresses:
+      - ip: 192.168.1.200  # Update to match your Mac's static IP
+    ports:
+      - name: api
+        port: 11434
+        protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama-mac
+  namespace: mac-node
+  labels:
+    app.kubernetes.io/name: ollama
+    app.kubernetes.io/component: inference
+    app.kubernetes.io/part-of: mac-node
+    node: mac-m3
+spec:
+  ports:
+    - name: api
+      port: 11434
+      targetPort: 11434
+      protocol: TCP

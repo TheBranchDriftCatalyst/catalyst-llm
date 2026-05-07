@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.vllm-mlx.qwen3</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__VENV__/bin/vllm-mlx</string>
+        <string>serve</string>
+        <string>mlx-community/Qwen3-32B-4bit</string>
+        <string>--host</string>
+        <string>0.0.0.0</string>
+        <string>--port</string>
+        <string>8002</string>
+    </array>
+    <key>RunAtLoad</key>
+    <false/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/tmp/vllm-qwen3.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/vllm-qwen3.err</string>
+    <key>ProcessType</key>
+    <string>Interactive</string>
+    <key>Nice</key>
+    <integer>-5</integer>
+</dict>
+</plist>
