@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# pre-commit: keep k8s/base/litellm/config.yaml in sync with packages/mac-node/models.yaml
+#
+# Strategy: regenerate the spliced mac-node block. If anything changed and
+# wasn't already staged, abort the commit and tell the user to review +
+# stage the diff. Never silently mutates the commit.
+#
+# Install (one-time):
+#   git config core.hooksPath .githooks
+#
+# Bypass: `git commit --no-verify` (use only if you know what you're doing).
+
+set -euo pipefail
+
+REPO=$(git rev-parse --show-toplevel)
+GEN="${REPO}/packages/mac-node/scripts/gen-litellm.py"
+SRC="${REPO}/packages/mac-node/models.yaml"
+TARGET="${REPO}/k8s/base/litellm/config.yaml"
+
+# Only run when something we care about is staged. Cheap exit otherwise.
+staged=$(git diff --cached --name-only)
+if ! echo "$staged" | grep -qE '^(packages/mac-node/(models\.yaml|scripts/gen-litellm\.py)|k8s/base/litellm/config\.yaml)$'; then
+  exit 0
+fi
+
+# Capture target hash before regen.
+before=$(git hash-object "$TARGET" 2>/dev/null || echo "")
+
+python3 "$GEN" >/dev/null
+
+after=$(git hash-object "$TARGET")
+
+# Whether the target changed because of regen.
+if [[ "$before" != "$after" ]]; then
+  # The target file on disk now differs from what was at HEAD or what was staged.
+  # If the on-disk version matches the staged version, we're fine — user already
+  # ran the generator. Otherwise, abort.
+  staged_hash=$(git ls-files -s -- "$TARGET" | awk '{print $2}' || echo "")
+  if [[ "$after" != "$staged_hash" ]]; then
+    cat >&2 <<EOF
+✗ pre-commit: gen-litellm.py produced changes to k8s/base/litellm/config.yaml
+  that aren't staged.
+
+  models.yaml or the generator changed, but the cluster config wasn't regenerated.
+  Review the diff and stage it:
+
+    git diff k8s/base/litellm/config.yaml
+    git add k8s/base/litellm/config.yaml
+
+  Then retry the commit.
+EOF
+    exit 1
+  fi
+fi
+
+exit 0
