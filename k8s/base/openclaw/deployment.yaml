@@ -61,6 +61,40 @@ spec:
               mountPath: /home/node/.openclaw
             - name: openclaw-config
               mountPath: /tmp/openclaw-defaults
+        - name: install-plugins-skills
+          image: alpine/openclaw:latest
+          securityContext:
+            runAsUser: 0
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              cd /home/node/.openclaw
+
+              # Composio plugin (npm)
+              if [ ! -d "plugins/composio/node_modules" ]; then
+                mkdir -p plugins/composio && cd plugins/composio
+                npm init -y 2>/dev/null || true
+                npm install @composio/openclaw-plugin
+                cd /home/node/.openclaw
+              fi
+
+              # Skills via git clone (clawhub fallback)
+              mkdir -p skills
+              [ ! -d "skills/capability-evolver" ] && \
+                git clone --depth=1 https://github.com/autogame-17/capability-evolver.git skills/capability-evolver || true
+              [ ! -d "skills/self-improving-agent" ] && \
+                git clone --depth=1 https://github.com/pskoett/self-improving-agent.git skills/self-improving-agent || true
+
+              # Create self-improving-agent workspace dirs
+              mkdir -p workspace/.learnings
+              touch workspace/.learnings/LEARNINGS.md workspace/.learnings/ERRORS.md workspace/.learnings/FEATURE_REQUESTS.md
+
+              chown -R 1000:1000 plugins skills workspace/.learnings lancedb 2>/dev/null || true
+              echo "Done"
+          volumeMounts:
+            - name: openclaw-data
+              mountPath: /home/node/.openclaw
       containers:
         - name: openclaw
           image: alpine/openclaw:latest
@@ -90,6 +124,12 @@ spec:
                 secretKeyRef:
                   name: litellm-secrets
                   key: master-key
+            # Composio API key for OAuth plugin
+            - name: COMPOSIO_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openclaw-secrets
+                  key: composio-api-key
             # Notion API key for Notion skill
             - name: NOTION_API_KEY
               valueFrom:

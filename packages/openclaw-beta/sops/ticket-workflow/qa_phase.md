@@ -12,6 +12,7 @@
 - Creates test plan in `docs/qa/test_plans/<feature>.md`
 - Identifies test types needed (unit, integration, e2e)
 - Assigns test tasks to QA sub-agents
+- Utilize cartesian product to determine the set of valid and relevant tests with invariants branches pruned
 
 ### 2. Unit Test Execution
 - QAUnitTestAgent reviews existing tests
