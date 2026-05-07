@@ -1,6 +1,21 @@
-import { Slider } from "@thebranchdriftcatalyst/catalyst-ui/ui/slider";
+import type { ComponentType } from "react";
+import { Slider as RawSlider } from "@thebranchdriftcatalyst/catalyst-ui/ui/slider";
 import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
 import type { ChatParams } from "../client/index.js";
+
+// catalyst-ui's Slider extends Radix's SliderPrimitive.Root, but Radix's
+// peer-dep types aren't resolvable from this consumer without bringing the
+// whole Radix tree into devDeps. Cast to a focused shape that captures the
+// props we actually pass — runtime contract is unchanged.
+type SliderShape = ComponentType<{
+  value?: number[];
+  onValueChange?: (value: number[]) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+  className?: string;
+}>;
+const Slider = RawSlider as SliderShape;
 
 export interface ParameterControlsProps {
   params: ChatParams;
