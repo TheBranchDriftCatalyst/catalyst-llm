@@ -14,7 +14,7 @@ metadata:
     node: mac-m3
 subsets:
   - addresses:
-      - ip: 192.168.1.200  # Update to match your Mac's static IP
+      - ip: 192.168.1.33  # Update to match your Mac's static IP
     ports:
       - name: http
         port: 8080

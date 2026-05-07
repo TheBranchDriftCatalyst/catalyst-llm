@@ -9,7 +9,7 @@ selected backend.
 
 | Backend | API | Model addressing |
 |---|---|---|
-| `mac` | Ollama-native `/api/{generate,embeddings}` at `192.168.1.200:11434` | raw tag (e.g. `gemma4:26b`) |
+| `mac` | Ollama-native `/api/{generate,embeddings}` at `192.168.1.33:11434` | raw tag (e.g. `gemma4:26b`) |
 | `litellm` | OpenAI-compatible `/v1/{chat/completions,embeddings}` proxy | `mac/<alias>` (e.g. `mac/gemma4-vision`) |
 
 ## Run
@@ -42,7 +42,7 @@ uv run --with pytest --with httpx --with pyyaml --with pillow \
 | Flag | Default | Source of default |
 |---|---|---|
 | `--backend` | `mac` | `$BACKEND`, choices: `mac`, `litellm`, `both` |
-| `--mac-host` | `192.168.1.200` | `$MAC_HOST` |
+| `--mac-host` | `192.168.1.33` | `$MAC_HOST` |
 | `--mac-port` | `11434` | `$MAC_PORT` |
 | `--litellm-base` | `http://localhost:4000` | `$LITELLM_BASE` |
 | `--litellm-key` | (empty) | `$LITELLM_API_KEY` |
