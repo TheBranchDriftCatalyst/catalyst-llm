@@ -45,6 +45,34 @@ model_list:
   # RunPod (custom vLLM serverless endpoints)
   # ───────────────────────────────────────────────────────────────────
 
+  # >>> runpod-vllm:auto-generated:start <<<
+  # DO NOT EDIT — managed by docker/runpod-vllm/scripts/gen-litellm.py
+  # Source of truth: docker/runpod-vllm/endpoints.yaml (0 deployed, 2 pending)
+  # Regenerate: cd docker/runpod-vllm && task generate
+
+  # TODO (endpoint not yet created: qwen3.6-35b-a3b) — uncomment after setting runpod_endpoint_id
+  # - model_name: runpod/qwen3.6-35b-a3b
+  #   litellm_params:
+  #     model: openai/qwen3.6-35b-a3b
+  #     api_base: https://api.runpod.ai/v2/<ENDPOINT_ID>/openai/v1
+  #     api_key: os.environ/RUNPOD_API_KEY
+  #     timeout: 300
+  #   model_info:
+  #     description: Qwen3.6-35B-A3B MoE (35B total / ~3B active) with Hermes tool parser and 1-layer MTP speculative decoding.
+  #       Best $/throughput for tool-calling workloads on RunPod serverless.
+
+  # TODO (endpoint not yet created: qwen3.6-27b) — uncomment after setting runpod_endpoint_id
+  # - model_name: runpod/qwen3.6-27b
+  #   litellm_params:
+  #     model: openai/qwen3.6-27b
+  #     api_base: https://api.runpod.ai/v2/<ENDPOINT_ID>/openai/v1
+  #     api_key: os.environ/RUNPOD_API_KEY
+  #     timeout: 300
+  #   model_info:
+  #     description: Qwen3.6-27B dense model with Hermes tool parser and MTP speculative decoding. Highest format adherence per
+  #       token — best for the initial tool-calling pass when paired with the 35B-A3B for repair loops.
+  # >>> runpod-vllm:auto-generated:end <<<
+
   - model_name: "runpod/gemma-4-31b-it"
     litellm_params:
       model: "openai/google/gemma-4-31B-it"

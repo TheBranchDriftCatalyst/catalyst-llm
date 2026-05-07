@@ -151,6 +151,7 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-litellm-local-dev}
+      - STORE_MODEL_IN_DB=True
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
