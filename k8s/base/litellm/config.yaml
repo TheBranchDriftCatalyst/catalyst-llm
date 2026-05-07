@@ -54,7 +54,7 @@ model_list:
 
   # >>> mac-node:auto-generated:start <<<
   # DO NOT EDIT — managed by packages/mac-node/scripts/gen-litellm.py
-  # Source of truth: packages/mac-node/models.yaml (37 ollama, 5 vllm-mlx)
+  # Source of truth: packages/mac-node/models.yaml (38 ollama, 5 vllm-mlx)
   # Regenerate: cd packages/mac-node && task generate
 
   # ─── Ollama (Metal accelerated) ───────────────────────────────────
@@ -184,12 +184,20 @@ model_list:
     model_info:
       description: Qwen 3.6 27B — SWE-bench 77.2% - Mac M5 Max Metal
 
-  - model_name: mac/gemma4-27b
+  - model_name: mac/gemma4-26b
     litellm_params:
-      model: ollama/gemma4:27b
+      model: ollama/gemma4:26b
       api_base: http://192.168.1.200:11434
     model_info:
-      description: Gemma 4 27B multimodal + thinking mode - Mac M5 Max Metal
+      description: Gemma 4 26B-A4B MoE (multimodal + thinking, Q4_K_M) - Mac M5 Max Metal
+
+  - model_name: mac/gemma4-26b-mlx
+    litellm_params:
+      model: ollama/gemma4:26b-mlx-bf16
+      api_base: http://192.168.1.200:11434
+    model_info:
+      description: 'Gemma 4 26B-A4B MoE — MLX-converted BF16 safetensors (text-only: ships without vision projector on Ollama)
+        - Mac M5 Max Metal'
 
   - model_name: mac/gemma4
     litellm_params:

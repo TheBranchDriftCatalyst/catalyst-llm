@@ -180,9 +180,19 @@ tasks:
       - bash tests/test-all.sh localhost
 
   test:ollama:
-    desc: Test Ollama
+    desc: Test Ollama (smoke — single model)
     cmds:
       - bash tests/test-ollama.sh localhost
+
+  test:ollama:all:
+    desc: "Test every mac-targeted Ollama model from models.yaml (use DUMP=path to save outputs)"
+    cmds:
+      - bash tests/test-ollama.sh localhost --all {{if .DUMP}}--dump {{.DUMP}}{{end}}
+
+  test:vision:
+    desc: "Test all vision-tagged Ollama models against fixture image (use DUMP=path to save outputs)"
+    cmds:
+      - bash tests/test-ollama.sh localhost --vision {{if .DUMP}}--dump {{.DUMP}}{{end}}
 
   test:webui:
     desc: Test Open WebUI

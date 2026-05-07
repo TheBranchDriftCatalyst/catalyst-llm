@@ -142,10 +142,16 @@ ollama:
       tags: [coding, reasoning]
       category: community
 
-    - name: gemma4:27b
-      alias: gemma4-27b
-      description: Gemma 4 27B multimodal + thinking mode
+    - name: gemma4:26b
+      alias: gemma4-26b
+      description: Gemma 4 26B-A4B MoE (multimodal + thinking, Q4_K_M)
       tags: [chat, vision, moe]
+      category: community
+
+    - name: gemma4:26b-mlx-bf16
+      alias: gemma4-26b-mlx
+      description: "Gemma 4 26B-A4B MoE — MLX-converted BF16 safetensors (text-only: ships without vision projector on Ollama)"
+      tags: [chat, moe, thinking]
       category: community
 
     - name: gemma4:e4b
@@ -322,9 +328,9 @@ ollama:
 
     # ── Vision ───────────────────────────────────────────────────
 
-    - name: llava:13b
+    - name: llava:13b-v1.6-vicuna-q4_K_M
       alias: llava
-      description: LLaVA 1.5 13B — strong general vision
+      description: LLaVA 1.6 Vicuna 13B Q4_K_M — strong general vision
       tags: [vision, chat]
       category: vision
       target: [runpod]

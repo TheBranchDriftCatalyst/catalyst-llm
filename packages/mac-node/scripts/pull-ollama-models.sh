@@ -3,7 +3,7 @@
 # Regenerate with: python3 scripts/gen-pull-models.py --target mac
 # Target: mac
 #
-# Models: 37 total
+# Models: 38 total
 
 set -e
 
@@ -52,7 +52,8 @@ ollama pull gemma3:4b                                     # Gemma3 4B — smalle
 
 echo "--- Community: bleeding edge + abliterated ---"
 ollama pull qwen3.6:27b                                   # Qwen 3.6 27B — SWE-bench 77.2%
-ollama pull gemma4:27b                                    # Gemma 4 27B multimodal + thinking mode
+ollama pull gemma4:26b                                    # Gemma 4 26B-A4B MoE (multimodal + thinking, Q4_K_M)
+ollama pull gemma4:26b-mlx-bf16                           # Gemma 4 26B-A4B MoE — MLX-converted BF16 safetensors (text-only: ships without vision projector on Ollama)
 ollama pull gemma4:e4b                                    # Gemma 4 E4B MoE (multimodal + thinking)
 ollama pull phi4:14b                                      # Phi-4 14B — punches above its weight
 ollama pull dolphin3:8b                                   # Dolphin 3 8B uncensored
