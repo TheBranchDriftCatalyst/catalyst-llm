@@ -14,7 +14,7 @@
 #   category:      Grouping for pull scripts and docs
 
 node:
-  ip: "192.168.1.200"
+  ip: "192.168.1.33"
   chip: "M5 Max"
 
 # ─── Image generation (ComfyUI + OpenAI shim) ───────────────────────

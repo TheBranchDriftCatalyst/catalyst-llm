@@ -2,7 +2,7 @@
 
 Backends
 --------
-* ``mac``: direct Ollama at the mac node (``192.168.1.200:11434``), Ollama-native
+* ``mac``: direct Ollama at the mac node (``192.168.1.33:11434``), Ollama-native
   ``/api/{generate,embeddings}``. Models referenced by their raw Ollama tag
   (e.g. ``gemma4:26b``).
 * ``litellm``: the LiteLLM proxy (default ``http://localhost:4000``), exposing
@@ -45,8 +45,8 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
     g.addoption(
         "--mac-host",
-        default=os.getenv("MAC_HOST", "192.168.1.200"),
-        help="Mac-node host (Ollama). Default: 192.168.1.200",
+        default=os.getenv("MAC_HOST", "192.168.1.33"),
+        help="Mac-node host (Ollama). Default: 192.168.1.33",
     )
     g.addoption(
         "--mac-port",

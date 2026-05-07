@@ -7,7 +7,7 @@ set -euo pipefail
 # NOTE: Prefer setting a DHCP reservation on your router instead of this script.
 # Router-side DHCP reservation is more reliable across reboots and network changes.
 
-TARGET_IP="${1:-192.168.1.200}"
+TARGET_IP="${1:-192.168.1.33}"
 SUBNET="255.255.255.0"
 ROUTER="192.168.1.1"
 DNS="192.168.1.1 1.1.1.1 8.8.8.8"
