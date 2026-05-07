@@ -202,9 +202,9 @@ survived months of real usage and would slot into specific agent capabilities.
 ### Evaluation Plan
 
 **Phase 2 (Core Loop)**:
-- [ ] Install `memory-lancedb` — replaces our planned vector-memory MCP with a proven solution
-- [ ] Install `composio` — solves OAuth for all external API integrations
-- [ ] Install `capability-evolver` + `self-improving-agent` — pairs with our Reflexion loop
+- [x] Install `memory-lancedb` — replaces our planned vector-memory MCP with a proven solution
+- [x] Install `composio` — solves OAuth for all external API integrations
+- [x] Install `capability-evolver` + `self-improving-agent` — pairs with our Reflexion loop
 
 **Phase 3 (Reflexion)**:
 - [ ] Evaluate `memOS cloud` for cross-agent memory isolation
@@ -314,6 +314,7 @@ bd list --status=open
 ## See Also
 
 - `INDEX.md` — Complete file index with descriptions
-- `SOUL.md` — Gateway identity
-- `AGENTS.md` — Global operating instructions
-- `USER.md` — Operator identity (DJ)
+- `DEPLOY.md` — Deployment guide (K8s, secrets, plugins, workspace mapping)
+- `../SOUL.md` — Gateway identity
+- `../AGENTS.md` — Global operating instructions
+- `../USER.md` — Operator identity (DJ)

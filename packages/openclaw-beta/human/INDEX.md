@@ -6,8 +6,9 @@
 
 | File | Purpose |
 |------|---------|
-| `README.md` | Human-readable architecture overview, team descriptions, phased rollout |
-| `INDEX.md` | This file — comprehensive file index |
+| `human/README.md` | Human-readable architecture overview, team descriptions, phased rollout |
+| `human/INDEX.md` | This file — comprehensive file index |
+| `human/DEPLOY.md` | Deployment guide — K8s, secrets, plugins, workspace mapping |
 | `SOUL.md` | Gateway identity — system purpose, architecture overview, operating principles |
 | `AGENTS.md` | Global operating instructions for all agents (beads workflow, session protocol) |
 | `USER.md` | DJ's operator profile — identity, preferences, decision authority |

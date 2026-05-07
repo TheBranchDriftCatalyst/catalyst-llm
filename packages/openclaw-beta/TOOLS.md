@@ -205,6 +205,53 @@ MemoryCuratorAgent get write access (indexing).
 
 ---
 
+## Installed Plugins (Gateway-Level)
+
+| Plugin | Status | Purpose | Access |
+|--------|--------|---------|--------|
+| **memory-lancedb** | Active | Vector memory with auto-recall and auto-capture. Replaces planned vector-memory MCP. Embeddings routed through LiteLLM (`text-embedding-3-small`). Data persists at `/home/node/.openclaw/lancedb`. | All agents (automatic) |
+| **composio** | Active | Managed OAuth for 860+ apps. Handles auth for Gmail, Slack, GitHub, Notion, etc. API key from 1Password via ExternalSecret. | All agents (on-demand) |
+
+### memory-lancedb Configuration
+
+- **Memory slot**: `plugins.slots.memory = "memory-lancedb"`
+- **Auto-recall**: Retrieves relevant memories before each agent run
+- **Auto-capture**: Stores conversation memories after each run
+- **Embedding model**: `text-embedding-3-small` via LiteLLM proxy
+- **Storage**: LanceDB at `/home/node/.openclaw/lancedb` (on PVC, backed up via Velero)
+
+### composio Configuration
+
+- **API key**: `COMPOSIO_API_KEY` env var (from 1Password `openclaw.composio-api-key`)
+- **Auth**: Manages OAuth flows for external services — agents don't handle API keys directly
+- **Prerequisite**: Create `composio-api-key` property in the `openclaw` 1Password item (from composio.dev)
+
+---
+
+## Installed Skills (Agent-Level)
+
+| Skill | Status | Purpose | Access |
+|-------|--------|---------|--------|
+| **capability-evolver** | Active | Agent self-improvement over time. Observes patterns, generates new capabilities. #1 on ClawHub (35K installs). | All agents |
+| **self-improving-agent** | Active | Learns from every interaction, optimizes responses. Pairs with Reflexion loop. Workspace dirs at `.learnings/`. | All agents |
+
+### Skill Installation
+
+Skills are installed by the `install-plugins-skills` init container via `git clone --depth=1`:
+- `capability-evolver` → `/home/node/.openclaw/skills/capability-evolver/`
+- `self-improving-agent` → `/home/node/.openclaw/skills/self-improving-agent/`
+
+The gateway watches `/home/node/.openclaw/skills` for changes (`skills.load.watch: true`).
+
+### self-improving-agent Workspace
+
+The init container creates workspace directories for the self-improving-agent:
+- `workspace/.learnings/LEARNINGS.md` — Accumulated learnings
+- `workspace/.learnings/ERRORS.md` — Error patterns and fixes
+- `workspace/.learnings/FEATURE_REQUESTS.md` — Agent-generated feature requests
+
+---
+
 ## Restrictions
 - Agents may only write to their designated artifact directories
 - Shell access requires Tier 3 authorization
