@@ -54,7 +54,7 @@ model_list:
 
   # >>> mac-node:auto-generated:start <<<
   # DO NOT EDIT — managed by packages/mac-node/scripts/gen-litellm.py
-  # Source of truth: packages/mac-node/models.yaml (38 ollama, 5 vllm-mlx)
+  # Source of truth: packages/mac-node/models.yaml (39 ollama, 5 vllm-mlx)
   # Regenerate: cd packages/mac-node && task generate
 
   # ─── Ollama (Metal accelerated) ───────────────────────────────────
@@ -190,6 +190,13 @@ model_list:
       api_base: http://192.168.1.200:11434
     model_info:
       description: Gemma 4 26B-A4B MoE (multimodal + thinking, Q4_K_M) - Mac M5 Max Metal
+
+  - model_name: mac/gemma4-vision
+    litellm_params:
+      model: ollama/gemma4:26b
+      api_base: http://192.168.1.200:11434
+    model_info:
+      description: alias of mac/gemma4-26b (gemma4:26b) - Mac M5 Max Metal
 
   - model_name: mac/gemma4-26b-mlx
     litellm_params:

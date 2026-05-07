@@ -44,6 +44,14 @@ def render_entry(entry: dict) -> str:
 
 
 def build_ollama_entries(cfg: dict) -> list[str]:
+    """Render LiteLLM entries for every mac-targeted Ollama model.
+
+    Each model emits one entry under ``mac/<alias>``. If the model has an
+    ``extra_aliases: [...]`` field, additional entries are emitted under
+    ``mac/<extra>`` pointing at the same backend — used for stable routing
+    aliases (e.g. ``mac/gemma4-vision``) that downstreams target without
+    coupling to the underlying engine/quant.
+    """
     node_ip = cfg["node"]["ip"]
     chip = cfg["node"]["chip"]
     port = cfg["ollama"]["port"]
@@ -51,39 +59,75 @@ def build_ollama_entries(cfg: dict) -> list[str]:
     for m in cfg["ollama"]["models"]:
         if "mac" not in m.get("target", ["mac", "runpod"]):
             continue
+        litellm_params = {
+            "model": f"ollama/{m['name']}",
+            "api_base": f"http://{node_ip}:{port}",
+        }
+        is_embedding = "embedding" in m.get("tags", [])
+
+        # Primary entry.
         entry = {
             "model_name": f"mac/{m['alias']}",
-            "litellm_params": {
-                "model": f"ollama/{m['name']}",
-                "api_base": f"http://{node_ip}:{port}",
-            },
+            "litellm_params": dict(litellm_params),
             "model_info": {
                 "description": f"{m['description']} - Mac {chip} Metal",
             },
         }
-        if "embedding" in m.get("tags", []):
+        if is_embedding:
             entry["model_info"]["mode"] = "embedding"
         out.append(render_entry(entry))
+
+        # Extra aliases (e.g. routing aliases like mac/gemma4-vision).
+        for extra in m.get("extra_aliases", []) or []:
+            alias_entry = {
+                "model_name": f"mac/{extra}",
+                "litellm_params": dict(litellm_params),
+                "model_info": {
+                    "description": (
+                        f"alias of mac/{m['alias']} ({m['name']}) "
+                        f"- Mac {chip} Metal"
+                    ),
+                },
+            }
+            if is_embedding:
+                alias_entry["model_info"]["mode"] = "embedding"
+            out.append(render_entry(alias_entry))
     return out
 
 
 def build_vllm_entries(cfg: dict) -> list[str]:
+    """Render LiteLLM entries for every vLLM-MLX instance.
+
+    Same ``extra_aliases`` pattern as ollama models — additional model_names
+    pointing at the same backend, used for stable routing aliases.
+    """
     node_ip = cfg["node"]["ip"]
     chip = cfg["node"]["chip"]
     out: list[str] = []
     for inst in cfg["vllm"]["instances"]:
-        entry = {
+        litellm_params = {
+            "model": f"openai/{inst['model'].split('/')[-1]}",
+            "api_base": f"http://{node_ip}:{inst['port']}/v1",
+            "api_key": "not-needed",
+        }
+        out.append(render_entry({
             "model_name": f"mac/{inst['label']}",
-            "litellm_params": {
-                "model": f"openai/{inst['model'].split('/')[-1]}",
-                "api_base": f"http://{node_ip}:{inst['port']}/v1",
-                "api_key": "not-needed",
-            },
+            "litellm_params": dict(litellm_params),
             "model_info": {
                 "description": f"{inst['description']} via vLLM-MLX - Mac {chip} Metal",
             },
-        }
-        out.append(render_entry(entry))
+        }))
+        for extra in inst.get("extra_aliases", []) or []:
+            out.append(render_entry({
+                "model_name": f"mac/{extra}",
+                "litellm_params": dict(litellm_params),
+                "model_info": {
+                    "description": (
+                        f"alias of mac/{inst['label']} "
+                        f"({inst['model']}) via vLLM-MLX - Mac {chip} Metal"
+                    ),
+                },
+            }))
     return out
 
 

@@ -3,12 +3,15 @@
 # Used by: Taskfile, dashboard, litellm config, install-deps.sh, pull-models.sh
 #
 # Fields:
-#   name:        Ollama tag to pull (required)
-#   alias:       Short name for LiteLLM/dashboard (required)
-#   description: What the model does (required)
-#   tags:        Capability tags [chat, coding, reasoning, embedding, etc.]
-#   target:      Where to install — [mac, runpod] (default: both)
-#   category:    Grouping for pull scripts and docs
+#   name:          Ollama tag to pull (required)
+#   alias:         Short name for LiteLLM/dashboard (required)
+#   extra_aliases: Additional LiteLLM model_names that route to this same backend.
+#                  Used for stable routing names (e.g. "gemma4-vision") so
+#                  consumers don't have to track engine/quant changes.
+#   description:   What the model does (required)
+#   tags:          Capability tags [chat, coding, reasoning, embedding, etc.]
+#   target:        Where to install — [mac, runpod] (default: both)
+#   category:      Grouping for pull scripts and docs
 
 node:
   ip: "192.168.1.200"
@@ -144,6 +147,10 @@ ollama:
 
     - name: gemma4:26b
       alias: gemma4-26b
+      # Stable routing alias for downstream apps (image-sorter etc.) — when
+      # vLLM-MLX gemma4 vision is fixed, point gemma4-vision at the MLX
+      # instance instead and consumers don't need to change.
+      extra_aliases: [gemma4-vision]
       description: Gemma 4 26B-A4B MoE (multimodal + thinking, Q4_K_M)
       tags: [chat, vision, moe]
       category: community
@@ -485,13 +492,39 @@ vllm:
       launchd: com.vllm-mlx.qwen3
       tags: [chat, reasoning]
 
-    # Gemma 4 disabled — mlx_vlm threading bug (RuntimeError: no Stream(gpu,0))
+    # Gemma 4 vision DISABLED — upstream-blocked.
+    #
+    # Failure: RuntimeError: There is no Stream(gpu,0) in current thread.
+    # mlx-vlm PR #1050 (merged 2026-04-24, shipped in 0.5.0) replaced the
+    # module-level mlx generation stream with mx.new_thread_local_stream();
+    # under FastAPI/Uvicorn worker threads (vllm-mlx's serving path) the
+    # stream isn't initialized for the worker, so vision-bearing requests
+    # crash on first call. Text-only models go through mlx-lm (which had
+    # its thread-local fix in mlx-lm#1090) and are unaffected.
+    #
+    # Tracking: https://github.com/Blaizzy/mlx-vlm/issues/1134
+    #           https://github.com/Blaizzy/mlx-vlm/pull/1050
+    #           https://github.com/waybarrios/vllm-mlx/issues/496
+    # Pinning mlx-vlm==0.4.4 sidesteps #1134 but vllm-mlx#496 reports the
+    # same bug there too — vllm-mlx's own scheduler dispatches across
+    # threads.
+    #
+    # Current workaround: vision routes through ollama gemma4:26b via the
+    # `mac/gemma4-vision` LiteLLM alias (see ollama.models.gemma4:26b
+    # extra_aliases above). When upstream lands a fix, uncomment this
+    # block AND move the `extra_aliases: [gemma4-vision]` field from the
+    # ollama gemma4:26b entry to here in the same commit.
+    #
+    # Note: port 8004 is now used by `nuextract`; choose 8005 (or move
+    # nuextract) when re-enabling.
+    #
     # - label: gemma4
-    #   port: 8004
+    #   port: 8005
     #   model: mlx-community/gemma-4-26b-a4b-it-4bit
     #   description: Gemma 4 26B MoE general + vision
     #   launchd: com.vllm-mlx.gemma4
-    #   tags: [chat, moe]
+    #   tags: [chat, vision, moe]
+    #   # extra_aliases: [gemma4-vision]   # uncomment to take over from ollama
 
     - label: qwen-coder
       port: 8003
