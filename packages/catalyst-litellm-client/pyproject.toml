@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "catalyst-litellm-client"
-version = "0.1.0"
+version = "0.2.0"
 description = "Unified LLM API access through LiteLLM proxy for all Catalyst projects"
 readme = "README.md"
 requires-python = ">=3.9"
