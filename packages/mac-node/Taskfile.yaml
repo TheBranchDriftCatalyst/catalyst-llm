@@ -194,6 +194,31 @@ tasks:
     cmds:
       - bash tests/test-ollama.sh localhost --vision {{if .DUMP}}--dump {{.DUMP}}{{end}}
 
+  test:py:
+    desc: "Pytest model suite against the mac node directly (use BACKEND=litellm or both)"
+    cmds:
+      - 'uv run --with pytest --with httpx --with pyyaml --with pillow pytest tests/python/ --backend={{.BACKEND | default "mac"}} {{.ARGS}}'
+
+  test:py:chat:
+    desc: "Chat tests only (parametrized over chat-tagged models)"
+    cmds:
+      - 'uv run --with pytest --with httpx --with pyyaml --with pillow pytest tests/python/test_chat.py --backend={{.BACKEND | default "mac"}} {{.ARGS}}'
+
+  test:py:vision:
+    desc: "Vision tests only"
+    cmds:
+      - 'uv run --with pytest --with httpx --with pyyaml --with pillow pytest tests/python/test_vision.py --backend={{.BACKEND | default "mac"}} {{.ARGS}}'
+
+  test:py:embedding:
+    desc: "Embedding tests only"
+    cmds:
+      - 'uv run --with pytest --with httpx --with pyyaml --with pillow pytest tests/python/test_embedding.py --backend={{.BACKEND | default "mac"}} {{.ARGS}}'
+
+  test:py:quick:
+    desc: "One model per backend per capability — fast smoke"
+    cmds:
+      - 'uv run --with pytest --with httpx --with pyyaml --with pillow pytest tests/python/ --backend={{.BACKEND | default "mac"}} --quick {{.ARGS}}'
+
   test:webui:
     desc: Test Open WebUI
     cmds:

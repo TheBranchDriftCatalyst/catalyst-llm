@@ -1,0 +1,354 @@
+"""Shared pytest config for mac-node + LiteLLM model tests.
+
+Backends
+--------
+* ``mac``: direct Ollama at the mac node (``192.168.1.200:11434``), Ollama-native
+  ``/api/{generate,embeddings}``. Models referenced by their raw Ollama tag
+  (e.g. ``gemma4:26b``).
+* ``litellm``: the LiteLLM proxy (default ``http://localhost:4000``), exposing
+  every model under an OpenAI-compatible ``/v1/{chat/completions,embeddings}``
+  surface. Mac-node models are addressed as ``mac/<alias>``.
+
+Tests are parametrized over (model × backend × capability). The capability
+list is derived from each model's ``tags`` in ``packages/mac-node/models.yaml``.
+"""
+from __future__ import annotations
+
+import base64
+import os
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Iterable
+
+import httpx
+import pytest
+import yaml
+
+
+# tests/python/conftest.py -> tests/ -> mac-node/
+MAC_NODE_DIR = Path(__file__).resolve().parent.parent.parent
+MODELS_YAML = MAC_NODE_DIR / "models.yaml"
+FIXTURE_IMAGE = MAC_NODE_DIR / "tests" / "fixtures" / "test-vision.png"
+
+
+# --- CLI options --------------------------------------------------------
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    g = parser.getgroup("backends")
+    g.addoption(
+        "--backend",
+        default=os.getenv("BACKEND", "mac"),
+        choices=("mac", "litellm", "both"),
+        help="Which backend(s) to target. Default: mac.",
+    )
+    g.addoption(
+        "--mac-host",
+        default=os.getenv("MAC_HOST", "192.168.1.200"),
+        help="Mac-node host (Ollama). Default: 192.168.1.200",
+    )
+    g.addoption(
+        "--mac-port",
+        type=int,
+        default=int(os.getenv("MAC_PORT", "11434")),
+        help="Mac-node Ollama port. Default: 11434",
+    )
+    g.addoption(
+        "--litellm-base",
+        default=os.getenv("LITELLM_BASE", "http://localhost:4000"),
+        help="LiteLLM proxy base URL. Default: http://localhost:4000",
+    )
+    g.addoption(
+        "--litellm-key",
+        default=os.getenv("LITELLM_API_KEY", ""),
+        help="LiteLLM master/virtual key. Default: $LITELLM_API_KEY",
+    )
+    g.addoption(
+        "--quick",
+        action="store_true",
+        help="Pick one model per (backend, capability) for fast smoke runs.",
+    )
+
+
+# --- Backend abstractions -----------------------------------------------
+
+
+@dataclass
+class CallResult:
+    text: str = ""
+    embedding: list[float] | None = None
+    eval_count: int = 0
+    eval_duration_s: float = 0.0
+    latency_s: float = 0.0
+    raw: dict[str, Any] | None = None
+
+    @property
+    def tok_per_s(self) -> float:
+        return self.eval_count / self.eval_duration_s if self.eval_duration_s else 0.0
+
+
+class _BaseClient:
+    name: str = "base"
+
+    def list_models(self) -> set[str]:
+        raise NotImplementedError
+
+    def chat(self, model: str, prompt: str, *, timeout: float) -> CallResult:
+        raise NotImplementedError
+
+    def vision(self, model: str, prompt: str, image_b64: str, *, timeout: float) -> CallResult:
+        raise NotImplementedError
+
+    def embed(self, model: str, text: str, *, timeout: float) -> CallResult:
+        raise NotImplementedError
+
+
+class MacClient(_BaseClient):
+    """Direct Ollama at the mac node — uses /api/{generate,embeddings}."""
+
+    name = "mac"
+
+    def __init__(self, base: str) -> None:
+        self.base = base.rstrip("/")
+
+    def list_models(self) -> set[str]:
+        try:
+            r = httpx.get(f"{self.base}/api/tags", timeout=5)
+            r.raise_for_status()
+            return {m["name"] for m in r.json().get("models", [])}
+        except httpx.HTTPError:
+            return set()
+
+    def chat(self, model: str, prompt: str, *, timeout: float) -> CallResult:
+        return self._generate(model, prompt, images=None, timeout=timeout)
+
+    def vision(self, model: str, prompt: str, image_b64: str, *, timeout: float) -> CallResult:
+        return self._generate(model, prompt, images=[image_b64], timeout=timeout)
+
+    def embed(self, model: str, text: str, *, timeout: float) -> CallResult:
+        t0 = time.time()
+        r = httpx.post(
+            f"{self.base}/api/embeddings",
+            json={"model": model, "prompt": text},
+            timeout=timeout,
+        )
+        r.raise_for_status()
+        d = r.json()
+        return CallResult(
+            embedding=d.get("embedding"),
+            latency_s=time.time() - t0,
+            raw=d,
+        )
+
+    def _generate(self, model: str, prompt: str, *, images: list[str] | None, timeout: float) -> CallResult:
+        payload: dict[str, Any] = {"model": model, "prompt": prompt, "stream": False}
+        if images:
+            payload["images"] = images
+        t0 = time.time()
+        r = httpx.post(f"{self.base}/api/generate", json=payload, timeout=timeout)
+        r.raise_for_status()
+        d = r.json()
+        return CallResult(
+            text=d.get("response", ""),
+            eval_count=d.get("eval_count", 0) or 0,
+            eval_duration_s=(d.get("eval_duration", 0) or 0) / 1e9,
+            latency_s=time.time() - t0,
+            raw=d,
+        )
+
+
+class LiteLLMClient(_BaseClient):
+    """LiteLLM proxy — OpenAI-compatible /v1/{chat/completions,embeddings}."""
+
+    name = "litellm"
+
+    def __init__(self, base: str, api_key: str = "") -> None:
+        self.base = base.rstrip("/")
+        self.headers = {"Content-Type": "application/json"}
+        if api_key:
+            self.headers["Authorization"] = f"Bearer {api_key}"
+
+    def list_models(self) -> set[str]:
+        try:
+            r = httpx.get(f"{self.base}/v1/models", headers=self.headers, timeout=5)
+            r.raise_for_status()
+            return {m["id"] for m in r.json().get("data", [])}
+        except httpx.HTTPError:
+            return set()
+
+    def chat(self, model: str, prompt: str, *, timeout: float) -> CallResult:
+        return self._chat_completion(model, [{"role": "user", "content": prompt}], timeout=timeout)
+
+    def vision(self, model: str, prompt: str, image_b64: str, *, timeout: float) -> CallResult:
+        msg = [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_b64}"}},
+            ],
+        }]
+        return self._chat_completion(model, msg, timeout=timeout)
+
+    def embed(self, model: str, text: str, *, timeout: float) -> CallResult:
+        t0 = time.time()
+        r = httpx.post(
+            f"{self.base}/v1/embeddings",
+            headers=self.headers,
+            json={"model": model, "input": text},
+            timeout=timeout,
+        )
+        r.raise_for_status()
+        d = r.json()
+        emb = (d.get("data") or [{}])[0].get("embedding")
+        return CallResult(embedding=emb, latency_s=time.time() - t0, raw=d)
+
+    def _chat_completion(self, model: str, messages: list[dict[str, Any]], *, timeout: float) -> CallResult:
+        t0 = time.time()
+        r = httpx.post(
+            f"{self.base}/v1/chat/completions",
+            headers=self.headers,
+            json={"model": model, "messages": messages, "stream": False},
+            timeout=timeout,
+        )
+        r.raise_for_status()
+        d = r.json()
+        text = (d.get("choices") or [{}])[0].get("message", {}).get("content", "")
+        usage = d.get("usage") or {}
+        return CallResult(
+            text=text or "",
+            eval_count=usage.get("completion_tokens", 0) or 0,
+            latency_s=time.time() - t0,
+            raw=d,
+        )
+
+
+# --- Fixtures -----------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def models_registry() -> dict[str, Any]:
+    return yaml.safe_load(MODELS_YAML.read_text())
+
+
+@pytest.fixture(scope="session")
+def mac_client(pytestconfig: pytest.Config) -> MacClient:
+    host = pytestconfig.getoption("--mac-host")
+    port = pytestconfig.getoption("--mac-port")
+    return MacClient(f"http://{host}:{port}")
+
+
+@pytest.fixture(scope="session")
+def litellm_client(pytestconfig: pytest.Config) -> LiteLLMClient:
+    return LiteLLMClient(
+        pytestconfig.getoption("--litellm-base"),
+        pytestconfig.getoption("--litellm-key"),
+    )
+
+
+@pytest.fixture(scope="session")
+def mac_models(mac_client: MacClient) -> set[str]:
+    return mac_client.list_models()
+
+
+@pytest.fixture(scope="session")
+def litellm_models(litellm_client: LiteLLMClient) -> set[str]:
+    return litellm_client.list_models()
+
+
+@pytest.fixture(scope="session")
+def fixture_image_b64() -> str:
+    return base64.b64encode(FIXTURE_IMAGE.read_bytes()).decode()
+
+
+def get_client(request: pytest.FixtureRequest, backend: str) -> _BaseClient:
+    return request.getfixturevalue("mac_client" if backend == "mac" else "litellm_client")
+
+
+def model_name_for(backend: str, entry: dict[str, Any]) -> str:
+    """Backend-specific name for a models.yaml entry."""
+    return entry["name"] if backend == "mac" else f"mac/{entry['alias']}"
+
+
+def is_pulled(backend: str, entry: dict[str, Any], mac_models: set[str], litellm_models: set[str]) -> bool:
+    name = model_name_for(backend, entry)
+    if backend == "mac":
+        if name in mac_models:
+            return True
+        # Bare 'foo' matches 'foo:latest'
+        if ":" not in name and f"{name}:latest" in mac_models:
+            return True
+        return False
+    return name in litellm_models
+
+
+def selected_backends(config: pytest.Config) -> list[str]:
+    choice = config.getoption("--backend")
+    return ["mac", "litellm"] if choice == "both" else [choice]
+
+
+def models_with_tag(registry: dict[str, Any], tag: str) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for m in registry.get("ollama", {}).get("models", []):
+        target = m.get("target", ["mac", "runpod"])
+        if "mac" not in target:
+            continue
+        if tag in (m.get("tags") or []):
+            out.append(m)
+    return out
+
+
+# --- Parametrize generation --------------------------------------------
+
+
+def _params_for(metafunc: pytest.Metafunc, tag: str) -> None:
+    """Parametrize a test function over (model, backend) for the given tag."""
+    if "model_entry" not in metafunc.fixturenames or "backend" not in metafunc.fixturenames:
+        return
+    registry = yaml.safe_load(MODELS_YAML.read_text())
+    models = models_with_tag(registry, tag)
+    backends = selected_backends(metafunc.config)
+    quick = metafunc.config.getoption("--quick")
+    if quick:
+        # First model per backend.
+        models = models[:1]
+    pairs: list[tuple[dict[str, Any], str]] = [(m, b) for m in models for b in backends]
+    if not pairs:
+        pytest.skip(f"no mac-targeted models tagged {tag!r}")
+        return
+    ids = [f"{m['alias']}-{b}" for m, b in pairs]
+    metafunc.parametrize(("model_entry", "backend"), pairs, ids=ids)
+
+
+def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
+    fn = metafunc.function.__name__
+    if fn == "test_chat":
+        _params_for(metafunc, "chat")
+    elif fn == "test_vision":
+        _params_for(metafunc, "vision")
+    elif fn == "test_embedding":
+        _params_for(metafunc, "embedding")
+
+
+def skip_if_unavailable(
+    backend: str,
+    entry: dict[str, Any],
+    mac_models: set[str],
+    litellm_models: set[str],
+) -> None:
+    if backend == "mac" and not mac_models:
+        pytest.skip(f"mac backend unreachable")
+    if backend == "litellm" and not litellm_models:
+        pytest.skip(f"litellm backend unreachable")
+    if not is_pulled(backend, entry, mac_models, litellm_models):
+        pytest.skip(f"{model_name_for(backend, entry)} not registered on {backend}")
+
+
+__all__: Iterable[str] = (
+    "MacClient",
+    "LiteLLMClient",
+    "CallResult",
+    "get_client",
+    "model_name_for",
+    "skip_if_unavailable",
+)
