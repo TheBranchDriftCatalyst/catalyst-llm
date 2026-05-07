@@ -1,0 +1,93 @@
+name: runpod-vllm
+
+on:
+  push:
+    tags:
+      - 'runpod-vllm-v*'
+  workflow_dispatch:
+    inputs:
+      tag_override:
+        description: 'Tag to publish (defaults to latest only)'
+        required: false
+        default: ''
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: thebranchdriftcatalyst/runpod-vllm
+  CACHE_REF: ghcr.io/thebranchdriftcatalyst/runpod-vllm:buildcache
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/runpod-vllm-v* ]]; then
+            echo "VERSION=${GITHUB_REF#refs/tags/runpod-vllm-v}" >> $GITHUB_OUTPUT
+            echo "IS_RELEASE=true" >> $GITHUB_OUTPUT
+          else
+            echo "VERSION=${{ inputs.tag_override }}" >> $GITHUB_OUTPUT
+            echo "IS_RELEASE=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: tags
+        run: |
+          REPO="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          TAGS="${REPO}:latest"
+          if [ -n "$VERSION" ]; then
+            TAGS="${TAGS},${REPO}:${VERSION},${REPO}:${VERSION}-amd64"
+          fi
+          {
+            echo "tags<<EOF"
+            echo "$TAGS"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Build & push (linux/amd64) with registry cache
+        uses: docker/build-push-action@v5
+        with:
+          context: ./docker/runpod-vllm
+          file: ./docker/runpod-vllm/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=registry,ref=${{ env.CACHE_REF }}
+          cache-to:   type=registry,ref=${{ env.CACHE_REF }},mode=max
+          provenance: false
+
+      - name: Create GitHub Release
+        if: steps.version.outputs.IS_RELEASE == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: runpod-vllm v${{ steps.version.outputs.VERSION }}
+          tag_name: runpod-vllm-v${{ steps.version.outputs.VERSION }}
+          body: |
+            ## Image
+
+            ```
+            ghcr.io/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.VERSION }}
+            ghcr.io/${{ env.IMAGE_NAME }}:latest
+            ```
+
+            See `docker/runpod-vllm/CHANGELOG.md` for details.
+          generate_release_notes: true

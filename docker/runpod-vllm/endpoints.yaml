@@ -1,0 +1,71 @@
+# Source of truth for runpod-vllm deployments.
+#
+# Each entry under `endpoints:` describes one RunPod serverless endpoint
+# that runs the runpod-vllm Docker image with a specific MODEL_NAME and
+# tuned engine flags. The file serves three roles:
+#
+#   1. Documents the canonical model presets (HF id, GPU recommendation,
+#      tool-call parser, MTP speculative config, etc.).
+#   2. Generates the LiteLLM model_list snippet via
+#        scripts/gen-litellm.py
+#      which splices entries into k8s/base/litellm/config.yaml between
+#      the runpod-vllm:auto-generated markers.
+#   3. Provides the env preset to paste into the RunPod template UI when
+#      creating each endpoint.
+#
+# Once a RunPod endpoint is created, fill in `runpod_endpoint_id` so the
+# generator can emit a working api_base. Endpoints without an id are
+# emitted as commented-out placeholders.
+
+image: ghcr.io/thebranchdriftcatalyst/runpod-vllm
+default_tag: latest
+
+endpoints:
+  # ─── Qwen3.6-35B-A3B — MoE workhorse, tool-calling specialist ────────
+  - alias: qwen3.6-35b-a3b
+    runpod_endpoint_id: ""           # fill after creating the endpoint
+    hf_model: Qwen/Qwen3.6-35B-A3B
+    served_model_name: qwen3.6-35b-a3b
+    description: |
+      Qwen3.6-35B-A3B MoE (35B total / ~3B active) with Hermes tool
+      parser and 1-layer MTP speculative decoding. Best $/throughput
+      for tool-calling workloads on RunPod serverless.
+    gpu_recommendation: 1x A100 80GB (or 1x H100 80GB for ~2x decode speed)
+    env:
+      MODEL_NAME: Qwen/Qwen3.6-35B-A3B
+      SERVED_MODEL_NAME: qwen3.6-35b-a3b
+      DTYPE: bfloat16
+      QUANTIZATION: fp8
+      MAX_MODEL_LEN: "65536"
+      GPU_MEMORY_UTILIZATION: "0.92"
+      TENSOR_PARALLEL_SIZE: "1"
+      TRUST_REMOTE_CODE: "true"
+      ENABLE_PREFIX_CACHING: "true"
+      ENABLE_AUTO_TOOL_CHOICE: "true"
+      TOOL_CALL_PARSER: hermes
+      SPECULATIVE_CONFIG: '{"method":"mtp","num_speculative_tokens":1}'
+
+  # ─── Qwen3.6-27B — Dense, highest quality per token ──────────────────
+  - alias: qwen3.6-27b
+    runpod_endpoint_id: ""           # fill after creating the endpoint
+    hf_model: Qwen/Qwen3.6-27B
+    served_model_name: qwen3.6-27b
+    description: |
+      Qwen3.6-27B dense model with Hermes tool parser and MTP
+      speculative decoding. Highest format adherence per token —
+      best for the initial tool-calling pass when paired with the
+      35B-A3B for repair loops.
+    gpu_recommendation: 1x A6000 48GB (FP8) or 1x A100 80GB (BF16)
+    env:
+      MODEL_NAME: Qwen/Qwen3.6-27B
+      SERVED_MODEL_NAME: qwen3.6-27b
+      DTYPE: bfloat16
+      QUANTIZATION: fp8
+      MAX_MODEL_LEN: "65536"
+      GPU_MEMORY_UTILIZATION: "0.92"
+      TENSOR_PARALLEL_SIZE: "1"
+      TRUST_REMOTE_CODE: "true"
+      ENABLE_PREFIX_CACHING: "true"
+      ENABLE_AUTO_TOOL_CHOICE: "true"
+      TOOL_CALL_PARSER: hermes
+      SPECULATIVE_CONFIG: '{"method":"mtp","num_speculative_tokens":1}'
