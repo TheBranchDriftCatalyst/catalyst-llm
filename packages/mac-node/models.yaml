@@ -1,0 +1,502 @@
+# Mac Node Model Registry
+# Single source of truth for all models served on this node and RunPod.
+# Used by: Taskfile, dashboard, litellm config, install-deps.sh, pull-models.sh
+#
+# Fields:
+#   name:        Ollama tag to pull (required)
+#   alias:       Short name for LiteLLM/dashboard (required)
+#   description: What the model does (required)
+#   tags:        Capability tags [chat, coding, reasoning, embedding, etc.]
+#   target:      Where to install — [mac, runpod] (default: both)
+#   category:    Grouping for pull scripts and docs
+
+node:
+  ip: "192.168.1.200"
+  chip: "M5 Max"
+
+ollama:
+  port: 11434
+
+  # Custom modelfiles to create after pulling
+  modelfiles:
+    - name: embedding-server
+      from: nomic-embed-text:latest
+      parameters:
+        num_ctx: 8192
+
+  models:
+    # ── Serving: primary mac-node models ─────────────────────────
+    # Ollama equivalents of the vLLM-MLX instances
+
+    - name: devstral:latest
+      alias: devstral
+      description: Devstral 24B coding
+      tags: [coding]
+      category: serving
+
+    - name: deepseek-r1:32b
+      alias: deepseek-r1-32b
+      description: DeepSeek R1 32B reasoning
+      tags: [reasoning]
+      category: serving
+
+    - name: qwen3:32b
+      alias: qwen3-32b
+      description: Qwen3 32B general purpose
+      tags: [chat, reasoning]
+      category: serving
+
+    - name: qwen3-coder:latest
+      alias: qwen3-coder
+      description: Qwen3 Coder 30B MoE
+      tags: [coding, moe]
+      category: serving
+      fallback: "hf.co/bartowski/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_K_M"
+
+    - name: mistral-nemo:latest
+      alias: mistral-nemo
+      description: Mistral Nemo 12B
+      tags: [chat]
+      category: serving
+
+    - name: dolphin-mistral:7b
+      alias: dolphin-mistral
+      description: Uncensored Mistral 7B
+      tags: [chat, uncensored]
+      category: serving
+
+    - name: qwen2.5-coder:7b
+      alias: qwen2.5-coder
+      description: Qwen 2.5 Coder 7B
+      tags: [coding]
+      category: serving
+
+    - name: deepseek-r1:7b
+      alias: deepseek-r1-7b
+      description: DeepSeek R1 reasoning 7B
+      tags: [reasoning]
+      category: serving
+
+    # ── Benchmark: catalyst-data test models ─────────────────────
+    # Source: catalyst-data/tests/benchmark_config.py
+
+    - name: nuextract1.5:latest
+      alias: nuextract1.5
+      description: NuExtract 1.5 structured extraction
+      tags: [extraction]
+      category: benchmark
+
+    - name: nuextract2:latest
+      alias: nuextract2
+      description: NuExtract 2.0 8B multimodal extraction
+      tags: [extraction]
+      category: benchmark
+
+    - name: universalner:latest
+      alias: universalner
+      description: UniversalNER 7B zero-shot NER
+      tags: [extraction]
+      category: benchmark
+
+    - name: gemma3:12b
+      alias: gemma3-12b
+      description: "Gemma3 12B — best ≤12B on LLMStructBench"
+      tags: [chat, reasoning]
+      category: benchmark
+
+    - name: mistral:latest
+      alias: mistral
+      description: "Mistral 7B — best recall in our benchmarks"
+      tags: [chat]
+      category: benchmark
+
+    - name: qwen2.5:7b-instruct
+      alias: qwen2.5-7b
+      description: "Qwen 2.5 7B Instruct — best balanced extraction"
+      tags: [chat]
+      category: benchmark
+
+    - name: llama3.1:8b
+      alias: llama3.1
+      description: "Llama 3.1 8B — best SPO extraction"
+      tags: [chat]
+      category: benchmark
+
+    - name: llama3.2:latest
+      alias: llama3.2
+      description: "Llama 3.2 3B — fastest (116 tok/s)"
+      tags: [chat]
+      category: benchmark
+
+    - name: gemma3:4b
+      alias: gemma3-4b
+      description: "Gemma3 4B — smallest high scorer"
+      tags: [chat]
+      category: benchmark
+
+    # ── Community: bleeding edge + abliterated ───────────────────
+
+    - name: qwen3.6:27b
+      alias: qwen3.6
+      description: "Qwen 3.6 27B — SWE-bench 77.2%"
+      tags: [coding, reasoning]
+      category: community
+
+    - name: gemma4:27b
+      alias: gemma4-27b
+      description: Gemma 4 27B multimodal + thinking mode
+      tags: [chat, vision, moe]
+      category: community
+
+    - name: gemma4:e4b
+      alias: gemma4
+      description: Gemma 4 E4B MoE (multimodal + thinking)
+      tags: [chat, vision, moe]
+      category: community
+
+    - name: phi4:14b
+      alias: phi4
+      description: Phi-4 14B — punches above its weight
+      tags: [chat, reasoning]
+      category: community
+
+    - name: dolphin3:8b
+      alias: dolphin3
+      description: Dolphin 3 8B uncensored
+      tags: [chat, uncensored]
+      category: community
+
+    - name: huihui_ai/dolphin3-abliterated:32b
+      alias: dolphin3-abliterated
+      description: Dolphin 3 32B — refusal direction removed
+      tags: [chat, uncensored]
+      category: community
+      target: [runpod]
+
+    - name: huihui_ai/qwen2.5-abliterated:32b
+      alias: qwen2.5-abliterated
+      description: Qwen 2.5 32B abliterated — no guardrails
+      tags: [chat, uncensored]
+      category: community
+      target: [runpod]
+
+    - name: wizardlm-uncensored:13b
+      alias: wizardlm-uncensored
+      description: WizardLM 13B — classic abliterated model
+      tags: [chat, uncensored]
+      category: community
+
+    - name: "hf.co/unsloth/Qwen3.6-27B-GGUF:UD-Q4_K_XL"
+      alias: qwen3.6-unsloth
+      description: "Qwen 3.6 27B Unsloth Dynamic quant — <1pt accuracy loss"
+      tags: [coding, reasoning]
+      category: community
+      target: [runpod]
+
+    - name: "hf.co/unsloth/gemma-4-31B-it-GGUF:Q4_K_M"
+      alias: gemma4-31b-unsloth
+      description: Gemma 4 31B full — community quant
+      tags: [chat, vision]
+      category: community
+      target: [runpod]
+
+    # ── Finance ──────────────────────────────────────────────────
+
+    - name: 0xroyce/plutus
+      alias: plutus
+      description: Llama 3.1 8B fine-tuned for finance
+      tags: [finance, reasoning]
+      category: finance
+
+    # ── Legal / Government ─────────────────────────────────────
+
+    - name: "hf.co/TheBloke/SaulLM-7B-Instruct-GGUF:Q4_K_M"
+      alias: saul-7b
+      description: "SaulLM 7B — legal domain LLM trained on 30B legal tokens"
+      tags: [legal, chat]
+      category: legal
+      target: [runpod]
+
+    - name: "hf.co/Equall/Saul-Instruct-v1-GGUF:Q4_K_M"
+      alias: saul-instruct
+      description: "Saul Instruct — legal QA, contract analysis, compliance"
+      tags: [legal, chat]
+      category: legal
+      target: [runpod]
+
+    # LegalBERT / InLegalBERT / Pile-of-Law BERT are encoder models (~110M-340M)
+    # Run via sentence-transformers sidecar, not Ollama:
+    #   - nlpaueb/legal-bert-base-uncased (legal NER, classification)
+    #   - law-ai/InLegalBERT (Indian legal docs, 5.4M documents)
+    #   - pile-of-law/legalbert-large-1.7M-2 (256GB legal corpus)
+
+    # ── Embeddings ───────────────────────────────────────────────
+
+    - name: qwen3-embedding:8b
+      alias: qwen3-embed-8b
+      description: "#1 MTEB multilingual (70.58), 100+ langs, dims 32-4096"
+      tags: [embedding]
+      category: embedding
+
+    - name: qwen3-embedding:4b
+      alias: qwen3-embed-4b
+      description: "~67 MTEB, half the VRAM of 8B"
+      tags: [embedding]
+      category: embedding
+
+    - name: jina-embeddings-v4
+      alias: jina-embed-v4
+      description: "Multimodal (text+images+docs), 30+ langs"
+      tags: [embedding, vision]
+      category: embedding
+
+    - name: bge-m3
+      alias: bge-m3
+      description: "568M, dense+sparse+ColBERT, 100+ langs, 8K ctx"
+      tags: [embedding]
+      category: embedding
+
+    - name: snowflake-arctic-embed2
+      alias: arctic-embed2
+      description: "568M, multilingual, best retrieval under 500M"
+      tags: [embedding]
+      category: embedding
+
+    - name: mxbai-embed-large
+      alias: mxbai-embed
+      description: "335M, 1024 dims, strong MTEB English"
+      tags: [embedding]
+      category: embedding
+
+    - name: granite-embedding:278m
+      alias: granite-embed
+      description: IBM Granite MoE embedding, low latency
+      tags: [embedding]
+      category: embedding
+
+    - name: nomic-embed-text:latest
+      alias: nomic-embed-text
+      description: "137M, 768 dims, 8K ctx — the reliable workhorse"
+      tags: [embedding]
+      category: embedding
+
+    - name: snowflake-arctic-embed:335m
+      alias: arctic-embed-335m
+      description: "335M, best retrieval-specific MTEB under 500M"
+      tags: [embedding]
+      category: embedding
+
+    - name: snowflake-arctic-embed:110m
+      alias: arctic-embed-110m
+      description: "110M, good speed/quality tradeoff"
+      tags: [embedding]
+      category: embedding
+
+    - name: all-minilm
+      alias: all-minilm
+      description: "23M, 384 dims — fastest, good for prototyping"
+      tags: [embedding]
+      category: embedding
+
+    - name: qwen3-embedding:0.6b
+      alias: qwen3-embed-0.6b
+      description: "~60 MTEB, tiny but surprisingly capable"
+      tags: [embedding]
+      category: embedding
+
+    # ── Rerankers ────────────────────────────────────────────────
+
+    - name: bge-reranker-v2-m3
+      alias: bge-reranker
+      description: BAAI multilingual reranker, pairs with bge-m3
+      tags: [reranker]
+      category: reranker
+      target: [runpod]
+
+    - name: jina-reranker-v2-base-multilingual
+      alias: jina-reranker
+      description: "Jina reranker, 278M, 8K ctx, 30+ langs"
+      tags: [reranker]
+      category: reranker
+      target: [runpod]
+
+    # ── Vision ───────────────────────────────────────────────────
+
+    - name: llava:13b
+      alias: llava
+      description: LLaVA 1.5 13B — strong general vision
+      tags: [vision, chat]
+      category: vision
+      target: [runpod]
+
+    - name: minicpm-v
+      alias: minicpm-v
+      description: MiniCPM-V — OCR + document understanding
+      tags: [vision, ocr]
+      category: vision
+      target: [runpod]
+
+    - name: moondream
+      alias: moondream
+      description: "1.8B, tiny but capable vision model"
+      tags: [vision]
+      category: vision
+      target: [runpod]
+
+    # ── Utility ──────────────────────────────────────────────────
+
+    - name: nuextract:latest
+      alias: nuextract
+      description: NuExtract structured extraction (v1.0)
+      tags: [extraction]
+      category: utility
+
+    # ── Heavyweight: 70B+ (RunPod only) ──────────────────────────
+
+    - name: llama3.3:70b
+      alias: llama3.3
+      description: "Meta's best open model — strong structured output"
+      tags: [chat, reasoning]
+      category: heavyweight
+      target: [runpod]
+
+    - name: qwen2.5:72b-instruct
+      alias: qwen2.5-72b
+      description: "72B, elite structured output + extraction"
+      tags: [chat, reasoning]
+      category: heavyweight
+      target: [runpod]
+
+    - name: deepseek-r1:70b
+      alias: deepseek-r1-70b
+      description: Best open reasoning model at scale
+      tags: [reasoning]
+      category: heavyweight
+      target: [runpod]
+
+    - name: mistral-large:latest
+      alias: mistral-large
+      description: "Mistral's flagship, 123B"
+      tags: [chat, reasoning]
+      category: heavyweight
+      target: [runpod]
+
+    - name: gemma3:27b
+      alias: gemma3-27b
+      description: Step up from 12B benchmark tier
+      tags: [chat]
+      category: heavyweight
+      target: [runpod]
+
+    - name: qwen2.5-coder:32b
+      alias: qwen2.5-coder-32b
+      description: Strongest open coding model
+      tags: [coding]
+      category: heavyweight
+      target: [runpod]
+
+    - name: command-r:35b
+      alias: command-r
+      description: "Cohere's RAG-optimized model"
+      tags: [chat, rag]
+      category: heavyweight
+      target: [runpod]
+
+    # ── MoE 200B+: quantized monsters ────────────────────────────
+
+    - name: qwen3:235b-a22b
+      alias: qwen3-235b
+      description: "235B MoE (22B active), rivals GPT-4o — fits 1x A100 80GB"
+      tags: [chat, reasoning, moe]
+      category: moe-200b
+      target: [runpod]
+
+    - name: qwen3.5:122b-a10b
+      alias: qwen3.5-122b
+      description: "122B MoE (10B active), ~25GB Q4"
+      tags: [chat, moe]
+      category: moe-200b
+      target: [runpod]
+
+    # ── OBSCENE: multi-GPU required ──────────────────────────────
+
+    - name: llama3.1:405b
+      alias: llama3.1-405b
+      description: "Meta's largest — the open-source GPT-4 class (~230GB Q4)"
+      tags: [chat, reasoning]
+      category: obscene
+      target: [runpod]
+
+    - name: deepseek-v3:671b
+      alias: deepseek-v3
+      description: "671B MoE (37B active), frontier-class reasoning (~400GB Q4)"
+      tags: [reasoning, moe]
+      category: obscene
+      target: [runpod]
+
+    - name: qwen2.5:110b
+      alias: qwen2.5-110b
+      description: "Alibaba's largest dense model (~63GB Q4)"
+      tags: [chat, reasoning]
+      category: obscene
+      target: [runpod]
+
+    - name: command-r-plus:104b
+      alias: command-r-plus
+      description: "Cohere's largest — RAG monster (~60GB Q4)"
+      tags: [chat, rag]
+      category: obscene
+      target: [runpod]
+
+    - name: falcon3:180b
+      alias: falcon3
+      description: "TII's flagship (~100GB Q4)"
+      tags: [chat]
+      category: obscene
+      target: [runpod]
+
+vllm:
+  # Mac-only (MLX on Apple Silicon) — not used on RunPod
+  instances:
+    - label: devstral
+      port: 8000
+      model: mlx-community/Devstral-Small-2-24B-Instruct-2512-4bit
+      description: Devstral 24B coding
+      launchd: com.vllm-mlx.server
+      tags: [coding]
+
+    - label: deepseek-r1
+      port: 8001
+      model: mlx-community/DeepSeek-R1-Distill-Qwen-32B-4bit
+      description: DeepSeek R1 32B reasoning
+      launchd: com.vllm-mlx.qwen-opus
+      tags: [reasoning]
+
+    - label: qwen3
+      port: 8002
+      model: mlx-community/Qwen3-32B-4bit
+      description: Qwen3 32B general purpose
+      launchd: com.vllm-mlx.qwen3
+      tags: [chat, reasoning]
+
+    # Gemma 4 disabled — mlx_vlm threading bug (RuntimeError: no Stream(gpu,0))
+    # - label: gemma4
+    #   port: 8004
+    #   model: mlx-community/gemma-4-26b-a4b-it-4bit
+    #   description: Gemma 4 26B MoE general + vision
+    #   launchd: com.vllm-mlx.gemma4
+    #   tags: [chat, moe]
+
+    - label: qwen-coder
+      port: 8003
+      model: mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit
+      description: Qwen3 Coder 30B MoE
+      launchd: com.vllm-mlx.qwen-coder
+      tags: [coding, moe]
+
+    - label: nuextract
+      port: 8004
+      model: mlx-community/numind-NuExtract-1.5-MLX-8bit
+      description: NuExtract 1.5 structured extraction (8-bit)
+      launchd: com.vllm-mlx.nuextract
+      tags: [extraction]

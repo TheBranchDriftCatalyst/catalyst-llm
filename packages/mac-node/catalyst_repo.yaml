@@ -1,0 +1,38 @@
+version: "0.1.1"
+name: "mac-node"
+description: "M3 Mac bare-metal LLM inference node — Ollama + vLLM-MLX with Metal acceleration, K8s integration via Liqo"
+repo_url: "https://github.com/TheBranchDriftCatalyst/mac-node"
+
+status: "wip"
+
+tech_stack:
+  languages:
+    - "shell"
+    - "yaml"
+    - "python"
+  frameworks:
+    - "ollama"
+    - "vllm-mlx"
+    - "mlx"
+  tools:
+    - "launchd"
+    - "taskfile"
+    - "orbstack"
+    - "liqo"
+
+groups:
+  - "ai-ml"
+  - "catalyst-core"
+  - "infrastructure"
+
+badges:
+  stars: false
+  issues: true
+  prs: true
+  license: true
+
+highlights:
+  - "Apple Metal GPU-accelerated LLM inference"
+  - "Bare-metal Ollama + vLLM-MLX serving"
+  - "K8s pod scheduling via OrbStack + Liqo federation"
+  - "LiteLLM proxy integration for unified model access"

@@ -1,0 +1,74 @@
+# Traefik IngressRoutes for Mac node services
+# Accessible at: http://ollama-mac.talos00, http://webui-mac.talos00, http://whisper-mac.talos00
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: ollama-mac
+  namespace: mac-node
+  labels:
+    app.kubernetes.io/name: ollama
+    app.kubernetes.io/part-of: mac-node
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`ollama-mac.talos00`)
+      kind: Rule
+      services:
+        - name: ollama-mac
+          port: 11434
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: webui-mac
+  namespace: mac-node
+  labels:
+    app.kubernetes.io/name: open-webui
+    app.kubernetes.io/part-of: mac-node
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`webui-mac.talos00`)
+      kind: Rule
+      services:
+        - name: webui-mac
+          port: 8080
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: vllm-mac
+  namespace: mac-node
+  labels:
+    app.kubernetes.io/name: vllm-mlx
+    app.kubernetes.io/part-of: mac-node
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`vllm-mac.talos00`)
+      kind: Rule
+      services:
+        - name: vllm-mac
+          port: 8000
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: whisper-mac
+  namespace: mac-node
+  labels:
+    app.kubernetes.io/name: whisper
+    app.kubernetes.io/part-of: mac-node
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`whisper-mac.talos00`)
+      kind: Rule
+      services:
+        - name: whisper-mac
+          port: 8787

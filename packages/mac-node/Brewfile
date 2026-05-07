@@ -1,0 +1,18 @@
+# Mac LLM Node — System Dependencies
+
+# Inference
+brew "ollama"
+brew "whisper-cpp"
+
+# Python
+brew "uv"
+
+# Task runner
+brew "go-task"
+
+# Utilities
+brew "jq"
+brew "ffmpeg"
+
+# Optional: K8s pod scheduling
+# cask "orbstack"
