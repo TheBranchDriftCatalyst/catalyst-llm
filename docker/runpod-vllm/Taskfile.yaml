@@ -1,0 +1,98 @@
+version: "3"
+
+vars:
+  IMAGE_GHCR: ghcr.io/thebranchdriftcatalyst/runpod-vllm
+  CACHE_REF: ghcr.io/thebranchdriftcatalyst/runpod-vllm:buildcache
+  CLIFF_CONFIG: cliff.toml
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  # ─── Build / push ────────────────────────────────────────────────
+
+  build:
+    desc: Build runpod-vllm image (linux/amd64)
+    vars:
+      VERSION:
+        sh: VER=$(git describe --tags --match 'runpod-vllm-v*' --abbrev=0 2>/dev/null | sed 's/^runpod-vllm-v//'); echo "${VER:-0.1.0}"
+    cmds:
+      - echo "Building {{.IMAGE_GHCR}}:{{.VERSION}} (linux/amd64)"
+      - >-
+        docker buildx build
+        --platform linux/amd64
+        --cache-from type=registry,ref={{.CACHE_REF}}
+        -t {{.IMAGE_GHCR}}:{{.VERSION}}
+        -t {{.IMAGE_GHCR}}:latest
+        --load
+        .
+      - echo "Built {{.IMAGE_GHCR}}:{{.VERSION}} + :latest"
+
+  push:
+    desc: Build and push runpod-vllm to GHCR with registry-side build cache
+    vars:
+      VERSION:
+        sh: VER=$(git describe --tags --match 'runpod-vllm-v*' --abbrev=0 2>/dev/null | sed 's/^runpod-vllm-v//'); echo "${VER:-0.1.0}"
+    cmds:
+      - 'echo "Building + pushing {{.VERSION}} (linux/amd64)"'
+      - >-
+        docker buildx build
+        --platform linux/amd64
+        --cache-from type=registry,ref={{.CACHE_REF}}
+        --cache-to   type=registry,ref={{.CACHE_REF}},mode=max
+        -t {{.IMAGE_GHCR}}:{{.VERSION}}
+        -t {{.IMAGE_GHCR}}:latest
+        --push
+        .
+      - 'echo "Pushed {{.IMAGE_GHCR}}:{{.VERSION}} + :latest"'
+
+  # ─── Release ─────────────────────────────────────────────────────
+
+  release:
+    desc: "Bump version, tag, build, push, regenerate changelog (usage: task release -- patch|minor|major)"
+    vars:
+      BUMP_TYPE: '{{.CLI_ARGS | default "patch"}}'
+      CURRENT:
+        sh: VER=$(git describe --tags --match 'runpod-vllm-v*' --abbrev=0 2>/dev/null | sed 's/^runpod-vllm-v//'); echo "${VER:-0.0.0}"
+    cmds:
+      - |
+        IFS='.' read -r major minor patch <<< "{{.CURRENT}}"
+        case "{{.BUMP_TYPE}}" in
+          major) major=$((major + 1)); minor=0; patch=0 ;;
+          minor) minor=$((minor + 1)); patch=0 ;;
+          patch) patch=$((patch + 1)) ;;
+          *) echo "Usage: task release -- patch|minor|major"; exit 1 ;;
+        esac
+        NEW="${major}.${minor}.${patch}"
+        echo "Bumping: {{.CURRENT}} → ${NEW}"
+        echo "${NEW}" > VERSION
+        git add VERSION
+        git commit -m "chore(runpod-vllm): release v${NEW}"
+        git tag "runpod-vllm-v${NEW}"
+        echo "Tagged: runpod-vllm-v${NEW}"
+      - task: changelog
+      - echo ""
+      - echo "=== Release tagged. Push with 'git push --follow-tags' to trigger CI build. ==="
+      - git describe --tags --match 'runpod-vllm-v*' --abbrev=0
+
+  changelog:
+    desc: Regenerate CHANGELOG.md from conventional commits
+    cmds:
+      - git-cliff --config {{.CLIFF_CONFIG}} --tag-pattern 'runpod-vllm-v*' -o CHANGELOG.md
+      - echo "Regenerated CHANGELOG.md"
+
+  version:
+    desc: Show current runpod-vllm image version
+    cmds:
+      - |
+        VER=$(git describe --tags --match 'runpod-vllm-v*' --abbrev=0 2>/dev/null)
+        echo "Current version: ${VER:-<no tag yet>}"
+
+  # ─── LiteLLM config generation ───────────────────────────────────
+
+  generate:
+    desc: Splice endpoints.yaml into k8s/base/litellm/config.yaml
+    cmds:
+      - python3 scripts/gen-litellm.py
