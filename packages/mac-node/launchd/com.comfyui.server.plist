@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.comfyui.server</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__COMFYUI_VENV__/bin/python</string>
+        <string>__COMFYUI_HOME__/main.py</string>
+        <string>--listen</string>
+        <string>0.0.0.0</string>
+        <string>--port</string>
+        <string>8188</string>
+        <string>--preview-method</string>
+        <string>none</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>__COMFYUI_HOME__</string>
+    <key>RunAtLoad</key>
+    <false/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/tmp/comfyui.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/comfyui.err</string>
+    <key>ProcessType</key>
+    <string>Interactive</string>
+    <key>Nice</key>
+    <integer>-5</integer>
+</dict>
+</plist>

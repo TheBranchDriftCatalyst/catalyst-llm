@@ -219,6 +219,22 @@ tasks:
     cmds:
       - 'uv run --with pytest --with httpx --with pyyaml --with pillow pytest tests/python/ --backend={{.BACKEND | default "mac"}} --quick {{.ARGS}}'
 
+  test:py:image:
+    desc: "Image generation tests (ComfyUI shim or LiteLLM)"
+    cmds:
+      - 'uv run --with pytest --with httpx --with pyyaml --with pillow pytest tests/python/test_image_gen.py --backend={{.BACKEND | default "mac"}} {{.ARGS}}'
+
+  shim:dev:
+    desc: "Run the comfyui-shim in foreground for development"
+    dir: services/comfyui-shim
+    cmds:
+      - uv run comfyui-shim
+
+  shim:health:
+    desc: "Check the comfyui-shim health endpoint"
+    cmds:
+      - 'curl -s http://localhost:8012/healthz | python3 -m json.tool'
+
   test:webui:
     desc: Test Open WebUI
     cmds:

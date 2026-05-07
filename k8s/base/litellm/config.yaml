@@ -54,7 +54,7 @@ model_list:
 
   # >>> mac-node:auto-generated:start <<<
   # DO NOT EDIT — managed by packages/mac-node/scripts/gen-litellm.py
-  # Source of truth: packages/mac-node/models.yaml (39 ollama, 5 vllm-mlx)
+  # Source of truth: packages/mac-node/models.yaml (39 ollama, 5 vllm-mlx, 2 image_gen)
   # Regenerate: cd packages/mac-node && task generate
 
   # ─── Ollama (Metal accelerated) ───────────────────────────────────
@@ -384,6 +384,26 @@ model_list:
       api_key: not-needed
     model_info:
       description: NuExtract 1.5 structured extraction (8-bit) via vLLM-MLX - Mac M5 Max Metal
+
+  # ─── Image generation (ComfyUI shim, OpenAI-compatible) ───────────
+  - model_name: mac/flux-pro
+    litellm_params:
+      model: openai/flux-dev-pro
+      api_base: http://192.168.1.200:8012/v1
+      api_key: not-needed
+    model_info:
+      description: Flux Dev FP8 + 4x ESRGAN -> downscale 2048 — PRO quality preset (~35s on M5 Max) via ComfyUI shim - Mac M5
+        Max Metal
+      mode: image_generation
+
+  - model_name: mac/flux-fast
+    litellm_params:
+      model: openai/flux-schnell-fast
+      api_base: http://192.168.1.200:8012/v1
+      api_key: not-needed
+    model_info:
+      description: Flux Schnell FP8 — 4-step euler, 1024x1024 (~6s on M5 Max) via ComfyUI shim - Mac M5 Max Metal
+      mode: image_generation
   # >>> mac-node:auto-generated:end <<<
 
 general_settings:
