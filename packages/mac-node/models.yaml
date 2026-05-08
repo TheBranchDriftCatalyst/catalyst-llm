@@ -170,10 +170,12 @@ ollama:
       category: rp
       target: [mac]
 
-    # Hits an Ollama HF-realm bug ("realm host huggingface.co does not
-    # match original host hf.co"). Routing through merge-gguf instead —
-    # `hf download` then `ollama create` from the local file dodges
-    # the realm check entirely.
+    # NOTE: the original DavidAU repo has no -GGUF sibling (only safetensors).
+    # The community quant lives at mradermacher/...-i1-GGUF (imatrix-
+    # calibrated quants — a touch higher quality than vanilla Q4_K_M
+    # at the same bit width). Single-file at this size (17.3 GB), so
+    # the merge-gguf path skips llama-gguf-split and just feeds the
+    # file straight into `ollama create`.
     - name: qwen3-moe-uncensored:Q4_K_M
       alias: qwen3-moe-uncensored
       description: "Qwen3-30B-A3B MoE (3B active) — heretic-abliterated reasoning distill. MoE wildcard — small-model speeds with 30B breadth. Reddit-hot but bench-thin; experimental A/B candidate. ChatML; temp 0.7."
@@ -182,8 +184,8 @@ ollama:
       target: [mac]
       pull:
         strategy: merge-gguf
-        hf_repo: "DavidAU/Qwen3-30B-A3B-Claude-4.5-Opus-High-Reasoning-2507-ABLITERATED-UNCENSORED-V2-GGUF"
-        hf_pattern: "*Q4_K_M*.gguf"
+        hf_repo: "mradermacher/Qwen3-30B-A3B-Claude-4.5-Opus-High-Reasoning-2507-ABLITERATED-UNCENSORED-V2-i1-GGUF"
+        hf_pattern: "*i1-Q4_K_M.gguf"
 
     # Q4_K_M is ~41GB — borderline single-file; HF chose to shard.
     # Same merge-gguf workaround as Behemoth.
