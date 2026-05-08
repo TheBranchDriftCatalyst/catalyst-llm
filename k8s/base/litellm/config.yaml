@@ -80,7 +80,7 @@ model_list:
 
   # >>> mac-node:auto-generated:start <<<
   # DO NOT EDIT — managed by packages/mac-node/scripts/gen-litellm.py
-  # Source of truth: packages/mac-node/models.yaml (16 ollama, 0 vllm-mlx, 0 image_gen)
+  # Source of truth: packages/mac-node/models.yaml (16 ollama, 0 vllm-mlx, 1 image_gen)
   # Regenerate: cd packages/mac-node && task generate
 
   # ─── Ollama (Metal accelerated) ───────────────────────────────────
@@ -220,6 +220,17 @@ model_list:
       supports_vision: true
 
   # ─── vLLM-MLX (high throughput, OpenAI-compatible) ────────────────
+
+  # ─── Image generation (ComfyUI shim, OpenAI-compatible) ───────────
+  - model_name: mac/flux-krea
+    litellm_params:
+      model: openai/dev-krea
+      api_base: http://192.168.1.33:8012/v1
+      api_key: not-needed
+    model_info:
+      description: FLUX.1 Krea Dev — May 2026 SOTA personal-use image-gen, MLX-native via mflux (~12-18s/image on M5 Max, 1024²
+        @ 20 steps, Q8) via mflux shim - Mac M5 Max Metal
+      mode: image_generation
   # >>> mac-node:auto-generated:end <<<
 
 general_settings:

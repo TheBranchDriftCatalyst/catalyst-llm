@@ -360,11 +360,16 @@ def build_vllm_entries(cfg: dict) -> list[str]:
 
 
 def build_image_gen_entries(cfg: dict) -> list[str]:
-    """Render LiteLLM entries for ComfyUI shim pipelines.
+    """Render LiteLLM entries for the active image-gen shim's pipelines.
 
     Each pipeline emits one entry under ``mac/<alias>`` with
     ``mode: image_generation`` so LiteLLM routes /v1/images/generations
     requests through. Same ``extra_aliases`` pattern as ollama/vllm.
+
+    The shim engine is identified via ``image_gen.engine`` (defaults to
+    ``mflux``); both shims listen on the same port and speak the same
+    OpenAI contract, so the only thing that varies in the generated
+    config is the description label.
     """
     image_cfg = cfg.get("image_gen") or {}
     pipelines = image_cfg.get("pipelines") or []
@@ -373,6 +378,10 @@ def build_image_gen_entries(cfg: dict) -> list[str]:
     node_ip = cfg["node"]["ip"]
     chip = cfg["node"]["chip"]
     shim_port = image_cfg.get("shim_port", 8012)
+    engine = (image_cfg.get("engine") or "mflux").lower()
+    shim_label = {"mflux": "mflux shim", "comfyui": "ComfyUI shim"}.get(
+        engine, f"{engine} shim"
+    )
     out: list[str] = []
     for p in pipelines:
         litellm_params = {
@@ -384,7 +393,7 @@ def build_image_gen_entries(cfg: dict) -> list[str]:
             "model_name": f"mac/{p['alias']}",
             "litellm_params": dict(litellm_params),
             "model_info": {
-                "description": f"{p['description']} via ComfyUI shim - Mac {chip} Metal",
+                "description": f"{p['description']} via {shim_label} - Mac {chip} Metal",
                 "mode": "image_generation",
             },
         }))
@@ -395,7 +404,7 @@ def build_image_gen_entries(cfg: dict) -> list[str]:
                 "model_info": {
                     "description": (
                         f"alias of mac/{p['alias']} ({p['name']}) "
-                        f"via ComfyUI shim - Mac {chip} Metal"
+                        f"via {shim_label} - Mac {chip} Metal"
                     ),
                     "mode": "image_generation",
                 },

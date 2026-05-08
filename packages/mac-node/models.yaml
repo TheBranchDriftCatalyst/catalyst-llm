@@ -26,21 +26,36 @@ node:
   ip: "192.168.1.33"
   chip: "M5 Max"
 
-# ─── Image generation (ComfyUI + OpenAI shim) ───────────────────────
-# The shim speaks OpenAI-compatible /v1/images/generations and forwards
-# to a local ComfyUI instance.
+# ─── Image generation (OpenAI-compat shim on the mac node) ──────────
+# Two shims live in packages/mac-node/services/, both speaking the same
+# OpenAI /v1/images/generations contract on shim_port. Pick one via the
+# `engine` field below — gen-litellm.py adjusts the description label
+# but otherwise generates identical entries.
 #
-# DISABLED — comfyui-shim is not running and the LiteLLM entries were
-# returning 500s on every call. May 2026 SOTA pick is FLUX.1 Krea Dev
-# via mflux (MLX-native, github.com/filipstrand/mflux); when bringing
-# image gen back up, prefer that over a comfyui workflow round-trip.
-# To re-enable: bring the shim up on port 8012 (see
-# packages/mac-node/services/comfyui-shim/), restore a `pipelines:`
-# entry, and rerun gen-litellm.py.
+#   engine: mflux    — MLX-native (filipstrand/mflux), one model in
+#                      memory at a time, 12-18s/image on M5 Max. May
+#                      2026 SOTA pick (FLUX.1 Krea Dev). DEFAULT.
+#   engine: comfyui  — ComfyUI workflows behind a thin shim. Use when
+#                      you need LoRA stacks / custom workflows.
+#
+# To bring the active shim up on the mac node:
+#   cd packages/mac-node/services/mflux-shim && uv sync
+#   sed "s|__SHIM_HOME__|$(pwd)|g; s|__VENV__|$(pwd)/.venv|g" \
+#     ../../launchd/com.mflux-shim.plist \
+#     > ~/Library/LaunchAgents/com.mflux-shim.plist
+#   launchctl load ~/Library/LaunchAgents/com.mflux-shim.plist
+#
+# After: the shim answers on http://192.168.1.33:8012 and LiteLLM
+# routes /v1/images/generations through it for `mac/flux-krea`.
 image_gen:
+  engine: mflux
   shim_port: 8012
-  comfyui_port: 8188
-  pipelines: []
+  comfyui_port: 8188   # only used when engine: comfyui
+  pipelines:
+    - name: dev-krea
+      alias: flux-krea
+      description: "FLUX.1 Krea Dev — May 2026 SOTA personal-use image-gen, MLX-native via mflux (~12-18s/image on M5 Max, 1024² @ 20 steps, Q8)"
+      tags: [image_gen, flux, sota-may-2026]
 
 ollama:
   port: 11434

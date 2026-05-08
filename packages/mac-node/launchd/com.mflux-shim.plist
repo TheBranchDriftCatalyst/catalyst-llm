@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  mflux-shim launchd plist.
+
+  Placeholders are substituted at install time by:
+    sed -e "s|__SHIM_HOME__|$(realpath packages/mac-node/services/mflux-shim)|g" \
+        -e "s|__VENV__|$(realpath packages/mac-node/services/mflux-shim/.venv)|g" \
+        packages/mac-node/launchd/com.mflux-shim.plist \
+        > ~/Library/LaunchAgents/com.mflux-shim.plist
+
+  Then:
+    launchctl unload ~/Library/LaunchAgents/com.mflux-shim.plist 2>/dev/null
+    launchctl load   ~/Library/LaunchAgents/com.mflux-shim.plist
+    launchctl list | grep mflux-shim
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.mflux-shim</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__VENV__/bin/mflux-shim</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>SHIM_HOST</key>
+        <string>0.0.0.0</string>
+        <key>SHIM_PORT</key>
+        <string>8012</string>
+        <key>MFLUX_MODEL</key>
+        <string>dev-krea</string>
+        <key>MFLUX_QUANTIZE</key>
+        <string>8</string>
+    </dict>
+    <key>WorkingDirectory</key>
+    <string>__SHIM_HOME__</string>
+    <!-- RunAtLoad=false so the service only starts when explicitly
+         loaded; flip to true if you want it on every boot. -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/tmp/mflux-shim.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/mflux-shim.err</string>
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>
