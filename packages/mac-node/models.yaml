@@ -139,17 +139,12 @@ ollama:
       tags: [embedding]
       category: embedding
 
-    # ── Vision (NEW — pull when ready) ──────────────────────────
-    # Uncomment this block AFTER `ollama pull qwen3-vl` succeeds and
-    # the playground confirms it routes properly. When live, remove
-    # the `extra_aliases: [gemma4-vision]` from gemma4:26b above so
-    # `mac/gemma4-vision` snaps over to qwen3-vl.
-    # - name: qwen3-vl:latest
-    #   alias: qwen3-vl
-    #   extra_aliases: [gemma4-vision]
-    #   description: "Qwen3-VL — beats InternVL3 on DocVQA / OS-World, 32-language OCR, robust to blur/tilt. May 2026 vision SOTA for local."
-    #   tags: [vision, ocr, chat]
-    #   category: serving
+    # ── Vision SOTA ──────────────────────────────────────────────
+    - name: qwen3-vl:latest
+      alias: qwen3-vl
+      description: "Qwen3-VL — beats InternVL3 on DocVQA / OS-World, 32-language OCR, robust to blur/tilt. May 2026 vision SOTA for local."
+      tags: [vision, ocr, chat]
+      category: serving
 
     # ── Heavyweight: 70B+ (RunPod only — proxy entries skipped on mac) ───
     # These don't register in the LiteLLM proxy (gen-litellm.py filters

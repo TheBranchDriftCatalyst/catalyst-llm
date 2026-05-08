@@ -80,7 +80,7 @@ model_list:
 
   # >>> mac-node:auto-generated:start <<<
   # DO NOT EDIT — managed by packages/mac-node/scripts/gen-litellm.py
-  # Source of truth: packages/mac-node/models.yaml (11 ollama, 0 vllm-mlx, 0 image_gen)
+  # Source of truth: packages/mac-node/models.yaml (12 ollama, 0 vllm-mlx, 0 image_gen)
   # Regenerate: cd packages/mac-node && task generate
 
   # ─── Ollama (Metal accelerated) ───────────────────────────────────
@@ -92,6 +92,12 @@ model_list:
       description: Qwen3-Coder 30B-A3B MoE — 256K ctx, ~Sonnet 4.5-class agentic coding, BFCL v3 top tier (function calling).
         Replaces qwen2.5-coder + devstral. - Mac M5 Max Metal
       supports_function_calling: true
+      license: apache-2.0
+      pipeline_tag: text-generation
+      param_count: 30532122624
+      hf_repo: Qwen/Qwen3-Coder-30B-A3B-Instruct
+      max_input_tokens: 262144
+      max_tokens: 262144
 
   - model_name: mac/deepseek-r1
     litellm_params:
@@ -101,6 +107,12 @@ model_list:
       description: DeepSeek R1 Distill Qwen 32B — beats o1-mini on math/code reasoning, ~18-20GB Q4_K_M, 11-14 tok/s on M5 Max.
         The reasoning local sweet spot. - Mac M5 Max Metal
       supports_reasoning: true
+      license: mit
+      pipeline_tag: text-generation
+      param_count: 32763876352
+      hf_repo: deepseek-ai/DeepSeek-R1-Distill-Qwen-32B
+      max_input_tokens: 131072
+      max_tokens: 131072
 
   - model_name: mac/gemma4-26b
     litellm_params:
@@ -110,6 +122,12 @@ model_list:
       description: Gemma 4 26B-A4B MoE (multimodal + thinking, Q4_K_M). Vision routing alias for the playground until qwen3-vl
         is pulled and verified. - Mac M5 Max Metal
       supports_vision: true
+      license: apache-2.0
+      pipeline_tag: image-text-to-text
+      param_count: 26544131376
+      hf_repo: google/gemma-4-26B-A4B-it
+      max_input_tokens: 262144
+      max_tokens: 262144
 
   - model_name: mac/gemma4-vision
     litellm_params:
@@ -118,6 +136,8 @@ model_list:
     model_info:
       description: alias of mac/gemma4-26b (gemma4:26b) - Mac M5 Max Metal
       supports_vision: true
+      max_input_tokens: 262144
+      max_tokens: 262144
 
   - model_name: mac/gemma4
     litellm_params:
@@ -126,6 +146,12 @@ model_list:
     model_info:
       description: Gemma 4 E4B MoE (multimodal + thinking) — fast vision-capable daily. - Mac M5 Max Metal
       supports_vision: true
+      license: apache-2.0
+      pipeline_tag: any-to-any
+      param_count: 7996156490
+      hf_repo: google/gemma-4-E4B-it
+      max_input_tokens: 131072
+      max_tokens: 131072
 
   - model_name: mac/phi4
     litellm_params:
@@ -134,6 +160,11 @@ model_list:
     model_info:
       description: Phi-4 14B — punches above its weight, default daily driver under 14B. - Mac M5 Max Metal
       supports_reasoning: true
+      license: mit
+      pipeline_tag: text-generation
+      hf_repo: EasierAI/Phi-4-14B
+      max_input_tokens: 16384
+      max_tokens: 16384
 
   - model_name: mac/wizardlm-uncensored
     litellm_params:
@@ -142,6 +173,9 @@ model_list:
     model_info:
       description: WizardLM 13B — classic abliterated; nothing newer beat it for uncensored 13B-class as of May 2026. - Mac
         M5 Max Metal
+      hf_repo: QuixiAI/WizardLM-13B-Uncensored
+      max_input_tokens: 4096
+      max_tokens: 4096
 
   - model_name: mac/nuextract2
     litellm_params:
@@ -151,6 +185,12 @@ model_list:
       description: NuExtract-2.0-8B (Qwen2.5-VL based) — beats GPT-4.1 by +9 F-score on schema extraction. Generalist extractor.
         - Mac M5 Max Metal
       supports_vision: true
+      license: mit
+      pipeline_tag: image-text-to-text
+      param_count: 8292166656
+      hf_repo: numind/NuExtract-2.0-8B-GPTQ
+      max_input_tokens: 128000
+      max_tokens: 128000
 
   - model_name: mac/nuextract1.5
     litellm_params:
@@ -159,6 +199,8 @@ model_list:
     model_info:
       description: 'NuExtract 1.5 — template-based JSON fill (### Template / ### Text shape). Kept for legacy prompts. - Mac
         M5 Max Metal'
+      max_input_tokens: 131072
+      max_tokens: 131072
 
   - model_name: mac/universalner
     litellm_params:
@@ -167,6 +209,11 @@ model_list:
     model_info:
       description: UniversalNER 7B — zero-shot named-entity recognition ("What describes <type> in the text?"). Specialist for
         ad-hoc NER. - Mac M5 Max Metal
+      license: mit
+      pipeline_tag: token-classification
+      hf_repo: universalner/uner_slo_snk
+      max_input_tokens: 2048
+      max_tokens: 2048
 
   - model_name: mac/qwen3-embed-8b
     litellm_params:
@@ -176,6 +223,21 @@ model_list:
       description: 'Qwen3 Embedding 8B — #1 MTEB multilingual at 70.58, 100+ langs, dims 32-4096. The single embedding model
         we need. - Mac M5 Max Metal'
       mode: embedding
+
+  - model_name: mac/qwen3-vl
+    litellm_params:
+      model: ollama/qwen3-vl:latest
+      api_base: http://192.168.1.33:11434
+    model_info:
+      description: Qwen3-VL — beats InternVL3 on DocVQA / OS-World, 32-language OCR, robust to blur/tilt. May 2026 vision SOTA
+        for local. - Mac M5 Max Metal
+      supports_vision: true
+      license: apache-2.0
+      pipeline_tag: image-text-to-text
+      param_count: 2127532032
+      hf_repo: Qwen/Qwen3-VL-2B-Instruct
+      max_input_tokens: 262144
+      max_tokens: 262144
 
   # ─── vLLM-MLX (high throughput, OpenAI-compatible) ────────────────
   # >>> mac-node:auto-generated:end <<<
