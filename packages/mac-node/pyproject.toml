@@ -16,6 +16,8 @@ dependencies = [
     # merge-gguf strategy uses `hf download --include <pattern>` to
     # pull the shards before llama-gguf-split merges them.
     "huggingface_hub>=0.24",
+    # download-models.py renders a live multi-progress TUI with rich.
+    "rich>=13.7",
 ]
 
 [tool.setuptools]

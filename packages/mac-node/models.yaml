@@ -170,19 +170,33 @@ ollama:
       category: rp
       target: [mac]
 
-    - name: "hf.co/DavidAU/Qwen3-30B-A3B-Claude-4.5-Opus-High-Reasoning-2507-ABLITERATED-UNCENSORED-V2-GGUF:Q4_K_M"
+    # Hits an Ollama HF-realm bug ("realm host huggingface.co does not
+    # match original host hf.co"). Routing through merge-gguf instead —
+    # `hf download` then `ollama create` from the local file dodges
+    # the realm check entirely.
+    - name: qwen3-moe-uncensored:Q4_K_M
       alias: qwen3-moe-uncensored
-      description: "Qwen3-30B-A3B MoE (3B active) — Claude-Opus distill, heretic-abliterated. MoE wildcard — small-model speeds with 30B breadth. Reddit-hot but bench-thin; experimental A/B candidate. ChatML; temp 0.7."
+      description: "Qwen3-30B-A3B MoE (3B active) — heretic-abliterated reasoning distill. MoE wildcard — small-model speeds with 30B breadth. Reddit-hot but bench-thin; experimental A/B candidate. ChatML; temp 0.7."
       tags: [chat, uncensored, rp, creative, moe]
       category: rp
       target: [mac]
+      pull:
+        strategy: merge-gguf
+        hf_repo: "DavidAU/Qwen3-30B-A3B-Claude-4.5-Opus-High-Reasoning-2507-ABLITERATED-UNCENSORED-V2-GGUF"
+        hf_pattern: "*Q4_K_M*.gguf"
 
-    - name: "hf.co/anthracite-org/magnum-v4-72b-gguf:Q4_K_M"
+    # Q4_K_M is ~41GB — borderline single-file; HF chose to shard.
+    # Same merge-gguf workaround as Behemoth.
+    - name: magnum-v4:Q4_K_M
       alias: magnum-v4
-      description: "Magnum v4 72B (Qwen2.5 72B finetune) — gold standard for Claude-Sonnet-style prose mimicry and explicit content with literary craft. ChatML; 16k context (shorter); temp 1.0 / min_p 0.1."
+      description: "Magnum v4 72B (Qwen2.5 72B finetune) — gold standard for explicit + literary craft prose voice. ChatML; 16k context (shorter); temp 1.0 / min_p 0.1."
       tags: [chat, uncensored, rp, creative, explicit]
       category: rp
       target: [mac]
+      pull:
+        strategy: merge-gguf
+        hf_repo: "anthracite-org/magnum-v4-72b-gguf"
+        hf_pattern: "*Q4_K_M*.gguf"
 
     # ── Structured extraction (specialist family) ────────────────
     # nuextract2 is the generalist; we also keep nuextract1.5 and
@@ -190,23 +204,35 @@ ollama:
     # specialist task (template-based JSON fill vs zero-shot NER) and
     # downstream code may have prompts hardcoded against the older
     # input shapes. Cheap to keep, painful to lose.
+    # NOTE: these three community Ollama tags lost their upstream
+    # manifest (was a community upload that's been removed from the
+    # Ollama library). They're already pulled locally and serve fine
+    # via the proxy, but `ollama pull` for a fresh refresh now 404s.
+    # Marked `pull.strategy: local-only` so models:download verifies
+    # they exist on disk and skips the network round-trip.
     - name: nuextract2:latest
       alias: nuextract2
       description: "NuExtract-2.0-8B (Qwen2.5-VL based) — beats GPT-4.1 by +9 F-score on schema extraction. Generalist extractor."
       tags: [extraction, vision]
       category: serving
+      pull:
+        strategy: local-only
 
     - name: nuextract1.5:latest
       alias: nuextract1.5
       description: "NuExtract 1.5 — template-based JSON fill (### Template / ### Text shape). Kept for legacy prompts."
       tags: [extraction]
       category: serving
+      pull:
+        strategy: local-only
 
     - name: universalner:latest
       alias: universalner
       description: "UniversalNER 7B — zero-shot named-entity recognition (\"What describes <type> in the text?\"). Specialist for ad-hoc NER."
       tags: [extraction, ner]
       category: serving
+      pull:
+        strategy: local-only
 
     # ── Embedding ────────────────────────────────────────────────
     - name: qwen3-embedding:8b

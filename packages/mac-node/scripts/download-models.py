@@ -2,45 +2,46 @@
 """Pull every mac-targeted Ollama model from models.yaml in parallel.
 
 models.yaml is the single source of truth — this script reads it on each
-invocation, filters the entries `target` includes ``mac`` (or has no
-target field, which defaults to both targets), and calls ``ollama pull``
-on each one through a bounded asyncio pool.
+invocation, filters to entries where ``target`` includes ``mac`` (or has
+no target field, which defaults to both targets), and runs ``ollama
+pull`` on each one through a bounded asyncio pool.
+
+UX: a Rich-rendered live dashboard with one row per model, in-place
+progress bars, speed, and ETA. Falls back to per-line streamed output
+when stdout is not a TTY (CI logs, redirected to a file, etc.) so logs
+remain greppable.
+
+Two pull strategies live in the same pipeline:
+
+  ollama-pull (default):     ollama pull <name>     — straight through
+  merge-gguf:                hf download shards     — for sharded GGUF
+                             llama-gguf-split       repos that exceed
+                             ollama create          HF's single-file cap
 
 Dependencies
 ------------
-* `pyyaml`             — always required (for parsing models.yaml).
-* `huggingface_hub`    — required when any entry has
-                         `pull.strategy: merge-gguf` (provides the `hf`
-                         CLI used to fetch the shards).
-* `llama.cpp` (brew)   — required when any entry has
-                         `pull.strategy: merge-gguf` (provides
-                         `llama-gguf-split --merge`).
-* `ollama`             — always required (target for `ollama pull`
-                         and `ollama create`).
+* ``pyyaml``           — always required (parses models.yaml).
+* ``rich``             — always required (live progress dashboard).
+* ``huggingface_hub``  — required when any entry has
+                         ``pull.strategy: merge-gguf`` (provides ``hf``).
+* ``llama.cpp`` (brew) — required when any entry has
+                         ``pull.strategy: merge-gguf`` (provides
+                         ``llama-gguf-split --merge``).
+* ``ollama``           — always required (target for ``ollama pull``
+                         and ``ollama create``).
 
-These are wired into `mac-node/pyproject.toml` (Python deps) and
-`mac-node/Brewfile` (system deps), so `task setup` installs everything
-in one shot. If you're running this script outside `task setup`, see
-the README in this dir.
+These are wired into ``mac-node/pyproject.toml`` (Python deps) and
+``mac-node/Brewfile`` (system deps), so ``task setup`` installs
+everything in one shot.
 
-Usage:
+Usage
+-----
     python3 scripts/download-models.py
     python3 scripts/download-models.py --concurrency 3
     python3 scripts/download-models.py --only "qwen3-coder,deepseek-r1"
-    python3 scripts/download-models.py --skip "behemoth-x"   # known-sharded
-    python3 scripts/download-models.py --dry-run             # plan only
-
-Output is interleaved by model alias prefix so you can `grep` a single
-download's progress out of the stream:
-
-    [qwen3-coder] pulling manifest
-    [qwen3-coder] pulling 7d2f9b5b... 100% ▕████████████████▏ 18 GB
-    [deepseek-r1] pulling 4cd576d9... 67%  ▕███████████░░░░░▏ 13 GB
-
-Sharded GGUF entries (Ollama #5245 — currently unsupported) fail the
-pull with a 400; those models are listed in the failure summary so you
-can decide between (a) dropping them, (b) using a smaller single-file
-quant, or (c) merging shards manually with llama.cpp gguf-split.
+    python3 scripts/download-models.py --skip "behemoth-x"
+    python3 scripts/download-models.py --dry-run
+    python3 scripts/download-models.py --plain   # disable Rich UI
 """
 from __future__ import annotations
 
@@ -53,64 +54,90 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import AsyncIterator, Optional
 
 import yaml
 
 REPO_DIR = Path(__file__).resolve().parent.parent
 MODELS_PATH = REPO_DIR / "models.yaml"
 
-# ANSI for friendly progress in a TTY; degrades cleanly in a pipe.
-_TTY = sys.stdout.isatty()
-_C = {
-    "g":  "\033[32m" if _TTY else "",
-    "r":  "\033[31m" if _TTY else "",
-    "y":  "\033[33m" if _TTY else "",
-    "b":  "\033[34m" if _TTY else "",
-    "p":  "\033[35m" if _TTY else "",
-    "c":  "\033[36m" if _TTY else "",
-    "d":  "\033[2m"  if _TTY else "",
-    "x":  "\033[0m"  if _TTY else "",
-}
+
+# ───────────────────────────────────────────────────────────────────────
+# Domain types
+# ───────────────────────────────────────────────────────────────────────
 
 
 @dataclass
 class PullSpec:
-    """How to materialize the model on disk. Default strategy is the
-    direct ``ollama pull <name>`` path; ``merge-gguf`` is the workaround
-    for sharded HF GGUF repos (ollama/ollama#5245)."""
+    """How to materialize the model on disk.
 
-    strategy: str = "ollama-pull"      # "ollama-pull" | "merge-gguf"
-    hf_repo: str = ""                  # required for merge-gguf
-    hf_pattern: str = "*.gguf"         # glob the shards we need
-    scratch_root: str = ""             # override default scratch dir
-    keep_shards: bool = False          # don't delete shards after merge
+    - ``ollama-pull`` (default): straight ``ollama pull <name>``.
+    - ``merge-gguf``: ``hf download`` the shards, run
+      ``llama-gguf-split --merge`` (skipped if there's only one file),
+      then ``ollama create``. The fallback path for sharded GGUF
+      (ollama/ollama#5245) and for HF realm-host bugs that ``ollama
+      pull hf.co/...`` chokes on.
+    - ``local-only``: skip the network round-trip; just verify the
+      tag is already present in ``ollama list``. Used for community
+      Ollama tags whose upstream manifests have disappeared but which
+      we still have locally."""
+
+    strategy: str = "ollama-pull"      # "ollama-pull" | "merge-gguf" | "local-only"
+    hf_repo: str = ""
+    hf_pattern: str = "*.gguf"
+    scratch_root: str = ""
+    keep_shards: bool = False
 
 
 @dataclass
-class Job:
-    alias: str         # registry alias — used as the log prefix
-    name: str          # ollama tag — the *resulting* tag for merge-gguf
-    description: str = ""
+class JobState:
+    """Live, mutable view of a single model's pull progress.
+
+    The renderer reads this every refresh tick — we only need the
+    fields the UI shows, so derived bytes/speed/eta are stored as
+    pre-formatted strings."""
+
+    alias: str
+    name: str
     pull: PullSpec = field(default_factory=PullSpec)
-    status: str = "pending"   # pending | running | ok | fail
-    detail: str = ""
-    duration_s: float = 0.0
+    description: str = ""
+
+    # Status: "queued" | "running" | "done" | "fail"
+    status: str = "queued"
+    # Stage: human-readable verb describing the current step.
+    # Examples: "manifest", "layer 1bdf4b…", "downloading shards",
+    # "merging gguf", "creating ollama model", "verifying", "writing".
+    stage: str = "queued"
+    percent: float = 0.0
+    bytes_done: int = 0
+    bytes_total: int = 0
+    speed_str: str = ""
+    eta_str: str = ""
+    detail: str = ""           # last informational line
+    error: str = ""            # set when status == "fail"
+    started_at: float = 0.0
+    ended_at: float = 0.0
+
+    @property
+    def elapsed(self) -> float:
+        if not self.started_at:
+            return 0.0
+        end = self.ended_at or time.monotonic()
+        return end - self.started_at
 
 
-@dataclass
-class Plan:
-    jobs: list[Job] = field(default_factory=list)
+# ───────────────────────────────────────────────────────────────────────
+# Plan loading
+# ───────────────────────────────────────────────────────────────────────
 
 
-def load_plan(only: list[str], skip: list[str]) -> Plan:
+def load_plan(only: list[str], skip: list[str]) -> list[JobState]:
     """Read models.yaml and produce the list of jobs that match filters."""
     cfg = yaml.safe_load(MODELS_PATH.read_text())
-    jobs: list[Job] = []
+    out: list[JobState] = []
     for m in cfg.get("ollama", {}).get("models", []) or []:
         targets = m.get("target", ["mac", "runpod"])
         if "mac" not in targets:
-            # Runpod-only entries don't get pulled on this node.
             continue
         alias = str(m["alias"])
         name = str(m["name"])
@@ -126,44 +153,171 @@ def load_plan(only: list[str], skip: list[str]) -> Plan:
             scratch_root=str(pull_cfg.get("scratch_root", "")),
             keep_shards=bool(pull_cfg.get("keep_shards", False)),
         )
-        jobs.append(
-            Job(
+        out.append(
+            JobState(
                 alias=alias,
                 name=name,
-                description=m.get("description", ""),
                 pull=pull,
+                description=m.get("description", ""),
             )
         )
-    return Plan(jobs=jobs)
+    return out
 
 
-async def _stream(cmd: list[str], prefix: str, env: Optional[dict] = None) -> tuple[int, str]:
-    """Run a subprocess streaming merged stdout+stderr with a per-line
-    prefix. Returns (exit_code, last_line). Centralized so both pull
-    paths get identical logging behavior."""
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-        env=env,
-    )
-    last_line = ""
-    assert proc.stdout is not None
+# ───────────────────────────────────────────────────────────────────────
+# Output parsing
+#
+# Both `ollama pull` and `hf download` use \r-overwriting progress
+# lines, which asyncio's readline() (which only splits on \n) misses.
+# We read raw chunks and split on either \r or \n so each progress
+# update lands as its own "line".
+# ───────────────────────────────────────────────────────────────────────
+
+
+async def stream_lines(stream: asyncio.StreamReader) -> AsyncIterator[str]:
+    buf = bytearray()
     while True:
-        line = await proc.stdout.readline()
-        if not line:
-            break
-        text = line.decode("utf-8", "replace").rstrip("\r\n")
-        if not text:
-            continue
-        last_line = text
-        print(prefix + text, flush=True)
-    rc = await proc.wait()
-    return rc, last_line
+        chunk = await stream.read(256)
+        if not chunk:
+            if buf:
+                yield bytes(buf).decode("utf-8", "replace")
+            return
+        for byte in chunk:
+            if byte in (0x0d, 0x0a):  # \r or \n
+                if buf:
+                    yield bytes(buf).decode("utf-8", "replace")
+                    buf.clear()
+            else:
+                buf.append(byte)
+
+
+# Matches one of:
+#   pulling 1bdf4b8469bf: 47%
+#   pulling 1bdf4b8469bf:  47% ▕███░░░░░░░▏   20 GB/  42 GB    13 MB/s   26m54s
+#   pulling abc:  100% ▕....▏  1.5 KB
+_OLLAMA_LAYER_RE = re.compile(
+    r"""^pulling\ ([a-f0-9]{6,}):\s*
+        (?P<pct>\d+)%
+        (?:\s*[▕|\[].*?[▏\]|])?         # progress bar (optional)
+        \s*
+        (?:(?P<done>[\d.]+\s*[KMGTP]?B)
+            (?:\s*/\s*(?P<total>[\d.]+\s*[KMGTP]?B))?)?
+        (?:\s+(?P<speed>[\d.]+\s*[KMGTP]?B/s))?
+        (?:\s+(?P<eta>\S+))?
+        \s*$""",
+    re.VERBOSE,
+)
+
+# `Fetching 2 files:  47%|███▎       | 1/2 [10:00<10:00, ...]`
+_HF_FETCH_RE = re.compile(
+    r"^Fetching\s+(?P<total>\d+)\s+files?:\s*(?P<pct>\d+)%.*?(?P<done>\d+)/(?P<total2>\d+)"
+)
+# Per-file download progress within hf download:
+#   foo.gguf:  47%|███▎     | 19.8G/42.1G [10:00<11:00,  35MB/s]
+_HF_FILE_RE = re.compile(
+    r".*?:\s*(?P<pct>\d+)%.*?\|\s*(?P<done>[\d.]+\s*[KMGTP]?B?)/(?P<total>[\d.]+\s*[KMGTP]?B?)\s*\[(?P<elapsed>[^,]+),\s*(?P<speed>[^\]]+)\]"
+)
+
+_BYTES_RE = re.compile(r"^([\d.]+)\s*([KMGTP]?B)$", re.IGNORECASE)
+
+
+def _parse_size(s: str) -> int:
+    s = s.strip()
+    m = _BYTES_RE.match(s)
+    if not m:
+        return 0
+    n = float(m.group(1))
+    unit = m.group(2).upper()
+    mult = {"B": 1, "KB": 1024, "MB": 1024**2, "GB": 1024**3, "TB": 1024**4}.get(unit, 1)
+    return int(n * mult)
+
+
+def parse_ollama_line(line: str, job: JobState) -> None:
+    """Mutate `job` to reflect what `line` from ollama pull tells us.
+
+    Tolerant to stripped whitespace and missing optional fields; if the
+    line doesn't match any known pattern we just drop it into `detail`."""
+    s = line.strip()
+    if not s:
+        return
+    if s.startswith("pulling manifest"):
+        job.stage = "manifest"
+        job.detail = "pulling manifest"
+        return
+    if s.startswith("verifying"):
+        job.stage = "verifying"
+        job.detail = "verifying sha256"
+        job.percent = 99.0
+        return
+    if s.startswith("writing manifest"):
+        job.stage = "writing"
+        job.detail = "writing manifest"
+        job.percent = 99.5
+        return
+    if s == "success":
+        job.percent = 100.0
+        job.detail = "success"
+        return
+    m = _OLLAMA_LAYER_RE.match(s)
+    if m:
+        digest = s.split(":", 1)[0].split(" ", 1)[1][:8]
+        job.stage = f"layer {digest}"
+        job.percent = float(m.group("pct"))
+        if m.group("done"):
+            job.bytes_done = _parse_size(m.group("done") or "")
+        if m.group("total"):
+            job.bytes_total = _parse_size(m.group("total") or "")
+        job.speed_str = (m.group("speed") or "").strip()
+        job.eta_str = (m.group("eta") or "").strip()
+        job.detail = s[:120]
+        return
+    # Unrecognized — keep as detail so the failure summary can show it
+    # if the pull craps out right after.
+    job.detail = s[:160]
+
+
+def parse_hf_line(line: str, job: JobState) -> None:
+    """Best-effort parser for `hf download` tqdm output.
+
+    hf prints one bar for the overall N-files job and another per file
+    being downloaded; we prefer the per-file bar because it carries
+    speed + bytes."""
+    s = line.strip()
+    if not s:
+        return
+    m = _HF_FILE_RE.match(s)
+    if m:
+        job.stage = "downloading shard"
+        job.percent = float(m.group("pct"))
+        job.bytes_done = _parse_size(m.group("done"))
+        job.bytes_total = _parse_size(m.group("total"))
+        job.speed_str = (m.group("speed") or "").strip()
+        job.detail = s[:120]
+        return
+    m = _HF_FETCH_RE.match(s)
+    if m:
+        # Translate "1/2 files done" into a coarse percentage so the
+        # bar still moves between per-file updates.
+        try:
+            done = int(m.group("done"))
+            total = int(m.group("total2"))
+            if total:
+                job.percent = max(job.percent, 100.0 * done / total)
+        except (TypeError, ValueError):
+            pass
+        job.stage = f"downloading shards ({m.group('done')}/{m.group('total2')})"
+        return
+    if "Downloading" in s:
+        job.stage = "downloading shard"
+        job.detail = s[:120]
+
+
+# ───────────────────────────────────────────────────────────────────────
+# Subprocess runners
+# ───────────────────────────────────────────────────────────────────────
 
 
 def _which(*candidates: str) -> Optional[str]:
-    """Return the first command in PATH from a list of alternatives."""
     for c in candidates:
         path = shutil.which(c)
         if path:
@@ -171,194 +325,437 @@ def _which(*candidates: str) -> Optional[str]:
     return None
 
 
-def _scratch_dir(job: Job) -> Path:
-    """Where shards + merged GGUF land during merge-gguf workflows.
-    Default `~/.cache/catalyst-llm/pull/<alias>/` — unified location
-    so cleanup is `rm -rf ~/.cache/catalyst-llm/pull` if you need
-    to recover disk."""
+def _scratch_dir(job: JobState) -> Path:
     if job.pull.scratch_root:
         return Path(job.pull.scratch_root).expanduser() / job.alias
     return Path.home() / ".cache" / "catalyst-llm" / "pull" / job.alias
 
 
 def _find_first_shard(work: Path) -> Optional[Path]:
-    """Locate the `*-00001-of-NNNNN.gguf` shard. llama-gguf-split
-    --merge expects the first part; it walks the rest itself."""
-    # GGUF shard naming convention: `<base>-00001-of-NNNNN.gguf`
     candidates = sorted(work.rglob("*-00001-of-*.gguf"))
     if candidates:
         return candidates[0]
-    # Fallback for older quanters that use 1-based without zero-padding
     candidates = sorted(work.rglob("*-1-of-*.gguf"))
     if candidates:
         return candidates[0]
-    # Last-ditch: just take the lexicographically first GGUF
     candidates = sorted(work.rglob("*.gguf"))
     return candidates[0] if candidates else None
 
 
-async def pull_via_ollama(job: Job, prefix: str) -> None:
-    """The default path: `ollama pull <name>` straight through."""
-    rc, last = await _stream(["ollama", "pull", job.name], prefix)
+async def _run_streamed(
+    cmd: list[str],
+    job: JobState,
+    parse: callable,
+    *,
+    env: Optional[dict] = None,
+) -> tuple[int, str]:
+    """Spawn `cmd`, stream output through `parse(line, job)`, return
+    (exit_code, last_line). The parser owns mutating the job state."""
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+        env=env,
+    )
+    last = ""
+    assert proc.stdout is not None
+    async for line in stream_lines(proc.stdout):
+        if line.strip():
+            last = line
+            try:
+                parse(line, job)
+            except Exception as exc:
+                # Never let a parser bug crash the whole pull — just
+                # store the error and keep the subprocess running.
+                job.detail = f"parse error: {exc}"
+    rc = await proc.wait()
+    return rc, last
+
+
+async def pull_via_ollama(job: JobState) -> None:
+    rc, last = await _run_streamed(["ollama", "pull", job.name], job, parse_ollama_line)
     if rc == 0:
-        job.status = "ok"
+        job.status = "done"
+        job.percent = 100.0
         job.detail = "done"
     else:
         job.status = "fail"
-        # Surface the last line — usually the real reason (sharded
-        # GGUF 400, manifest 404, network, disk-full).
-        job.detail = last or f"exit code {rc}"
+        job.error = last or f"exit code {rc}"
 
 
-async def pull_via_merge_gguf(job: Job, prefix: str) -> None:
-    """Sharded-GGUF workaround: download shards from HF, merge via
-    `llama-gguf-split --merge`, then `ollama create` the resulting
-    single-file model under job.name as the local tag."""
+async def _ollama_lists_tag(tag: str) -> bool:
+    """True iff `ollama list` reports `tag` (with or without :latest)."""
+    proc = await asyncio.create_subprocess_exec(
+        "ollama", "list",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    stdout_b, _ = await proc.communicate()
+    if proc.returncode != 0:
+        return False
+    text = stdout_b.decode("utf-8", "replace")
+    # `ollama list` first column is the tag; cheap substring check is
+    # robust enough since Ollama tags don't contain whitespace.
+    aliases = {tag, tag.removesuffix(":latest"), f"{tag}:latest"}
+    for line in text.splitlines()[1:]:  # skip header row
+        first = line.strip().split()
+        if first and first[0] in aliases:
+            return True
+    return False
+
+
+async def pull_via_local_only(job: JobState) -> None:
+    """For tags that are present locally but whose upstream manifest
+    has disappeared. We do nothing on the network — just verify the
+    model is there and report accordingly."""
+    job.stage = "verifying local"
+    if await _ollama_lists_tag(job.name):
+        job.status = "done"
+        job.stage = "already present"
+        job.percent = 100.0
+        job.detail = "local-only — upstream manifest unavailable; tag is on disk"
+        return
+    job.status = "fail"
+    job.error = (
+        f"tag {job.name!r} is marked pull.strategy=local-only but is not present "
+        f"in `ollama list`. Bring it back manually or change the strategy."
+    )
+
+
+async def pull_via_merge_gguf(job: JobState) -> None:
     if not job.pull.hf_repo:
         job.status = "fail"
-        job.detail = "merge-gguf strategy requires pull.hf_repo in models.yaml"
+        job.error = "merge-gguf needs pull.hf_repo in models.yaml"
         return
-
     hf = _which("hf", "huggingface-cli")
     if not hf:
         job.status = "fail"
-        job.detail = "neither `hf` nor `huggingface-cli` found in PATH (pip install huggingface_hub)"
-        return
-
-    splitter = _which("llama-gguf-split", "gguf-split")
-    if not splitter:
-        job.status = "fail"
-        job.detail = "llama-gguf-split not found in PATH (brew install llama.cpp)"
+        job.error = "neither `hf` nor `huggingface-cli` in PATH (pip install huggingface_hub)"
         return
 
     work = _scratch_dir(job)
     work.mkdir(parents=True, exist_ok=True)
 
-    # Step 1 — download matching shards from HF. The `hf download` and
-    # the legacy `huggingface-cli download` share most flags.
-    print(f"{prefix}fetching shards from {job.pull.hf_repo} -> {work}", flush=True)
-    download_cmd = [
-        hf,
-        "download",
-        job.pull.hf_repo,
-        "--include",
-        job.pull.hf_pattern,
-        "--local-dir",
-        str(work),
-    ]
-    rc, last = await _stream(download_cmd, prefix)
+    # Step 1 — fetch shards from HF.
+    job.stage = "downloading shards"
+    rc, last = await _run_streamed(
+        [hf, "download", job.pull.hf_repo, "--include", job.pull.hf_pattern,
+         "--local-dir", str(work)],
+        job,
+        parse_hf_line,
+    )
     if rc != 0:
         job.status = "fail"
-        job.detail = f"hf download failed: {last}"
+        job.error = f"hf download failed: {last}"
         return
 
     first = _find_first_shard(work)
     if not first:
         job.status = "fail"
-        job.detail = f"no GGUF shards found under {work} (pattern={job.pull.hf_pattern})"
-        return
-    print(f"{prefix}first shard: {first.name}", flush=True)
-
-    # Step 2 — merge the shards. The output filename is anchored at
-    # `merged.gguf` in the same dir so we know how to clean up later.
-    merged = work / "merged.gguf"
-    if merged.exists():
-        # Re-run safety: stale merged file from an interrupted run.
-        merged.unlink()
-    rc, last = await _stream(
-        [splitter, "--merge", str(first), str(merged)],
-        prefix,
-    )
-    if rc != 0:
-        job.status = "fail"
-        job.detail = f"llama-gguf-split --merge failed: {last}"
+        job.error = f"no GGUF files under {work} (pattern={job.pull.hf_pattern})"
         return
 
-    # Step 3 — register the merged file as an Ollama model. We hand
-    # `ollama create` a Modelfile with a single FROM line; no other
-    # parameters by default (the GGUF carries its own template).
+    # Step 2 — if it's a multi-shard set ("…-00001-of-NNNNN.gguf"),
+    # merge with llama-gguf-split. If it's a single non-sharded file
+    # we just point the Modelfile straight at it; this lets the same
+    # strategy double as a generic "hf download then ollama create"
+    # path for repos where `ollama pull hf.co/…` itself misbehaves
+    # (HF realm-host bug etc.).
+    is_sharded = bool(re.search(r"-\d+-of-\d+\.gguf$", first.name))
+    if is_sharded:
+        splitter = _which("llama-gguf-split", "gguf-split")
+        if not splitter:
+            job.status = "fail"
+            job.error = "llama-gguf-split not in PATH (brew install llama.cpp)"
+            return
+        merged = work / "merged.gguf"
+        if merged.exists():
+            merged.unlink()
+        job.stage = "merging gguf"
+        job.percent = 0.0
+        job.bytes_done = 0
+        job.bytes_total = 0
+        job.speed_str = ""
+        job.eta_str = ""
+        rc, last = await _run_streamed(
+            [splitter, "--merge", str(first), str(merged)],
+            job,
+            # llama-gguf-split's progress is byte-count per part; not
+            # structured enough to parse cleanly. Stage label conveys
+            # the activity and Rich's refresh keeps the row live.
+            lambda line, j: setattr(j, "detail", line.strip()[:120]),
+        )
+        if rc != 0:
+            job.status = "fail"
+            job.error = f"llama-gguf-split --merge failed: {last}"
+            return
+    else:
+        # Single-file path — no merge step needed.
+        merged = first
+        job.stage = "single file (no merge)"
+        job.detail = f"using {first.name} directly"
+
+    # Step 3 — register with Ollama under the configured local tag.
     modelfile = work / "Modelfile"
     modelfile.write_text(f"FROM {merged}\n")
-    rc, last = await _stream(
+    job.stage = "ollama create"
+    job.percent = 0.0
+    rc, last = await _run_streamed(
         ["ollama", "create", job.name, "-f", str(modelfile)],
-        prefix,
+        job,
+        parse_ollama_line,
     )
     if rc != 0:
         job.status = "fail"
-        job.detail = f"ollama create failed: {last}"
+        job.error = f"ollama create failed: {last}"
         return
 
-    # Step 4 — optional cleanup. `keep_shards: true` is for when you
-    # plan to merge a different quant from the same repo and want to
-    # save the bandwidth. Default is to free the ~75GB of shards now
-    # that Ollama owns the merged copy in its own model store.
+    # Step 4 — clean up.
     if not job.pull.keep_shards:
         for f in work.rglob("*.gguf"):
             try:
                 f.unlink()
             except OSError:
-                pass  # best-effort
+                pass
         try:
             modelfile.unlink()
         except OSError:
             pass
 
-    job.status = "ok"
+    job.status = "done"
+    job.percent = 100.0
     job.detail = f"merged {first.name} -> ollama tag {job.name}"
 
 
-async def pull_one(job: Job, prefix_width: int) -> None:
-    """Dispatch on pull strategy and stream output with a prefix."""
+async def run_one(job: JobState) -> None:
     job.status = "running"
-    started = time.monotonic()
-    pad = job.alias.ljust(prefix_width)
-    prefix = f"{_C['c']}[{pad}]{_C['x']} "
+    job.started_at = time.monotonic()
     try:
         if job.pull.strategy == "merge-gguf":
-            await pull_via_merge_gguf(job, prefix)
+            await pull_via_merge_gguf(job)
+        elif job.pull.strategy == "local-only":
+            await pull_via_local_only(job)
         else:
-            await pull_via_ollama(job, prefix)
+            await pull_via_ollama(job)
+    except Exception as exc:  # pragma: no cover — defensive
+        job.status = "fail"
+        job.error = f"{type(exc).__name__}: {exc}"
     finally:
-        job.duration_s = time.monotonic() - started
+        job.ended_at = time.monotonic()
 
 
-async def run_plan(plan: Plan, concurrency: int) -> None:
-    """Run all jobs through a bounded semaphore. We keep the semaphore
-    rather than asyncio.gather'ing N coroutines because Ollama pulls
-    are I/O-heavy and saturating the LAN with 5 concurrent downloads
-    just makes them all slow."""
-    if not plan.jobs:
-        return
-    width = max(len(j.alias) for j in plan.jobs)
+# ───────────────────────────────────────────────────────────────────────
+# Rendering
+# ───────────────────────────────────────────────────────────────────────
+
+
+def _human_bytes(n: int) -> str:
+    if n <= 0:
+        return ""
+    units = ["B", "KB", "MB", "GB", "TB"]
+    i = 0
+    f = float(n)
+    while f >= 1024 and i < len(units) - 1:
+        f /= 1024
+        i += 1
+    if f >= 100:
+        return f"{f:.0f} {units[i]}"
+    if f >= 10:
+        return f"{f:.1f} {units[i]}"
+    return f"{f:.2f} {units[i]}"
+
+
+def _human_elapsed(s: float) -> str:
+    if s < 60:
+        return f"{s:.0f}s"
+    m, s = divmod(int(s), 60)
+    if m < 60:
+        return f"{m}m{s:02d}s"
+    h, m = divmod(m, 60)
+    return f"{h}h{m:02d}m"
+
+
+def render_dashboard(jobs: list[JobState], concurrency: int):
+    """Build the Rich Table that the Live display refreshes."""
+    from rich.table import Table
+    from rich.text import Text
+    from rich import box
+
+    done = sum(1 for j in jobs if j.status == "done")
+    fail = sum(1 for j in jobs if j.status == "fail")
+    running = sum(1 for j in jobs if j.status == "running")
+    queued = sum(1 for j in jobs if j.status == "queued")
+
+    title = (
+        f"[bold magenta]models:download[/]  "
+        f"[dim]· {len(jobs)} jobs · concurrency {concurrency} · "
+        f"[green]✓ {done}[/] · [yellow]→ {running}[/] · "
+        f"[dim]queued {queued}[/] · [red]✗ {fail}[/][/dim]"
+    )
+    table = Table(
+        title=title,
+        title_justify="left",
+        box=box.SIMPLE_HEAD,
+        expand=True,
+        padding=(0, 1),
+        header_style="bold cyan",
+    )
+    table.add_column("", width=2, no_wrap=True)               # status glyph
+    table.add_column("model", style="bold", no_wrap=True)     # alias
+    table.add_column("stage", no_wrap=True, max_width=24)
+    table.add_column("progress", min_width=24, ratio=2)       # bar
+    table.add_column("size", justify="right", no_wrap=True)
+    table.add_column("speed", justify="right", no_wrap=True)
+    table.add_column("eta", justify="right", no_wrap=True)
+    table.add_column("elapsed", justify="right", no_wrap=True)
+
+    for j in jobs:
+        glyph, glyph_style, row_style = {
+            "queued":  ("·", "dim", "dim"),
+            "running": ("◐", "yellow", ""),
+            "done":    ("✓", "green", "green"),
+            "fail":    ("✗", "red", "red"),
+        }[j.status]
+        bar = _bar(j.percent, j.status)
+        size = ""
+        if j.bytes_total:
+            size = f"{_human_bytes(j.bytes_done)} / {_human_bytes(j.bytes_total)}"
+        elif j.bytes_done:
+            size = _human_bytes(j.bytes_done)
+        elif j.percent and j.status == "running":
+            size = f"{j.percent:.0f}%"
+        elapsed = _human_elapsed(j.elapsed) if j.started_at else ""
+        stage_label = j.stage if j.status != "fail" else "failed"
+        if j.pull.strategy == "merge-gguf" and j.status == "queued":
+            stage_label = "queued (merge)"
+        table.add_row(
+            Text(glyph, style=glyph_style),
+            Text(j.alias, style=row_style or "bold"),
+            Text(stage_label, style=row_style),
+            bar,
+            Text(size, style="dim"),
+            Text(j.speed_str or "", style="dim"),
+            Text(j.eta_str or "", style="dim"),
+            Text(elapsed, style="dim"),
+        )
+
+    return table
+
+
+def _bar(percent: float, status: str):
+    """Hand-rolled fixed-width Unicode progress bar — Rich's BarColumn
+    can't be embedded as a cell easily, so we draw our own."""
+    from rich.text import Text
+
+    width = 20
+    pct = max(0.0, min(100.0, percent))
+    filled = int(round(width * pct / 100.0))
+    color = {
+        "done": "green",
+        "fail": "red",
+        "running": "magenta",
+    }.get(status, "dim")
+    bar = Text()
+    bar.append("▕", style="dim")
+    bar.append("█" * filled, style=color)
+    bar.append("░" * (width - filled), style="dim")
+    bar.append("▏", style="dim")
+    bar.append(f" {pct:5.1f}%", style=color if status == "running" else "dim")
+    return bar
+
+
+# ───────────────────────────────────────────────────────────────────────
+# Orchestration
+# ───────────────────────────────────────────────────────────────────────
+
+
+async def run_with_dashboard(
+    jobs: list[JobState], concurrency: int, plain: bool
+) -> None:
+    """Drive the worker pool and either redraw the Rich Live dashboard
+    or stream plain-text status lines (for non-TTY / --plain mode)."""
+    from rich.console import Console
+    from rich.live import Live
+
+    console = Console()
+    use_rich = console.is_terminal and not plain
+
     sem = asyncio.Semaphore(concurrency)
 
-    async def runner(j: Job) -> None:
+    async def runner(j: JobState) -> None:
         async with sem:
-            await pull_one(j, width)
+            await run_one(j)
 
-    await asyncio.gather(*(runner(j) for j in plan.jobs))
+    if not use_rich:
+        # Plain mode: print one event per state transition. We poll the
+        # job list at the same cadence as the rich refresh.
+        async def watcher():
+            seen: dict[str, str] = {}
+            while True:
+                for j in jobs:
+                    key = f"{j.status}:{j.stage}:{int(j.percent)}"
+                    if seen.get(j.alias) != key:
+                        seen[j.alias] = key
+                        print(
+                            f"[{j.alias:<22}] {j.status:<7} "
+                            f"{j.stage:<22} {j.percent:5.1f}% "
+                            f"{j.detail[:80]}",
+                            flush=True,
+                        )
+                if all(j.status in ("done", "fail") for j in jobs):
+                    return
+                await asyncio.sleep(0.5)
+
+        await asyncio.gather(watcher(), *(runner(j) for j in jobs))
+        return
+
+    # Rich live dashboard mode.
+    with Live(
+        render_dashboard(jobs, concurrency),
+        console=console,
+        refresh_per_second=8,
+        transient=False,
+    ) as live:
+        async def refresher():
+            while True:
+                live.update(render_dashboard(jobs, concurrency))
+                if all(j.status in ("done", "fail") for j in jobs):
+                    return
+                await asyncio.sleep(0.15)
+
+        await asyncio.gather(refresher(), *(runner(j) for j in jobs))
 
 
-def print_summary(plan: Plan) -> int:
-    """Print the post-run report; returns process exit code."""
-    print()
-    print(f"{_C['p']}── Summary ──{_C['x']}")
-    ok = [j for j in plan.jobs if j.status == "ok"]
-    fail = [j for j in plan.jobs if j.status == "fail"]
-    pending = [j for j in plan.jobs if j.status == "pending"]
-    print(
-        f"  {_C['g']}✓ ok{_C['x']:<10} {len(ok):>3}   "
-        f"{_C['r']}✗ failed{_C['x']:<6} {len(fail):>3}   "
-        f"{_C['y']}? pending{_C['x']:<5} {len(pending):>3}   "
-        f"{_C['d']}total{_C['x']}    {len(plan.jobs):>3}"
+def print_summary(jobs: list[JobState]) -> int:
+    """Post-run report. Returns process exit code."""
+    from rich.console import Console
+    from rich.text import Text
+
+    console = Console()
+    ok = [j for j in jobs if j.status == "done"]
+    fail = [j for j in jobs if j.status == "fail"]
+    pending = [j for j in jobs if j.status not in ("done", "fail")]
+    console.print()
+    console.rule("[bold magenta]summary[/]", align="left")
+    console.print(
+        f"  [green]✓ ok[/] {len(ok):>3}    "
+        f"[red]✗ failed[/] {len(fail):>3}    "
+        f"[yellow]? pending[/] {len(pending):>3}    "
+        f"[dim]total[/] {len(jobs):>3}"
     )
     if fail:
-        print()
-        print(f"{_C['r']}── Failures (need attention) ──{_C['x']}")
+        console.print()
+        console.rule("[bold red]failures[/]", align="left")
         for j in fail:
-            print(f"  {_C['r']}✗{_C['x']} {j.alias:<24} {_C['d']}{j.name}{_C['x']}")
-            if j.detail:
-                print(f"      {j.detail[:160]}")
+            console.print(
+                Text.assemble(
+                    ("  ✗ ", "bold red"),
+                    (f"{j.alias:<24}", "bold"),
+                    (f" {j.name}", "dim"),
+                )
+            )
+            if j.error:
+                console.print(Text(f"      {j.error[:200]}", style="red"))
     return 0 if not fail else 1
 
 
@@ -372,21 +769,12 @@ def parse_args() -> argparse.Namespace:
         default=int(os.environ.get("OLLAMA_PULL_CONCURRENCY", "2")),
         help="Max simultaneous `ollama pull` invocations (default 2)",
     )
-    p.add_argument(
-        "--only",
-        default="",
-        help="Comma-separated alias or name list — only pull these",
-    )
-    p.add_argument(
-        "--skip",
-        default="",
-        help="Comma-separated alias or name list — exclude from pull",
-    )
-    p.add_argument(
-        "--dry-run", "-n",
-        action="store_true",
-        help="Print the plan and exit without pulling",
-    )
+    p.add_argument("--only", default="", help="Comma-separated allow-list (alias or name)")
+    p.add_argument("--skip", default="", help="Comma-separated deny-list (alias or name)")
+    p.add_argument("--dry-run", "-n", action="store_true",
+                   help="Print the plan and exit without pulling")
+    p.add_argument("--plain", action="store_true",
+                   help="Disable Rich live UI; stream per-line state transitions")
     return p.parse_args()
 
 
@@ -395,29 +783,28 @@ def main() -> int:
     only = [s.strip() for s in args.only.split(",") if s.strip()]
     skip = [s.strip() for s in args.skip.split(",") if s.strip()]
 
-    plan = load_plan(only=only, skip=skip)
-    if not plan.jobs:
-        print(f"{_C['y']}No matching models in models.yaml{_C['x']}")
+    jobs = load_plan(only=only, skip=skip)
+    if not jobs:
+        print("No matching models in models.yaml")
         return 0
 
-    print(
-        f"{_C['p']}── Pulling {len(plan.jobs)} model(s) "
-        f"with concurrency {args.concurrency} ──{_C['x']}"
-    )
-    width = max(len(j.alias) for j in plan.jobs)
-    for j in plan.jobs:
-        strat = "" if j.pull.strategy == "ollama-pull" else f" {_C['y']}[{j.pull.strategy}]{_C['x']}"
-        print(f"  {j.alias:<{width}}  {_C['d']}{j.name}{_C['x']}{strat}")
-    print()
+    from rich.console import Console
+    console = Console()
+    width = max(len(j.alias) for j in jobs)
+    console.print(f"[bold magenta]── {len(jobs)} job(s) · concurrency {args.concurrency} ──[/]")
+    for j in jobs:
+        strat = "" if j.pull.strategy == "ollama-pull" else f" [yellow]{j.pull.strategy}[/]"
+        console.print(f"  [bold]{j.alias:<{width}}[/]  [dim]{j.name}[/]{strat}")
+    console.print()
 
     if args.dry_run:
         return 0
 
     try:
-        asyncio.run(run_plan(plan, concurrency=args.concurrency))
+        asyncio.run(run_with_dashboard(jobs, args.concurrency, args.plain))
     except KeyboardInterrupt:
-        print(f"\n{_C['y']}Interrupted — partial results below{_C['x']}")
-    return print_summary(plan)
+        console.print("\n[yellow]Interrupted — partial results below[/]")
+    return print_summary(jobs)
 
 
 if __name__ == "__main__":

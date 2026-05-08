@@ -162,19 +162,19 @@ model_list:
 
   - model_name: mac/qwen3-moe-uncensored
     litellm_params:
-      model: ollama/hf.co/DavidAU/Qwen3-30B-A3B-Claude-4.5-Opus-High-Reasoning-2507-ABLITERATED-UNCENSORED-V2-GGUF:Q4_K_M
+      model: ollama/qwen3-moe-uncensored:Q4_K_M
       api_base: http://192.168.1.33:11434
     model_info:
-      description: Qwen3-30B-A3B MoE (3B active) — Claude-Opus distill, heretic-abliterated. MoE wildcard — small-model speeds
+      description: Qwen3-30B-A3B MoE (3B active) — heretic-abliterated reasoning distill. MoE wildcard — small-model speeds
         with 30B breadth. Reddit-hot but bench-thin; experimental A/B candidate. ChatML; temp 0.7. - Mac M5 Max Metal
 
   - model_name: mac/magnum-v4
     litellm_params:
-      model: ollama/hf.co/anthracite-org/magnum-v4-72b-gguf:Q4_K_M
+      model: ollama/magnum-v4:Q4_K_M
       api_base: http://192.168.1.33:11434
     model_info:
-      description: Magnum v4 72B (Qwen2.5 72B finetune) — gold standard for Claude-Sonnet-style prose mimicry and explicit content
-        with literary craft. ChatML; 16k context (shorter); temp 1.0 / min_p 0.1. - Mac M5 Max Metal
+      description: Magnum v4 72B (Qwen2.5 72B finetune) — gold standard for explicit + literary craft prose voice. ChatML; 16k
+        context (shorter); temp 1.0 / min_p 0.1. - Mac M5 Max Metal
 
   - model_name: mac/nuextract2
     litellm_params:
