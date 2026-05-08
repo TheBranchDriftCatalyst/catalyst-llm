@@ -4,13 +4,12 @@ model_list:
   # ───────────────────────────────────────────────────────────────────
 
   # --- Anthropic (Claude) ---
-  - model_name: "claude-sonnet-4-20250514"
+  # May 2026: Opus 4.7 (released 2026-04-16, 87.6% SWE-bench Verified) is
+  # the flagship — replaces opus-4 + sonnet-4 from May 2025. Haiku 4.5 is
+  # the budget pair. SOTA shortlist lives in packages/mac-node/AGENTS.md.
+  - model_name: "claude-opus-4-7-20260416"
     litellm_params:
-      model: "anthropic/claude-sonnet-4-20250514"
-      api_key: "os.environ/ANTHROPIC_API_KEY"
-  - model_name: "claude-opus-4-20250514"
-    litellm_params:
-      model: "anthropic/claude-opus-4-20250514"
+      model: "anthropic/claude-opus-4-7-20260416"
       api_key: "os.environ/ANTHROPIC_API_KEY"
   - model_name: "claude-haiku-4-5-20251001"
     litellm_params:
@@ -18,18 +17,20 @@ model_list:
       api_key: "os.environ/ANTHROPIC_API_KEY"
 
   # --- OpenAI (GPT) ---
-  - model_name: "gpt-4o"
+  # May 2026: gpt-5.5 (GA 2026-04-24, 1M context) replaces gpt-4o + 4o-mini.
+  # o3-mini stays as the OpenAI reasoning option (NOTE: it can return empty
+  # content if max_tokens is small — reasoning tokens count against the cap.
+  # Clients should send max_tokens >= 4096 when targeting it).
+  - model_name: "gpt-5.5"
     litellm_params:
-      model: "openai/gpt-4o"
-      api_key: "os.environ/OPENAI_API_KEY"
-  - model_name: "gpt-4o-mini"
-    litellm_params:
-      model: "openai/gpt-4o-mini"
+      model: "openai/gpt-5.5"
       api_key: "os.environ/OPENAI_API_KEY"
   - model_name: "o3-mini"
     litellm_params:
       model: "openai/o3-mini"
       api_key: "os.environ/OPENAI_API_KEY"
+      # Floor max_tokens so reasoning doesn't burn the budget and yield ""
+      max_tokens: 4096
 
   # --- OpenAI Embeddings ---
   - model_name: "text-embedding-3-small"
@@ -73,151 +74,42 @@ model_list:
   #       token — best for the initial tool-calling pass when paired with the 35B-A3B for repair loops.
   # >>> runpod-vllm:auto-generated:end <<<
 
-  - model_name: "runpod/gemma-4-31b-it"
-    litellm_params:
-      model: "openai/google/gemma-4-31B-it"
-      api_base: "https://api.runpod.ai/v2/fa625vcnpdv1vr/openai/v1"
-      api_key: "os.environ/RUNPOD_API_KEY"
-      timeout: 300
+  # NOTE: runpod/gemma-4-31b-it removed — endpoint fa625vcnpdv1vr returns
+  # 404 (pod offline as of May 2026 audit). Re-add with a fresh endpoint
+  # ID if you bring runpod back up.
 
   # >>> mac-node:auto-generated:start <<<
   # DO NOT EDIT — managed by packages/mac-node/scripts/gen-litellm.py
-  # Source of truth: packages/mac-node/models.yaml (39 ollama, 5 vllm-mlx, 2 image_gen)
+  # Source of truth: packages/mac-node/models.yaml (11 ollama, 0 vllm-mlx, 0 image_gen)
   # Regenerate: cd packages/mac-node && task generate
 
   # ─── Ollama (Metal accelerated) ───────────────────────────────────
-  - model_name: mac/devstral
+  - model_name: mac/qwen3-coder
     litellm_params:
-      model: ollama/devstral:latest
+      model: ollama/qwen3-coder:30b
       api_base: http://192.168.1.33:11434
     model_info:
-      description: Devstral 24B coding - Mac M5 Max Metal
+      description: Qwen3-Coder 30B-A3B MoE — 256K ctx, ~Sonnet 4.5-class agentic coding, BFCL v3 top tier (function calling).
+        Replaces qwen2.5-coder + devstral. - Mac M5 Max Metal
+      supports_function_calling: true
 
-  - model_name: mac/deepseek-r1-32b
+  - model_name: mac/deepseek-r1
     litellm_params:
       model: ollama/deepseek-r1:32b
       api_base: http://192.168.1.33:11434
     model_info:
-      description: DeepSeek R1 32B reasoning - Mac M5 Max Metal
-
-  - model_name: mac/qwen3-32b
-    litellm_params:
-      model: ollama/qwen3:32b
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: Qwen3 32B general purpose - Mac M5 Max Metal
-
-  - model_name: mac/qwen3-coder
-    litellm_params:
-      model: ollama/qwen3-coder:latest
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: Qwen3 Coder 30B MoE - Mac M5 Max Metal
-
-  - model_name: mac/mistral-nemo
-    litellm_params:
-      model: ollama/mistral-nemo:latest
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: Mistral Nemo 12B - Mac M5 Max Metal
-
-  - model_name: mac/dolphin-mistral
-    litellm_params:
-      model: ollama/dolphin-mistral:7b
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: Uncensored Mistral 7B - Mac M5 Max Metal
-
-  - model_name: mac/qwen2.5-coder
-    litellm_params:
-      model: ollama/qwen2.5-coder:7b
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: Qwen 2.5 Coder 7B - Mac M5 Max Metal
-
-  - model_name: mac/deepseek-r1-7b
-    litellm_params:
-      model: ollama/deepseek-r1:7b
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: DeepSeek R1 reasoning 7B - Mac M5 Max Metal
-
-  - model_name: mac/nuextract1.5
-    litellm_params:
-      model: ollama/nuextract1.5:latest
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: NuExtract 1.5 structured extraction - Mac M5 Max Metal
-
-  - model_name: mac/nuextract2
-    litellm_params:
-      model: ollama/nuextract2:latest
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: NuExtract 2.0 8B multimodal extraction - Mac M5 Max Metal
-
-  - model_name: mac/universalner
-    litellm_params:
-      model: ollama/universalner:latest
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: UniversalNER 7B zero-shot NER - Mac M5 Max Metal
-
-  - model_name: mac/gemma3-12b
-    litellm_params:
-      model: ollama/gemma3:12b
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: Gemma3 12B — best ≤12B on LLMStructBench - Mac M5 Max Metal
-
-  - model_name: mac/mistral
-    litellm_params:
-      model: ollama/mistral:latest
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: Mistral 7B — best recall in our benchmarks - Mac M5 Max Metal
-
-  - model_name: mac/qwen2.5-7b
-    litellm_params:
-      model: ollama/qwen2.5:7b-instruct
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: Qwen 2.5 7B Instruct — best balanced extraction - Mac M5 Max Metal
-
-  - model_name: mac/llama3.1
-    litellm_params:
-      model: ollama/llama3.1:8b
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: Llama 3.1 8B — best SPO extraction - Mac M5 Max Metal
-
-  - model_name: mac/llama3.2
-    litellm_params:
-      model: ollama/llama3.2:latest
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: Llama 3.2 3B — fastest (116 tok/s) - Mac M5 Max Metal
-
-  - model_name: mac/gemma3-4b
-    litellm_params:
-      model: ollama/gemma3:4b
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: Gemma3 4B — smallest high scorer - Mac M5 Max Metal
-
-  - model_name: mac/qwen3.6
-    litellm_params:
-      model: ollama/qwen3.6:27b
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: Qwen 3.6 27B — SWE-bench 77.2% - Mac M5 Max Metal
+      description: DeepSeek R1 Distill Qwen 32B — beats o1-mini on math/code reasoning, ~18-20GB Q4_K_M, 11-14 tok/s on M5 Max.
+        The reasoning local sweet spot. - Mac M5 Max Metal
+      supports_reasoning: true
 
   - model_name: mac/gemma4-26b
     litellm_params:
       model: ollama/gemma4:26b
       api_base: http://192.168.1.33:11434
     model_info:
-      description: Gemma 4 26B-A4B MoE (multimodal + thinking, Q4_K_M) - Mac M5 Max Metal
+      description: Gemma 4 26B-A4B MoE (multimodal + thinking, Q4_K_M). Vision routing alias for the playground until qwen3-vl
+        is pulled and verified. - Mac M5 Max Metal
+      supports_vision: true
 
   - model_name: mac/gemma4-vision
     litellm_params:
@@ -225,213 +117,67 @@ model_list:
       api_base: http://192.168.1.33:11434
     model_info:
       description: alias of mac/gemma4-26b (gemma4:26b) - Mac M5 Max Metal
-
-  - model_name: mac/gemma4-26b-mlx
-    litellm_params:
-      model: ollama/gemma4:26b-mlx-bf16
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: 'Gemma 4 26B-A4B MoE — MLX-converted BF16 safetensors (text-only: ships without vision projector on Ollama)
-        - Mac M5 Max Metal'
+      supports_vision: true
 
   - model_name: mac/gemma4
     litellm_params:
       model: ollama/gemma4:e4b
       api_base: http://192.168.1.33:11434
     model_info:
-      description: Gemma 4 E4B MoE (multimodal + thinking) - Mac M5 Max Metal
+      description: Gemma 4 E4B MoE (multimodal + thinking) — fast vision-capable daily. - Mac M5 Max Metal
+      supports_vision: true
 
   - model_name: mac/phi4
     litellm_params:
       model: ollama/phi4:14b
       api_base: http://192.168.1.33:11434
     model_info:
-      description: Phi-4 14B — punches above its weight - Mac M5 Max Metal
-
-  - model_name: mac/dolphin3
-    litellm_params:
-      model: ollama/dolphin3:8b
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: Dolphin 3 8B uncensored - Mac M5 Max Metal
+      description: Phi-4 14B — punches above its weight, default daily driver under 14B. - Mac M5 Max Metal
+      supports_reasoning: true
 
   - model_name: mac/wizardlm-uncensored
     litellm_params:
       model: ollama/wizardlm-uncensored:13b
       api_base: http://192.168.1.33:11434
     model_info:
-      description: WizardLM 13B — classic abliterated model - Mac M5 Max Metal
+      description: WizardLM 13B — classic abliterated; nothing newer beat it for uncensored 13B-class as of May 2026. - Mac
+        M5 Max Metal
 
-  - model_name: mac/plutus
+  - model_name: mac/nuextract2
     litellm_params:
-      model: ollama/0xroyce/plutus
+      model: ollama/nuextract2:latest
       api_base: http://192.168.1.33:11434
     model_info:
-      description: Llama 3.1 8B fine-tuned for finance - Mac M5 Max Metal
+      description: NuExtract-2.0-8B (Qwen2.5-VL based) — beats GPT-4.1 by +9 F-score on schema extraction. Generalist extractor.
+        - Mac M5 Max Metal
+      supports_vision: true
+
+  - model_name: mac/nuextract1.5
+    litellm_params:
+      model: ollama/nuextract1.5:latest
+      api_base: http://192.168.1.33:11434
+    model_info:
+      description: 'NuExtract 1.5 — template-based JSON fill (### Template / ### Text shape). Kept for legacy prompts. - Mac
+        M5 Max Metal'
+
+  - model_name: mac/universalner
+    litellm_params:
+      model: ollama/universalner:latest
+      api_base: http://192.168.1.33:11434
+    model_info:
+      description: UniversalNER 7B — zero-shot named-entity recognition ("What describes <type> in the text?"). Specialist for
+        ad-hoc NER. - Mac M5 Max Metal
 
   - model_name: mac/qwen3-embed-8b
     litellm_params:
       model: ollama/qwen3-embedding:8b
       api_base: http://192.168.1.33:11434
     model_info:
-      description: '#1 MTEB multilingual (70.58), 100+ langs, dims 32-4096 - Mac M5 Max Metal'
+      description: 'Qwen3 Embedding 8B — #1 MTEB multilingual at 70.58, 100+ langs, dims 32-4096. The single embedding model
+        we need. - Mac M5 Max Metal'
       mode: embedding
-
-  - model_name: mac/qwen3-embed-4b
-    litellm_params:
-      model: ollama/qwen3-embedding:4b
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: ~67 MTEB, half the VRAM of 8B - Mac M5 Max Metal
-      mode: embedding
-
-  - model_name: mac/jina-embed-v4
-    litellm_params:
-      model: ollama/jina-embeddings-v4
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: Multimodal (text+images+docs), 30+ langs - Mac M5 Max Metal
-      mode: embedding
-
-  - model_name: mac/bge-m3
-    litellm_params:
-      model: ollama/bge-m3
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: 568M, dense+sparse+ColBERT, 100+ langs, 8K ctx - Mac M5 Max Metal
-      mode: embedding
-
-  - model_name: mac/arctic-embed2
-    litellm_params:
-      model: ollama/snowflake-arctic-embed2
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: 568M, multilingual, best retrieval under 500M - Mac M5 Max Metal
-      mode: embedding
-
-  - model_name: mac/mxbai-embed
-    litellm_params:
-      model: ollama/mxbai-embed-large
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: 335M, 1024 dims, strong MTEB English - Mac M5 Max Metal
-      mode: embedding
-
-  - model_name: mac/granite-embed
-    litellm_params:
-      model: ollama/granite-embedding:278m
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: IBM Granite MoE embedding, low latency - Mac M5 Max Metal
-      mode: embedding
-
-  - model_name: mac/nomic-embed-text
-    litellm_params:
-      model: ollama/nomic-embed-text:latest
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: 137M, 768 dims, 8K ctx — the reliable workhorse - Mac M5 Max Metal
-      mode: embedding
-
-  - model_name: mac/arctic-embed-335m
-    litellm_params:
-      model: ollama/snowflake-arctic-embed:335m
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: 335M, best retrieval-specific MTEB under 500M - Mac M5 Max Metal
-      mode: embedding
-
-  - model_name: mac/arctic-embed-110m
-    litellm_params:
-      model: ollama/snowflake-arctic-embed:110m
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: 110M, good speed/quality tradeoff - Mac M5 Max Metal
-      mode: embedding
-
-  - model_name: mac/all-minilm
-    litellm_params:
-      model: ollama/all-minilm
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: 23M, 384 dims — fastest, good for prototyping - Mac M5 Max Metal
-      mode: embedding
-
-  - model_name: mac/qwen3-embed-0.6b
-    litellm_params:
-      model: ollama/qwen3-embedding:0.6b
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: ~60 MTEB, tiny but surprisingly capable - Mac M5 Max Metal
-      mode: embedding
-
-  - model_name: mac/nuextract
-    litellm_params:
-      model: ollama/nuextract:latest
-      api_base: http://192.168.1.33:11434
-    model_info:
-      description: NuExtract structured extraction (v1.0) - Mac M5 Max Metal
 
   # ─── vLLM-MLX (high throughput, OpenAI-compatible) ────────────────
-  - model_name: mac/devstral
-    litellm_params:
-      model: openai/Devstral-Small-2-24B-Instruct-2512-4bit
-      api_base: http://192.168.1.33:8000/v1
-      api_key: not-needed
-    model_info:
-      description: Devstral 24B coding via vLLM-MLX - Mac M5 Max Metal
-
-  - model_name: mac/deepseek-r1
-    litellm_params:
-      model: openai/DeepSeek-R1-Distill-Qwen-32B-4bit
-      api_base: http://192.168.1.33:8001/v1
-      api_key: not-needed
-    model_info:
-      description: DeepSeek R1 32B reasoning via vLLM-MLX - Mac M5 Max Metal
-
-  - model_name: mac/qwen3
-    litellm_params:
-      model: openai/Qwen3-32B-4bit
-      api_base: http://192.168.1.33:8002/v1
-      api_key: not-needed
-    model_info:
-      description: Qwen3 32B general purpose via vLLM-MLX - Mac M5 Max Metal
-
-  - model_name: mac/qwen-coder
-    litellm_params:
-      model: openai/Qwen3-Coder-30B-A3B-Instruct-4bit
-      api_base: http://192.168.1.33:8003/v1
-      api_key: not-needed
-    model_info:
-      description: Qwen3 Coder 30B MoE via vLLM-MLX - Mac M5 Max Metal
-
-  - model_name: mac/nuextract
-    litellm_params:
-      model: openai/numind-NuExtract-1.5-MLX-8bit
-      api_base: http://192.168.1.33:8004/v1
-      api_key: not-needed
-    model_info:
-      description: NuExtract 1.5 structured extraction (8-bit) via vLLM-MLX - Mac M5 Max Metal
-
-  # ─── Image generation (ComfyUI shim, OpenAI-compatible) ───────────
-  - model_name: mac/flux-pro
-    litellm_params:
-      model: openai/flux-dev-pro
-      api_base: http://192.168.1.33:8012/v1
-      api_key: not-needed
-    model_info:
-      description: Flux Dev FP8 + 4x ESRGAN -> downscale 2048 — PRO quality preset (~35s on M5 Max) via ComfyUI shim - Mac M5
-        Max Metal
-      mode: image_generation
-
-  - model_name: mac/flux-fast
-    litellm_params:
-      model: openai/flux-schnell-fast
-      api_base: http://192.168.1.33:8012/v1
-      api_key: not-needed
-    model_info:
-      description: Flux Schnell FP8 — 4-step euler, 1024x1024 (~6s on M5 Max) via ComfyUI shim - Mac M5 Max Metal
-      mode: image_generation
   # >>> mac-node:auto-generated:end <<<
 
 general_settings:

@@ -12,6 +12,15 @@
 #   tags:          Capability tags [chat, coding, reasoning, embedding, etc.]
 #   target:        Where to install — [mac, runpod] (default: both)
 #   category:      Grouping for pull scripts and docs
+#
+# ── Curation philosophy (May 2026) ────────────────────────────────────
+# One model per category, picked from May 2026 SOTA leaderboards. We're
+# fighting paradox-of-choice: the goal is *fewer, better* — not a zoo.
+# When a new SOTA lands and proves itself, swap the alias here in one
+# commit and gen-litellm.py rewrites the proxy config. Don't accumulate
+# legacy entries — that's how we ended up with 30 mac-side models last
+# pass, half of which weren't even pulled. See AGENTS.md for the
+# capability-by-capability shortlist + drop log.
 
 node:
   ip: "192.168.1.33"
@@ -19,373 +28,133 @@ node:
 
 # ─── Image generation (ComfyUI + OpenAI shim) ───────────────────────
 # The shim speaks OpenAI-compatible /v1/images/generations and forwards
-# to a local ComfyUI instance. Each pipeline below is a workflow JSON
-# template under packages/mac-node/services/comfyui-shim/pipelines/.
+# to a local ComfyUI instance.
+#
+# DISABLED — comfyui-shim is not running and the LiteLLM entries were
+# returning 500s on every call. May 2026 SOTA pick is FLUX.1 Krea Dev
+# via mflux (MLX-native, github.com/filipstrand/mflux); when bringing
+# image gen back up, prefer that over a comfyui workflow round-trip.
+# To re-enable: bring the shim up on port 8012 (see
+# packages/mac-node/services/comfyui-shim/), restore a `pipelines:`
+# entry, and rerun gen-litellm.py.
 image_gen:
   shim_port: 8012
   comfyui_port: 8188
-
-  pipelines:
-    - name: flux-dev-pro
-      alias: flux-pro
-      description: "Flux Dev FP8 + 4x ESRGAN -> downscale 2048 — PRO quality preset (~35s on M5 Max)"
-      tags: [image_gen, flux, pro]
-      workflow: flux_dev_pro.json
-
-    - name: flux-schnell-fast
-      alias: flux-fast
-      description: "Flux Schnell FP8 — 4-step euler, 1024x1024 (~6s on M5 Max)"
-      tags: [image_gen, flux, fast]
-      workflow: flux_schnell_fast.json
+  pipelines: []
 
 ollama:
   port: 11434
 
   # Custom modelfiles to create after pulling
-  modelfiles:
-    - name: embedding-server
-      from: nomic-embed-text:latest
-      parameters:
-        num_ctx: 8192
+  modelfiles: []
 
   models:
-    # ── Serving: primary mac-node models ─────────────────────────
-    # Ollama equivalents of the vLLM-MLX instances
+    # ── Mac-side curation (May 2026 SOTA — one per category) ───
+    # Drop log lives in AGENTS.md. The headline removals were:
+    #  - Coding: dropped qwen2.5-coder + devstral; qwen3-coder:30b wins.
+    #  - Vision: kept gemma4 family for now (vision is still being
+    #    rolled out via Ollama for qwen3-vl); will add qwen3-vl when
+    #    pulled and verified, then re-evaluate gemma4.
+    #  - Reasoning: dropped 7B distill; only deepseek-r1:32b (the sweet
+    #    spot on a 128GB M5 Max) remains.
+    #  - Embeddings: kept only qwen3-embedding:8b (#1 MTEB
+    #    multilingual at 70.58); the 9-model embedding zoo is gone.
+    #  - Chat dailies: dropped llama3.x, mistral, mistral-nemo,
+    #    dolphin*, gemma3-*, qwen2.5-7b — phi4 + gemma4 are enough.
+    #  - Extraction: dropped nuextract1.5 + universalner; nuextract2
+    #    subsumes both.
 
-    - name: devstral:latest
-      alias: devstral
-      description: Devstral 24B coding
-      tags: [coding]
-      category: serving
-
-    - name: deepseek-r1:32b
-      alias: deepseek-r1-32b
-      description: DeepSeek R1 32B reasoning
-      tags: [reasoning]
-      category: serving
-
-    - name: qwen3:32b
-      alias: qwen3-32b
-      description: Qwen3 32B general purpose
-      tags: [chat, reasoning]
-      category: serving
-
-    - name: qwen3-coder:latest
+    # ── Coding + Tool calling ────────────────────────────────────
+    - name: qwen3-coder:30b
       alias: qwen3-coder
-      description: Qwen3 Coder 30B MoE
-      tags: [coding, moe]
-      category: serving
-      fallback: "hf.co/bartowski/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_K_M"
-
-    - name: mistral-nemo:latest
-      alias: mistral-nemo
-      description: Mistral Nemo 12B
-      tags: [chat]
+      description: "Qwen3-Coder 30B-A3B MoE — 256K ctx, ~Sonnet 4.5-class agentic coding, BFCL v3 top tier (function calling). Replaces qwen2.5-coder + devstral."
+      tags: [coding, moe, function-calling]
       category: serving
 
-    - name: dolphin-mistral:7b
-      alias: dolphin-mistral
-      description: Uncensored Mistral 7B
-      tags: [chat, uncensored]
-      category: serving
-
-    - name: qwen2.5-coder:7b
-      alias: qwen2.5-coder
-      description: Qwen 2.5 Coder 7B
-      tags: [coding]
-      category: serving
-
-    - name: deepseek-r1:7b
-      alias: deepseek-r1-7b
-      description: DeepSeek R1 reasoning 7B
+    # ── Reasoning ────────────────────────────────────────────────
+    - name: deepseek-r1:32b
+      alias: deepseek-r1
+      description: "DeepSeek R1 Distill Qwen 32B — beats o1-mini on math/code reasoning, ~18-20GB Q4_K_M, 11-14 tok/s on M5 Max. The reasoning local sweet spot."
       tags: [reasoning]
       category: serving
 
-    # ── Benchmark: catalyst-data test models ─────────────────────
-    # Source: catalyst-data/tests/benchmark_config.py
-
-    - name: nuextract1.5:latest
-      alias: nuextract1.5
-      description: NuExtract 1.5 structured extraction
-      tags: [extraction]
-      category: benchmark
-
-    - name: nuextract2:latest
-      alias: nuextract2
-      description: NuExtract 2.0 8B multimodal extraction
-      tags: [extraction]
-      category: benchmark
-
-    - name: universalner:latest
-      alias: universalner
-      description: UniversalNER 7B zero-shot NER
-      tags: [extraction]
-      category: benchmark
-
-    - name: gemma3:12b
-      alias: gemma3-12b
-      description: "Gemma3 12B — best ≤12B on LLMStructBench"
-      tags: [chat, reasoning]
-      category: benchmark
-
-    - name: mistral:latest
-      alias: mistral
-      description: "Mistral 7B — best recall in our benchmarks"
-      tags: [chat]
-      category: benchmark
-
-    - name: qwen2.5:7b-instruct
-      alias: qwen2.5-7b
-      description: "Qwen 2.5 7B Instruct — best balanced extraction"
-      tags: [chat]
-      category: benchmark
-
-    - name: llama3.1:8b
-      alias: llama3.1
-      description: "Llama 3.1 8B — best SPO extraction"
-      tags: [chat]
-      category: benchmark
-
-    - name: llama3.2:latest
-      alias: llama3.2
-      description: "Llama 3.2 3B — fastest (116 tok/s)"
-      tags: [chat]
-      category: benchmark
-
-    - name: gemma3:4b
-      alias: gemma3-4b
-      description: "Gemma3 4B — smallest high scorer"
-      tags: [chat]
-      category: benchmark
-
-    # ── Community: bleeding edge + abliterated ───────────────────
-
-    - name: qwen3.6:27b
-      alias: qwen3.6
-      description: "Qwen 3.6 27B — SWE-bench 77.2%"
-      tags: [coding, reasoning]
-      category: community
-
+    # ── Vision (multimodal) ──────────────────────────────────────
+    # Gemma4 vision via Ollama until qwen3-vl is pulled and verified.
+    # When you pull qwen3-vl, demote gemma4-26b's extra_aliases below.
     - name: gemma4:26b
       alias: gemma4-26b
-      # Stable routing alias for downstream apps (image-sorter etc.) — when
-      # vLLM-MLX gemma4 vision is fixed, point gemma4-vision at the MLX
-      # instance instead and consumers don't need to change.
       extra_aliases: [gemma4-vision]
-      description: Gemma 4 26B-A4B MoE (multimodal + thinking, Q4_K_M)
+      description: "Gemma 4 26B-A4B MoE (multimodal + thinking, Q4_K_M). Vision routing alias for the playground until qwen3-vl is pulled and verified."
       tags: [chat, vision, moe]
-      category: community
-
-    - name: gemma4:26b-mlx-bf16
-      alias: gemma4-26b-mlx
-      description: "Gemma 4 26B-A4B MoE — MLX-converted BF16 safetensors (text-only: ships without vision projector on Ollama)"
-      tags: [chat, moe, thinking]
-      category: community
+      category: serving
 
     - name: gemma4:e4b
       alias: gemma4
-      description: Gemma 4 E4B MoE (multimodal + thinking)
+      description: "Gemma 4 E4B MoE (multimodal + thinking) — fast vision-capable daily."
       tags: [chat, vision, moe]
-      category: community
+      category: serving
 
+    # ── Daily chat (general purpose, fast on M5 Max) ───────────
     - name: phi4:14b
       alias: phi4
-      description: Phi-4 14B — punches above its weight
+      description: "Phi-4 14B — punches above its weight, default daily driver under 14B."
       tags: [chat, reasoning]
-      category: community
+      category: serving
 
-    - name: dolphin3:8b
-      alias: dolphin3
-      description: Dolphin 3 8B uncensored
-      tags: [chat, uncensored]
-      category: community
-
-    - name: huihui_ai/dolphin3-abliterated:32b
-      alias: dolphin3-abliterated
-      description: Dolphin 3 32B — refusal direction removed
-      tags: [chat, uncensored]
-      category: community
-      target: [runpod]
-
-    - name: huihui_ai/qwen2.5-abliterated:32b
-      alias: qwen2.5-abliterated
-      description: Qwen 2.5 32B abliterated — no guardrails
-      tags: [chat, uncensored]
-      category: community
-      target: [runpod]
-
+    # ── Uncensored ───────────────────────────────────────────────
     - name: wizardlm-uncensored:13b
       alias: wizardlm-uncensored
-      description: WizardLM 13B — classic abliterated model
+      description: "WizardLM 13B — classic abliterated; nothing newer beat it for uncensored 13B-class as of May 2026."
       tags: [chat, uncensored]
-      category: community
+      category: serving
 
-    - name: "hf.co/unsloth/Qwen3.6-27B-GGUF:UD-Q4_K_XL"
-      alias: qwen3.6-unsloth
-      description: "Qwen 3.6 27B Unsloth Dynamic quant — <1pt accuracy loss"
-      tags: [coding, reasoning]
-      category: community
-      target: [runpod]
+    # ── Structured extraction (specialist family) ────────────────
+    # nuextract2 is the generalist; we also keep nuextract1.5 and
+    # universalner because they're each trained on a *different*
+    # specialist task (template-based JSON fill vs zero-shot NER) and
+    # downstream code may have prompts hardcoded against the older
+    # input shapes. Cheap to keep, painful to lose.
+    - name: nuextract2:latest
+      alias: nuextract2
+      description: "NuExtract-2.0-8B (Qwen2.5-VL based) — beats GPT-4.1 by +9 F-score on schema extraction. Generalist extractor."
+      tags: [extraction, vision]
+      category: serving
 
-    - name: "hf.co/unsloth/gemma-4-31B-it-GGUF:Q4_K_M"
-      alias: gemma4-31b-unsloth
-      description: Gemma 4 31B full — community quant
-      tags: [chat, vision]
-      category: community
-      target: [runpod]
+    - name: nuextract1.5:latest
+      alias: nuextract1.5
+      description: "NuExtract 1.5 — template-based JSON fill (### Template / ### Text shape). Kept for legacy prompts."
+      tags: [extraction]
+      category: serving
 
-    # ── Finance ──────────────────────────────────────────────────
+    - name: universalner:latest
+      alias: universalner
+      description: "UniversalNER 7B — zero-shot named-entity recognition (\"What describes <type> in the text?\"). Specialist for ad-hoc NER."
+      tags: [extraction, ner]
+      category: serving
 
-    - name: 0xroyce/plutus
-      alias: plutus
-      description: Llama 3.1 8B fine-tuned for finance
-      tags: [finance, reasoning]
-      category: finance
-
-    # ── Legal / Government ─────────────────────────────────────
-
-    - name: "hf.co/TheBloke/SaulLM-7B-Instruct-GGUF:Q4_K_M"
-      alias: saul-7b
-      description: "SaulLM 7B — legal domain LLM trained on 30B legal tokens"
-      tags: [legal, chat]
-      category: legal
-      target: [runpod]
-
-    - name: "hf.co/Equall/Saul-Instruct-v1-GGUF:Q4_K_M"
-      alias: saul-instruct
-      description: "Saul Instruct — legal QA, contract analysis, compliance"
-      tags: [legal, chat]
-      category: legal
-      target: [runpod]
-
-    # LegalBERT / InLegalBERT / Pile-of-Law BERT are encoder models (~110M-340M)
-    # Run via sentence-transformers sidecar, not Ollama:
-    #   - nlpaueb/legal-bert-base-uncased (legal NER, classification)
-    #   - law-ai/InLegalBERT (Indian legal docs, 5.4M documents)
-    #   - pile-of-law/legalbert-large-1.7M-2 (256GB legal corpus)
-
-    # ── Embeddings ───────────────────────────────────────────────
-
+    # ── Embedding ────────────────────────────────────────────────
     - name: qwen3-embedding:8b
       alias: qwen3-embed-8b
-      description: "#1 MTEB multilingual (70.58), 100+ langs, dims 32-4096"
+      description: "Qwen3 Embedding 8B — #1 MTEB multilingual at 70.58, 100+ langs, dims 32-4096. The single embedding model we need."
       tags: [embedding]
       category: embedding
 
-    - name: qwen3-embedding:4b
-      alias: qwen3-embed-4b
-      description: "~67 MTEB, half the VRAM of 8B"
-      tags: [embedding]
-      category: embedding
+    # ── Vision (NEW — pull when ready) ──────────────────────────
+    # Uncomment this block AFTER `ollama pull qwen3-vl` succeeds and
+    # the playground confirms it routes properly. When live, remove
+    # the `extra_aliases: [gemma4-vision]` from gemma4:26b above so
+    # `mac/gemma4-vision` snaps over to qwen3-vl.
+    # - name: qwen3-vl:latest
+    #   alias: qwen3-vl
+    #   extra_aliases: [gemma4-vision]
+    #   description: "Qwen3-VL — beats InternVL3 on DocVQA / OS-World, 32-language OCR, robust to blur/tilt. May 2026 vision SOTA for local."
+    #   tags: [vision, ocr, chat]
+    #   category: serving
 
-    - name: jina-embeddings-v4
-      alias: jina-embed-v4
-      description: "Multimodal (text+images+docs), 30+ langs"
-      tags: [embedding, vision]
-      category: embedding
-
-    - name: bge-m3
-      alias: bge-m3
-      description: "568M, dense+sparse+ColBERT, 100+ langs, 8K ctx"
-      tags: [embedding]
-      category: embedding
-
-    - name: snowflake-arctic-embed2
-      alias: arctic-embed2
-      description: "568M, multilingual, best retrieval under 500M"
-      tags: [embedding]
-      category: embedding
-
-    - name: mxbai-embed-large
-      alias: mxbai-embed
-      description: "335M, 1024 dims, strong MTEB English"
-      tags: [embedding]
-      category: embedding
-
-    - name: granite-embedding:278m
-      alias: granite-embed
-      description: IBM Granite MoE embedding, low latency
-      tags: [embedding]
-      category: embedding
-
-    - name: nomic-embed-text:latest
-      alias: nomic-embed-text
-      description: "137M, 768 dims, 8K ctx — the reliable workhorse"
-      tags: [embedding]
-      category: embedding
-
-    - name: snowflake-arctic-embed:335m
-      alias: arctic-embed-335m
-      description: "335M, best retrieval-specific MTEB under 500M"
-      tags: [embedding]
-      category: embedding
-
-    - name: snowflake-arctic-embed:110m
-      alias: arctic-embed-110m
-      description: "110M, good speed/quality tradeoff"
-      tags: [embedding]
-      category: embedding
-
-    - name: all-minilm
-      alias: all-minilm
-      description: "23M, 384 dims — fastest, good for prototyping"
-      tags: [embedding]
-      category: embedding
-
-    - name: qwen3-embedding:0.6b
-      alias: qwen3-embed-0.6b
-      description: "~60 MTEB, tiny but surprisingly capable"
-      tags: [embedding]
-      category: embedding
-
-    # ── Rerankers ────────────────────────────────────────────────
-
-    - name: bge-reranker-v2-m3
-      alias: bge-reranker
-      description: BAAI multilingual reranker, pairs with bge-m3
-      tags: [reranker]
-      category: reranker
-      target: [runpod]
-
-    - name: jina-reranker-v2-base-multilingual
-      alias: jina-reranker
-      description: "Jina reranker, 278M, 8K ctx, 30+ langs"
-      tags: [reranker]
-      category: reranker
-      target: [runpod]
-
-    # ── Vision ───────────────────────────────────────────────────
-
-    - name: llava:13b-v1.6-vicuna-q4_K_M
-      alias: llava
-      description: LLaVA 1.6 Vicuna 13B Q4_K_M — strong general vision
-      tags: [vision, chat]
-      category: vision
-      target: [runpod]
-
-    - name: minicpm-v
-      alias: minicpm-v
-      description: MiniCPM-V — OCR + document understanding
-      tags: [vision, ocr]
-      category: vision
-      target: [runpod]
-
-    - name: moondream
-      alias: moondream
-      description: "1.8B, tiny but capable vision model"
-      tags: [vision]
-      category: vision
-      target: [runpod]
-
-    # ── Utility ──────────────────────────────────────────────────
-
-    - name: nuextract:latest
-      alias: nuextract
-      description: NuExtract structured extraction (v1.0)
-      tags: [extraction]
-      category: utility
-
-    # ── Heavyweight: 70B+ (RunPod only) ──────────────────────────
+    # ── Heavyweight: 70B+ (RunPod only — proxy entries skipped on mac) ───
+    # These don't register in the LiteLLM proxy (gen-litellm.py filters
+    # `target: [runpod]` out of the mac config splice). Kept as a
+    # registry for future runpod brings-up.
 
     - name: llama3.3:70b
       alias: llama3.3
@@ -436,7 +205,7 @@ ollama:
       category: heavyweight
       target: [runpod]
 
-    # ── MoE 200B+: quantized monsters ────────────────────────────
+    # ── MoE 200B+: quantized monsters (RunPod only) ──────────────
 
     - name: qwen3:235b-a22b
       alias: qwen3-235b
@@ -452,7 +221,7 @@ ollama:
       category: moe-200b
       target: [runpod]
 
-    # ── OBSCENE: multi-GPU required ──────────────────────────────
+    # ── OBSCENE: multi-GPU required (RunPod only) ────────────────
 
     - name: llama3.1:405b
       alias: llama3.1-405b
@@ -489,74 +258,15 @@ ollama:
       category: obscene
       target: [runpod]
 
+# ─── vLLM-MLX (DISABLED — all instances were dead in the May 2026 audit) ─
+# All five MLX servers (devstral 8000, deepseek-r1 8001, qwen3 8002,
+# qwen-coder 8003, nuextract 8004) were unreachable or 404'ing during
+# the registry health check. The Ollama-routed equivalents above cover
+# every workload, with strictly better SOTA picks (qwen3-coder:30b,
+# deepseek-r1:32b, nuextract2). When MLX serving is worth the
+# operational cost again — likely once mlx-vlm/vllm-mlx land their
+# multi-thread fix (see Blaizzy/mlx-vlm#1134, waybarrios/vllm-mlx#496),
+# both tracked as of May 2026 — restore an `instances:` list here and
+# rerun gen-litellm.py.
 vllm:
-  # Mac-only (MLX on Apple Silicon) — not used on RunPod
-  instances:
-    - label: devstral
-      port: 8000
-      model: mlx-community/Devstral-Small-2-24B-Instruct-2512-4bit
-      description: Devstral 24B coding
-      launchd: com.vllm-mlx.server
-      tags: [coding]
-
-    - label: deepseek-r1
-      port: 8001
-      model: mlx-community/DeepSeek-R1-Distill-Qwen-32B-4bit
-      description: DeepSeek R1 32B reasoning
-      launchd: com.vllm-mlx.qwen-opus
-      tags: [reasoning]
-
-    - label: qwen3
-      port: 8002
-      model: mlx-community/Qwen3-32B-4bit
-      description: Qwen3 32B general purpose
-      launchd: com.vllm-mlx.qwen3
-      tags: [chat, reasoning]
-
-    # Gemma 4 vision DISABLED — upstream-blocked.
-    #
-    # Failure: RuntimeError: There is no Stream(gpu,0) in current thread.
-    # mlx-vlm PR #1050 (merged 2026-04-24, shipped in 0.5.0) replaced the
-    # module-level mlx generation stream with mx.new_thread_local_stream();
-    # under FastAPI/Uvicorn worker threads (vllm-mlx's serving path) the
-    # stream isn't initialized for the worker, so vision-bearing requests
-    # crash on first call. Text-only models go through mlx-lm (which had
-    # its thread-local fix in mlx-lm#1090) and are unaffected.
-    #
-    # Tracking: https://github.com/Blaizzy/mlx-vlm/issues/1134
-    #           https://github.com/Blaizzy/mlx-vlm/pull/1050
-    #           https://github.com/waybarrios/vllm-mlx/issues/496
-    # Pinning mlx-vlm==0.4.4 sidesteps #1134 but vllm-mlx#496 reports the
-    # same bug there too — vllm-mlx's own scheduler dispatches across
-    # threads.
-    #
-    # Current workaround: vision routes through ollama gemma4:26b via the
-    # `mac/gemma4-vision` LiteLLM alias (see ollama.models.gemma4:26b
-    # extra_aliases above). When upstream lands a fix, uncomment this
-    # block AND move the `extra_aliases: [gemma4-vision]` field from the
-    # ollama gemma4:26b entry to here in the same commit.
-    #
-    # Note: port 8004 is now used by `nuextract`; choose 8005 (or move
-    # nuextract) when re-enabling.
-    #
-    # - label: gemma4
-    #   port: 8005
-    #   model: mlx-community/gemma-4-26b-a4b-it-4bit
-    #   description: Gemma 4 26B MoE general + vision
-    #   launchd: com.vllm-mlx.gemma4
-    #   tags: [chat, vision, moe]
-    #   # extra_aliases: [gemma4-vision]   # uncomment to take over from ollama
-
-    - label: qwen-coder
-      port: 8003
-      model: mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit
-      description: Qwen3 Coder 30B MoE
-      launchd: com.vllm-mlx.qwen-coder
-      tags: [coding, moe]
-
-    - label: nuextract
-      port: 8004
-      model: mlx-community/numind-NuExtract-1.5-MLX-8bit
-      description: NuExtract 1.5 structured extraction (8-bit)
-      launchd: com.vllm-mlx.nuextract
-      tags: [extraction]
+  instances: []
