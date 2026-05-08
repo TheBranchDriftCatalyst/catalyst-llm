@@ -506,30 +506,56 @@ def _dir_size_bytes(root: Path) -> int:
 
 async def _poll_download_progress(job: JobState, work: Path, expected_bytes: int) -> None:
     """Background coroutine: poll the working dir's on-disk size and
-    update the job's progress fields. Runs until cancelled."""
-    last_bytes = 0
-    last_t = time.monotonic()
+    update job progress. Speed is computed over a rolling sample
+    window so a brief stall (between files, during hashing) doesn't
+    zero out the speed/ETA columns and cause the dashboard to flicker.
+
+    Window: last ~6 seconds at a 0.5s sample rate (12 samples). A
+    real stall (no new bytes for the entire window) is the only
+    time we blank the speed; otherwise we keep showing the
+    window-average rate."""
+    from collections import deque
+
+    poll_interval = 0.5
+    window_samples = 12       # 12 * 0.5s = ~6s rolling window
+    samples: deque = deque(maxlen=window_samples)
     job.bytes_total = expected_bytes
+
     while True:
-        await asyncio.sleep(1.0)
         try:
-            now_bytes = _dir_size_bytes(work)
+            await asyncio.sleep(poll_interval)
             now_t = time.monotonic()
-            dt = now_t - last_t
-            if dt > 0 and now_bytes >= last_bytes:
-                rate = (now_bytes - last_bytes) / dt
-                job.speed_str = f"{_human_bytes(int(rate))}/s" if rate > 0 else ""
-                if expected_bytes > 0 and rate > 0:
-                    remaining = max(0, expected_bytes - now_bytes)
-                    eta_s = remaining / rate
-                    job.eta_str = _human_elapsed(eta_s)
-                else:
-                    job.eta_str = ""
+            now_bytes = _dir_size_bytes(work)
+            samples.append((now_t, now_bytes))
+
+            # Update bytes / percent immediately every tick — those are
+            # snapshot-style, no smoothing needed.
             job.bytes_done = now_bytes
             if expected_bytes > 0:
                 job.percent = min(99.9, 100.0 * now_bytes / expected_bytes)
-            last_bytes = now_bytes
-            last_t = now_t
+
+            # Compute rate over the full window (oldest -> newest).
+            # Need at least 2 samples and meaningful elapsed time.
+            if len(samples) >= 2:
+                t0, b0 = samples[0]
+                t1, b1 = samples[-1]
+                dt = t1 - t0
+                db = b1 - b0
+                if dt >= 1.0 and db > 0:
+                    rate = db / dt
+                    job.speed_str = f"{_human_bytes(int(rate))}/s"
+                    if expected_bytes > 0:
+                        remaining = max(0, expected_bytes - now_bytes)
+                        eta_s = remaining / rate
+                        job.eta_str = _human_elapsed(eta_s)
+                # If db==0 across the entire window we don't touch
+                # speed_str / eta_str — they stay at their last
+                # known values rather than flickering to empty.
+                # Only when the window is fully stalled (no growth
+                # for ~6s) AND we've been here a while do we clear.
+                elif len(samples) == window_samples and db == 0:
+                    job.speed_str = ""
+                    job.eta_str = ""
         except asyncio.CancelledError:
             return
         except Exception:
