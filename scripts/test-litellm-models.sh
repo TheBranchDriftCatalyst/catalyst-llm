@@ -21,9 +21,14 @@ LITELLM_URL="${LITELLM_URL:-http://litellm.talos00}"
 # Default 120s matches litellm general request_timeout; long enough for slow
 # local models without making bad endpoints take forever.
 TIMEOUT="${TIMEOUT:-120}"
-# Bigger max_tokens so reasoning models (o3-mini etc.) don't burn the budget on
-# internal reasoning and return empty content.
-MAX_TOKENS="${MAX_TOKENS:-128}"
+# Default 4096 — reasoning models (o3-mini, deepseek-r1, opus-4-7 thinking,
+# etc.) consume max_tokens against their *internal* reasoning trace before
+# emitting visible content. A small cap (we used 128 originally) silently
+# returns "" because the model spent the whole budget thinking. 4096 is
+# generous enough for any reasoning model to finish its thinking and still
+# emit "pong" without making the test slow on non-reasoning models (the
+# cap is an upper bound; cheap models just answer in 1-3 tokens regardless).
+MAX_TOKENS="${MAX_TOKENS:-4096}"
 PROMPT="${PROMPT:-Reply with a single word: pong}"
 ONLY=""
 SKIP=""
