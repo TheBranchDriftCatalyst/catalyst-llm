@@ -439,6 +439,30 @@ async def pull_via_local_only(job: JobState) -> None:
     )
 
 
+async def _hf_auth_check(hf_bin: str) -> Optional[str]:
+    """Return None if `hf` is authenticated (or HF_TOKEN env is set);
+    otherwise return a human-readable hint string. Cheap — runs
+    `hf auth whoami` synchronously with a 5s cap."""
+    if os.environ.get("HF_TOKEN"):
+        return None
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            hf_bin, "auth", "whoami",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            _, _ = await asyncio.wait_for(proc.communicate(), timeout=5.0)
+        except asyncio.TimeoutError:
+            proc.kill()
+            return "hf auth whoami timed out"
+        if proc.returncode == 0:
+            return None
+        return "hf is not logged in (run `hf auth login` and paste a read token from https://hf.co/settings/tokens)"
+    except FileNotFoundError:
+        return "hf CLI missing (pip install huggingface_hub)"
+
+
 async def pull_via_merge_gguf(job: JobState) -> None:
     if not job.pull.hf_repo:
         job.status = "fail"
@@ -450,20 +474,39 @@ async def pull_via_merge_gguf(job: JobState) -> None:
         job.error = "neither `hf` nor `huggingface-cli` in PATH (pip install huggingface_hub)"
         return
 
+    auth_hint = await _hf_auth_check(hf)
+    if auth_hint:
+        job.status = "fail"
+        job.error = auth_hint
+        return
+
     work = _scratch_dir(job)
     work.mkdir(parents=True, exist_ok=True)
 
-    # Step 1 — fetch shards from HF.
+    # Step 1 — fetch shards from HF. Pass HF_TOKEN through if set so
+    # the subprocess uses it even when the cached token is stale.
     job.stage = "downloading shards"
+    env = {**os.environ}
     rc, last = await _run_streamed(
         [hf, "download", job.pull.hf_repo, "--include", job.pull.hf_pattern,
          "--local-dir", str(work)],
         job,
         parse_hf_line,
+        env=env,
     )
     if rc != 0:
+        # Translate common HF failure modes into actionable messages
+        # so the dashboard's inline error tells the user what to do.
+        hint = ""
+        last_lower = last.lower()
+        if "invalid username" in last_lower or "401" in last_lower or "unauthorized" in last_lower:
+            hint = " — run `hf auth login` and paste a read token from https://hf.co/settings/tokens"
+        elif "gated repo" in last_lower or "access" in last_lower and "denied" in last_lower:
+            hint = " — repo is gated; visit the HF page, accept the terms, then re-run"
+        elif "404" in last_lower or "not found" in last_lower:
+            hint = " — check pull.hf_repo in models.yaml; HF says it doesn't exist"
         job.status = "fail"
-        job.error = f"hf download failed: {last}"
+        job.error = f"hf download failed: {last}{hint}"
         return
 
     first = _find_first_shard(work)
