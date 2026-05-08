@@ -76,7 +76,12 @@ export class CatalystLLMClient {
     return models.map((m) => {
       const meta = infoMap.get(m.id);
       const apiBase = meta?.litellm_params?.api_base;
-      return { ...m, endpoint: getEndpointInfo(apiBase) };
+      return {
+        ...m,
+        endpoint: getEndpointInfo(apiBase),
+        metadata: meta?.model_info,
+        underlyingModel: meta?.litellm_params?.model,
+      };
     });
   }
 
@@ -116,6 +121,12 @@ export class CatalystLLMClient {
               model: req.model,
               messages: req.messages,
               stream: true,
+              // OpenAI/LiteLLM omit `usage` from streamed chunks by default.
+              // Without this opt-in, downstream consumers see TTFT/RT (which
+              // come from local timestamps) but `prompt_tokens` /
+              // `completion_tokens` / cost stay at zero. Caller-supplied
+              // `params.stream_options` always wins.
+              stream_options: { include_usage: true },
               ...(req.params ?? {}),
             }),
             signal: req.signal,

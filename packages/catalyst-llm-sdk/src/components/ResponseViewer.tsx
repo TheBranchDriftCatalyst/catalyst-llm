@@ -40,13 +40,15 @@ export function ResponseViewer({ chat }: ResponseViewerProps) {
       <Button
         variant="ghost"
         size="sm"
+        aria-expanded={open}
+        aria-controls="response-details-panel"
         onClick={() => setOpen(!open)}
         className="w-full justify-start gap-2 h-8 px-2 rounded-none"
       >
         {open ? (
-          <ChevronDown className="h-4 w-4" />
+          <ChevronDown className="h-4 w-4" aria-hidden="true" />
         ) : (
-          <ChevronRight className="h-4 w-4" />
+          <ChevronRight className="h-4 w-4" aria-hidden="true" />
         )}
         <span className="text-muted-foreground">Response Details</span>
         {usage && (
@@ -57,7 +59,10 @@ export function ResponseViewer({ chat }: ResponseViewerProps) {
       </Button>
 
       {open && (
-        <div className="p-3 border-t border-border bg-muted/20 text-sm space-y-3">
+        <div
+          id="response-details-panel"
+          className="p-3 border-t border-border bg-muted/20 text-sm space-y-3"
+        >
           <div className="grid grid-cols-2 gap-x-4 gap-y-2">
             {usage?.prompt_tokens !== undefined && (
               <div className="flex justify-between">

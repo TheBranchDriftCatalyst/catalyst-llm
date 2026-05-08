@@ -10,3 +10,4 @@ export {
   groupModelsByFamily,
   type ModelCapabilities,
 } from "./capabilities.js";
+export { inferModelHints, effectiveMetadata } from "./modelHints.js";

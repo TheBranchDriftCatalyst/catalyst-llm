@@ -1,0 +1,11 @@
+# Don't send these to Docker build context
+README.md
+.git
+.gitignore
+.DS_Store
+.env*
+*.key
+*.pem
+*.log
+__pycache__
+*.pyc

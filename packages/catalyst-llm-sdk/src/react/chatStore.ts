@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
 import { nanoid } from "nanoid";
 import type {
   CatalystLLMClient,
@@ -24,8 +25,18 @@ export interface Chat {
   messages: ChatTurn[];
   isStreaming: boolean;
   error?: string;
+  /** Wall-clock time the most-recent request was dispatched. */
   streamStartTime?: number;
+  /** Wall-clock time the first token of the latest response arrived (TTFT base). */
   firstTokenTime?: number;
+  /** Wall-clock time the latest stream finished (used for tok/s). */
+  streamEndTime?: number;
+  /**
+   * Set when a stream was killed by a page refresh / unmount before it could
+   * finish. The last assistant message holds whatever partial text arrived;
+   * `resumeChat(id)` will discard it and re-issue from the prior user turn.
+   */
+  interrupted?: boolean;
 }
 
 interface ChatStore {
@@ -60,6 +71,14 @@ interface ChatStore {
 
   // Messages
   sendMessage: (chatId: string, content: string) => Promise<void>;
+  /**
+   * Re-issue the last user turn for a chat that was interrupted (e.g. by a
+   * page refresh). Drops the partial assistant message that was killed
+   * mid-stream, then re-runs sendMessage with the user's prior input. No-op
+   * if the chat isn't actually interrupted or the prior turn wasn't a user
+   * message.
+   */
+  resumeChat: (chatId: string) => Promise<void>;
   stopStreaming: (chatId: string) => void;
   appendToken: (chatId: string, token: string, meta?: StreamMeta) => void;
   setFirstTokenTime: (chatId: string) => void;
@@ -90,7 +109,9 @@ const INITIAL_PARAMS: ChatParams = {
 
 const INITIAL_SYSTEM_PROMPT = "You are a helpful assistant.";
 
-export const useChatStore = create<ChatStore>((set, get) => ({
+export const useChatStore = create<ChatStore>()(
+  persist(
+    (set, get) => ({
   client: null,
   defaultModel: "",
   defaultParams: INITIAL_PARAMS,
@@ -209,6 +230,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               error: undefined,
               streamStartTime: Date.now(),
               firstTokenTime: undefined,
+              streamEndTime: undefined,
             }
           : c,
       ),
@@ -258,6 +280,31 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
   },
 
+  resumeChat: async (chatId) => {
+    const chat = get().chats.find((c) => c.id === chatId);
+    if (!chat || !chat.interrupted) return;
+    const messages = chat.messages;
+    // The last message is the partial assistant turn. The one before it must
+    // be the user input we're resuming. If the structure doesn't match, bail.
+    const last = messages[messages.length - 1];
+    const prior = messages[messages.length - 2];
+    if (last?.role !== "assistant" || prior?.role !== "user") return;
+    // Drop both — sendMessage will re-create them when it dispatches.
+    set((state) => ({
+      chats: state.chats.map((c) =>
+        c.id === chatId
+          ? {
+              ...c,
+              messages: messages.slice(0, -2),
+              interrupted: false,
+              error: undefined,
+            }
+          : c,
+      ),
+    }));
+    await get().sendMessage(chatId, prior.content);
+  },
+
   stopStreaming: (chatId) => {
     const ctrl = get().abortControllers.get(chatId);
     if (ctrl) ctrl.abort();
@@ -301,10 +348,46 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         if (last?.role === "assistant" && meta) {
           messages[messages.length - 1] = { ...last, meta };
         }
-        return { ...c, messages, isStreaming: false };
+        return {
+          ...c,
+          messages,
+          isStreaming: false,
+          streamEndTime: Date.now(),
+        };
       }),
     })),
-}));
+    }),
+    {
+      name: "catalyst-llm-sdk:chat",
+      storage: createJSONStorage(() => localStorage),
+      // Persist conversations + per-chat config; skip non-serializable
+      // (client, abortControllers) and skip transient streaming flags. After
+      // a page refresh any chat marked `isStreaming: true` had its fetch
+      // killed with the page — flip it back so the UI lets the user resume.
+      partialize: (s) => ({
+        chats: s.chats,
+        activeChat: s.activeChat,
+        defaultModel: s.defaultModel,
+        defaultParams: s.defaultParams,
+        defaultSystemPrompt: s.defaultSystemPrompt,
+      }),
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<ChatStore>;
+        const chats = (p.chats ?? []).map((c) =>
+          c.isStreaming
+            ? { ...c, isStreaming: false, interrupted: true }
+            : c,
+        );
+        return {
+          ...current,
+          ...p,
+          chats: chats.length > 0 ? chats : current.chats,
+          abortControllers: new Map(),
+        };
+      },
+    },
+  ),
+);
 
 const initialState = useChatStore.getState();
 if (!initialState.activeChat && initialState.chats.length > 0) {

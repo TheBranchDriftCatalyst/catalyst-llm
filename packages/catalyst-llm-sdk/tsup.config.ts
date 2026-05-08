@@ -6,6 +6,7 @@ export default defineConfig({
     "client/index": "src/client/index.ts",
     "react/index": "src/react/index.ts",
     "components/index": "src/components/index.ts",
+    "dev/index": "src/dev/index.ts",
   },
   format: ["esm"],
   dts: true,

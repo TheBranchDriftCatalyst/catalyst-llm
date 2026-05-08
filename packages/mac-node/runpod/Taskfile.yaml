@@ -1,0 +1,86 @@
+version: "3"
+
+vars:
+  IMAGE_GHCR: ghcr.io/thebranchdriftcatalyst/mac-node-runpod
+  IMAGE_DOCKER: thebranchdriftcatalyst/mac-node-runpod
+  CACHE_FROM: type=registry,ref=ghcr.io/thebranchdriftcatalyst/mac-node-runpod:buildcache
+  CLIFF_CONFIG: runpod/cliff.toml
+
+tasks:
+  build:
+    desc: Build RunPod container image (amd64 for NVIDIA GPUs)
+    vars:
+      VERSION:
+        sh: VER=$(git describe --tags --match 'runpod-v*' --abbrev=0 2>/dev/null | sed 's/^runpod-v//'); echo "${VER:-0.1.0}"
+    cmds:
+      - echo "Building {{.IMAGE_DOCKER}}:{{.VERSION}} (linux/amd64)"
+      - >-
+        docker buildx build
+        --platform linux/amd64
+        --builder catalyst-builder
+        --cache-from {{.CACHE_FROM}}
+        -t {{.IMAGE_DOCKER}}:{{.VERSION}}
+        -t {{.IMAGE_DOCKER}}:latest
+        --load
+        ./runpod
+      - echo "Built {{.IMAGE_DOCKER}}:{{.VERSION}} + :latest"
+
+  push:
+    desc: Build and push RunPod container to GHCR + Docker Hub
+    vars:
+      VERSION:
+        sh: VER=$(git describe --tags --match 'runpod-v*' --abbrev=0 2>/dev/null | sed 's/^runpod-v//'); echo "${VER:-0.1.0}"
+    cmds:
+      - 'echo "Building + pushing {{.VERSION}} (linux/amd64)"'
+      - >-
+        docker buildx build
+        --platform linux/amd64
+        --builder catalyst-builder
+        --cache-from {{.CACHE_FROM}}
+        -t {{.IMAGE_GHCR}}:{{.VERSION}}
+        -t {{.IMAGE_GHCR}}:latest
+        --push
+        ./runpod
+      - 'echo "Pushed {{.IMAGE_GHCR}}:{{.VERSION}} + latest"'
+
+  release:
+    desc: "Bump version, tag, build, push, and generate changelog (usage: task runpod:release -- patch|minor|major)"
+    vars:
+      BUMP_TYPE: '{{.CLI_ARGS | default "patch"}}'
+      CURRENT:
+        sh: VER=$(git describe --tags --match 'runpod-v*' --abbrev=0 2>/dev/null | sed 's/^runpod-v//'); echo "${VER:-0.0.0}"
+    cmds:
+      - |
+        IFS='.' read -r major minor patch <<< "{{.CURRENT}}"
+        case "{{.BUMP_TYPE}}" in
+          major) major=$((major + 1)); minor=0; patch=0 ;;
+          minor) minor=$((minor + 1)); patch=0 ;;
+          patch) patch=$((patch + 1)) ;;
+          *) echo "Usage: task runpod:release -- patch|minor|major"; exit 1 ;;
+        esac
+        NEW="${major}.${minor}.${patch}"
+        echo "Bumping: {{.CURRENT}} → ${NEW}"
+        git tag "runpod-v${NEW}"
+        echo "Tagged: runpod-v${NEW}"
+      - task: changelog
+      - task: push
+      - echo ""
+      - echo "=== Release complete ==="
+      - git describe --tags --match 'runpod-v*' --abbrev=0
+
+  changelog:
+    desc: Generate CHANGELOG.md from conventional commits
+    cmds:
+      - git-cliff --config {{.CLIFF_CONFIG}} --tag-pattern 'runpod-v*' -o runpod/CHANGELOG.md
+      - echo "Generated runpod/CHANGELOG.md"
+
+  version:
+    desc: Show current RunPod image version
+    cmds:
+      - |
+        VER=$(git describe --tags --match 'runpod-v*' --abbrev=0 2>/dev/null)
+        if [ -n "$VER" ]; then
+          echo "Current version: $VER"
+        else
+          echo "No tags yet — run 'task runpod:release -- patch' to start"
+        fi

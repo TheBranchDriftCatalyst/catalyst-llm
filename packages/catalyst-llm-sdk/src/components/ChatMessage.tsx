@@ -1,5 +1,6 @@
 import { User, Bot } from "lucide-react";
 import type { ChatTurn } from "../react/chatStore.js";
+import { RenderedContent } from "./RenderedContent.js";
 import { cn } from "./utils.js";
 
 export interface ChatMessageProps {
@@ -12,13 +13,15 @@ export function ChatMessage({ message, isStreaming }: ChatMessageProps) {
   const isAssistant = message.role === "assistant";
 
   return (
-    <div
+    <article
       className={cn(
         "flex gap-4 p-4",
         isUser ? "bg-muted/30" : "bg-background",
       )}
+      aria-label={isUser ? "Your message" : "Assistant response"}
     >
       <div
+        aria-hidden="true"
         className={cn(
           "flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
           isUser
@@ -32,18 +35,29 @@ export function ChatMessage({ message, isStreaming }: ChatMessageProps) {
         <div className="text-sm font-semibold">
           {isUser ? "You" : "Assistant"}
         </div>
-        <div className="prose prose-sm max-w-none text-foreground">
-          <div className="whitespace-pre-wrap break-words">
-            {message.content}
-            {isAssistant && isStreaming && message.content && (
-              <span className="streaming-cursor" />
-            )}
-            {isAssistant && isStreaming && !message.content && (
+        <div
+          // Stream tokens are announced politely as they land. `aria-busy`
+          // tells SRs the region is still updating so they don't fire on
+          // every chunk.
+          aria-live={isAssistant && isStreaming ? "polite" : undefined}
+          aria-busy={isAssistant && isStreaming ? true : undefined}
+        >
+          {isAssistant ? (
+            isStreaming && !message.content ? (
               <span className="text-muted-foreground">Thinking...</span>
-            )}
-          </div>
+            ) : (
+              <RenderedContent
+                content={message.content}
+                isStreaming={isStreaming}
+              />
+            )
+          ) : (
+            <div className="whitespace-pre-wrap break-words text-sm">
+              {message.content}
+            </div>
+          )}
         </div>
       </div>
-    </div>
+    </article>
   );
 }

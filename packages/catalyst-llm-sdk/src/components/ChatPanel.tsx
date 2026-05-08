@@ -2,13 +2,31 @@ import { useState, useRef, useEffect, useCallback, type FormEvent } from "react"
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Textarea } from "@thebranchdriftcatalyst/catalyst-ui/ui/textarea";
 import { Card, CardContent } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
-import { Send, Square, Trash2 } from "lucide-react";
+import {
+  Send,
+  Square,
+  Trash2,
+  Image as ImageIcon,
+  X,
+  RotateCcw,
+} from "lucide-react";
 import { useChatStore, type Chat } from "../react/chatStore.js";
 import { ChatMessage } from "./ChatMessage.js";
 import { ModelSelector } from "./ModelSelector.js";
+import { ModelSelectorRich } from "./ModelSelectorRich.js";
+import { ModelInfoCard } from "./ModelInfoCard.js";
+import { CostPins } from "./CostPins.js";
+import { ContextMeter } from "./ContextMeter.js";
 import { ParameterControls } from "./ParameterControls.js";
 import { SystemPromptEditor } from "./SystemPromptEditor.js";
 import { ResponseViewer } from "./ResponseViewer.js";
+import {
+  PromptPresets,
+  SystemPromptPresets,
+  getPresetsForModel,
+} from "./PromptPresets.js";
+import { useModels } from "../react/hooks.js";
+import { useFocusTrap } from "./useFocusTrap.js";
 
 export interface ChatPanelProps {
   chat: Chat;
@@ -26,7 +44,24 @@ export function ChatPanel({ chat }: ChatPanelProps) {
     setModel,
     setSystemPrompt,
     setParams,
+    resumeChat,
   } = useChatStore();
+  const { models } = useModels();
+  const selectedModel = models.find((m) => m.id === chat.model);
+  const [showVisionStub, setShowVisionStub] = useState(false);
+  const visionDialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(visionDialogRef, showVisionStub);
+
+  // Escape closes the vision-stub modal — keyboard parity with the click-out
+  // dismissal already wired below.
+  useEffect(() => {
+    if (!showVisionStub) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowVisionStub(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showVisionStub]);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -61,18 +96,38 @@ export function ChatPanel({ chat }: ChatPanelProps) {
 
   return (
     <div className="flex h-full">
-      <div className="w-72 border-r border-border p-4 space-y-6 overflow-y-auto shrink-0 bg-muted/10">
+      <div className="w-80 border-r border-border p-4 space-y-6 overflow-y-auto shrink-0 bg-muted/10">
         <ModelSelector
           value={chat.model}
           onChange={(model) => setModel(chat.id, model)}
         />
-        <SystemPromptEditor
-          value={chat.systemPrompt}
-          onChange={(prompt) => setSystemPrompt(chat.id, prompt)}
+        <ModelSelectorRich
+          value={chat.model}
+          onChange={(model) => setModel(chat.id, model)}
         />
+        {selectedModel && (
+          <div>
+            <div className="mb-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              Model details
+            </div>
+            <ModelInfoCard model={selectedModel} />
+          </div>
+        )}
+        <div className="space-y-2">
+          <SystemPromptEditor
+            value={chat.systemPrompt}
+            onChange={(prompt) => setSystemPrompt(chat.id, prompt)}
+          />
+          <SystemPromptPresets
+            onApply={(p) => {
+              if (p.systemPrompt) setSystemPrompt(chat.id, p.systemPrompt);
+            }}
+          />
+        </div>
         <ParameterControls
           params={chat.params}
           onChange={(params) => setParams(chat.id, params)}
+          model={selectedModel}
         />
         <div className="pt-4 border-t border-border">
           <Button
@@ -89,6 +144,17 @@ export function ChatPanel({ chat }: ChatPanelProps) {
       </div>
 
       <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex items-center justify-between gap-3 border-b border-border bg-card/30 px-4 py-2">
+          <CostPins chat={chat} />
+          <div className="flex items-center gap-3">
+            <ContextMeter chat={chat} model={selectedModel} />
+            {chat.isStreaming && (
+              <span className="text-[10px] uppercase tracking-wider text-primary animate-pulse">
+                streaming…
+              </span>
+            )}
+          </div>
+        </div>
         <div className="flex-1 overflow-y-auto">
           {chat.messages.length === 0 ? (
             <div className="flex items-center justify-center h-full text-muted-foreground">
@@ -130,8 +196,33 @@ export function ChatPanel({ chat }: ChatPanelProps) {
           )}
         </div>
 
-        {chat.error && (
-          <div className="mx-4 mb-2 p-3 text-sm bg-destructive/10 border border-destructive/20 rounded-md text-destructive">
+        {chat.interrupted && (
+          <div
+            role="alert"
+            aria-live="polite"
+            className="mx-4 mb-2 flex items-center justify-between gap-3 rounded-md border border-yellow-600/30 bg-yellow-500/10 p-3 text-sm text-yellow-500"
+          >
+            <span>
+              Last turn was interrupted (likely by a refresh). The partial
+              response above is what survived.
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => resumeChat(chat.id)}
+              className="shrink-0"
+            >
+              <RotateCcw className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+              Resume
+            </Button>
+          </div>
+        )}
+        {chat.error && !chat.interrupted && (
+          <div
+            role="alert"
+            aria-live="assertive"
+            className="mx-4 mb-2 p-3 text-sm bg-destructive/10 border border-destructive/20 rounded-md text-destructive"
+          >
             {chat.error}
           </div>
         )}
@@ -142,7 +233,38 @@ export function ChatPanel({ chat }: ChatPanelProps) {
           onSubmit={handleSubmit}
           className="p-4 border-t border-border bg-background"
         >
+          {(() => {
+            const bundle = getPresetsForModel(chat.model);
+            return (
+              <PromptPresets
+                className="mb-2"
+                presets={bundle.presets}
+                label={bundle.label}
+                labelIcon={bundle.icon}
+                onApply={(p) => {
+                  if (p.user) setInput(p.user);
+                  if (p.systemPrompt) setSystemPrompt(chat.id, p.systemPrompt);
+                  textareaRef.current?.focus();
+                }}
+              />
+            );
+          })()}
           <div className="flex items-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowVisionStub(true)}
+              disabled={!chat.model}
+              title={
+                selectedModel?.metadata?.supports_vision
+                  ? "Attach image (coming soon)"
+                  : "Vision upload (coming soon — selected model also lacks vision support)"
+              }
+              className="shrink-0"
+            >
+              <ImageIcon className="h-4 w-4" />
+            </Button>
             <div className="flex-1">
               <Textarea
                 ref={textareaRef}
@@ -184,6 +306,58 @@ export function ChatPanel({ chat }: ChatPanelProps) {
           </div>
         </form>
       </div>
+
+      {showVisionStub && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="vision-stub-title"
+          onClick={() => setShowVisionStub(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm"
+        >
+          <div
+            ref={visionDialogRef}
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-md rounded-md border border-border bg-card p-6 shadow-2xl"
+          >
+            <button
+              type="button"
+              onClick={() => setShowVisionStub(false)}
+              className="absolute right-3 top-3 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+              title="Close"
+              aria-label="Close dialog"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <div className="mb-3 flex items-center gap-2">
+              <ImageIcon className="h-5 w-5 text-primary" aria-hidden="true" />
+              <h2 id="vision-stub-title" className="text-base font-semibold">
+                Vision upload
+              </h2>
+              <span className="rounded-sm bg-primary/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
+                soon
+              </span>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Attach images and PDFs to send to vision-capable models. The
+              selected model{" "}
+              <span className="font-mono">{chat.model || "(none)"}</span>{" "}
+              {selectedModel?.metadata?.supports_vision
+                ? "supports vision — once this lands, drop a file here to multipart-encode it into the next message."
+                : "doesn't expose vision capability via /model/info; switch to a model with the vision badge first."}
+            </p>
+            <div className="mt-4 flex justify-end">
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setShowVisionStub(false)}
+              >
+                Got it
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
