@@ -167,6 +167,21 @@ tasks:
     cmds:
       - ollama pull {{.CLI_ARGS}}
 
+  models:download:
+    desc: "Pull EVERY mac-targeted model from models.yaml in parallel (CONCURRENCY=2 by default; ONLY=alias,alias and SKIP=alias,alias to filter)"
+    cmds:
+      - |
+        python3 scripts/download-models.py \
+          --concurrency {{.CONCURRENCY | default 2}} \
+          {{if .ONLY}}--only "{{.ONLY}}"{{end}} \
+          {{if .SKIP}}--skip "{{.SKIP}}"{{end}} \
+          {{if .DRY_RUN}}--dry-run{{end}}
+
+  models:download:plan:
+    desc: "Show what task models:download would do without pulling anything"
+    cmds:
+      - python3 scripts/download-models.py --dry-run
+
   models:running:
     desc: Show models loaded in memory
     cmds:
