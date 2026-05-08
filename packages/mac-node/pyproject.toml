@@ -8,6 +8,14 @@ dependencies = [
     "open-webui>=0.8.0",
     "mlx>=0.22.0",
     "mlx-lm>=0.21.0",
+    # Used by scripts/{gen-litellm,gen-pull-models,download-models}.py.
+    # Pin loosely — every yaml.safe_load() in the repo just needs the
+    # standard SafeLoader API.
+    "pyyaml>=6.0",
+    # `hf` CLI + Python client. The download-models.py script's
+    # merge-gguf strategy uses `hf download --include <pattern>` to
+    # pull the shards before llama-gguf-split merges them.
+    "huggingface_hub>=0.24",
 ]
 
 [tool.setuptools]

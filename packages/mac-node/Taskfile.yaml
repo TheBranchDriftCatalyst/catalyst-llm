@@ -170,8 +170,11 @@ tasks:
   models:download:
     desc: "Pull EVERY mac-targeted model from models.yaml in parallel (CONCURRENCY=2 by default; ONLY=alias,alias and SKIP=alias,alias to filter)"
     cmds:
+      # Prefer the project venv python (has pyyaml + huggingface_hub
+      # from pyproject.toml); fall back to system python3 otherwise.
       - |
-        python3 scripts/download-models.py \
+        PY="$(test -x .venv/bin/python && echo .venv/bin/python || echo python3)"
+        "$PY" scripts/download-models.py \
           --concurrency {{.CONCURRENCY | default 2}} \
           {{if .ONLY}}--only "{{.ONLY}}"{{end}} \
           {{if .SKIP}}--skip "{{.SKIP}}"{{end}} \
@@ -180,7 +183,9 @@ tasks:
   models:download:plan:
     desc: "Show what task models:download would do without pulling anything"
     cmds:
-      - python3 scripts/download-models.py --dry-run
+      - |
+        PY="$(test -x .venv/bin/python && echo .venv/bin/python || echo python3)"
+        "$PY" scripts/download-models.py --dry-run
 
   models:running:
     desc: Show models loaded in memory

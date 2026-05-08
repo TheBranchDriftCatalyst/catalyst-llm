@@ -6,6 +6,23 @@ invocation, filters the entries `target` includes ``mac`` (or has no
 target field, which defaults to both targets), and calls ``ollama pull``
 on each one through a bounded asyncio pool.
 
+Dependencies
+------------
+* `pyyaml`             — always required (for parsing models.yaml).
+* `huggingface_hub`    — required when any entry has
+                         `pull.strategy: merge-gguf` (provides the `hf`
+                         CLI used to fetch the shards).
+* `llama.cpp` (brew)   — required when any entry has
+                         `pull.strategy: merge-gguf` (provides
+                         `llama-gguf-split --merge`).
+* `ollama`             — always required (target for `ollama pull`
+                         and `ollama create`).
+
+These are wired into `mac-node/pyproject.toml` (Python deps) and
+`mac-node/Brewfile` (system deps), so `task setup` installs everything
+in one shot. If you're running this script outside `task setup`, see
+the README in this dir.
+
 Usage:
     python3 scripts/download-models.py
     python3 scripts/download-models.py --concurrency 3

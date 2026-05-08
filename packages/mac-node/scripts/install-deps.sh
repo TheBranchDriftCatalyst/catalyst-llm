@@ -30,8 +30,13 @@ if [ ! -f "${MODELS_DIR}/ggml-large-v3-turbo.bin" ]; then
 fi
 
 # ─── Read models.yaml for dynamic stamping ────────────────────────
+# We use the venv python here so pyyaml from pyproject.toml is on the
+# path; falling back to system python3 only as a last resort.
+PYTHON="${VENV_DIR}/bin/python"
+[ -x "$PYTHON" ] || PYTHON=python3
+
 echo "Reading models.yaml..."
-eval "$(python3 -c "
+eval "$(${PYTHON} -c "
 import yaml
 with open('${MODELS_YAML}') as f:
     cfg = yaml.safe_load(f)
@@ -39,12 +44,9 @@ with open('${MODELS_YAML}') as f:
 ollama_port = cfg['ollama']['port']
 print(f'OLLAMA_PORT={ollama_port}')
 
-# Ollama model names
-models = [m['name'] for m in cfg['ollama']['models']]
-print('OLLAMA_MODELS=(' + ' '.join(f'\"{m}\"' for m in models) + ')')
-
-# vLLM URLs for Open WebUI
-instances = cfg['vllm']['instances']
+# vLLM URLs for Open WebUI — instances list may be empty when MLX
+# serving is disabled (current default; vllm-mlx upstream thread bug).
+instances = (cfg.get('vllm') or {}).get('instances') or []
 urls = ';'.join(f'http://127.0.0.1:{i[\"port\"]}/v1' for i in instances)
 keys = ';'.join('not-needed' for _ in instances)
 print(f'VLLM_URLS=\"{urls}\"')
@@ -69,11 +71,13 @@ for plist in "${REPO_DIR}"/launchd/*.plist; do
 done
 
 # ─── Ollama models (from models.yaml) ────────────────────────────
-echo "Pulling Ollama models..."
-for model in "${OLLAMA_MODELS[@]}"; do
-  echo "  Pulling ${model}..."
-  ollama pull "$model"
-done
+# Delegate to scripts/download-models.py so we get parallel pulls and
+# the merge-gguf strategy for sharded GGUF entries (Behemoth-X etc.)
+# in one command. We use the venv python so huggingface_hub from
+# pyproject.toml is on the path for any merge-gguf entries.
+echo "Pulling Ollama models (parallel, see scripts/download-models.py)..."
+"${PYTHON}" "${REPO_DIR}/scripts/download-models.py" \
+  --concurrency "${OLLAMA_PULL_CONCURRENCY:-2}"
 
 # ─── Generate litellm config ──────────────────────────────────────
 echo "Generating litellm config..."
