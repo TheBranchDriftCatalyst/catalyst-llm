@@ -178,7 +178,7 @@ tasks:
           --concurrency {{.CONCURRENCY | default 2}} \
           {{if .ONLY}}--only "{{.ONLY}}"{{end}} \
           {{if .SKIP}}--skip "{{.SKIP}}"{{end}} \
-          {{if .DRY_RUN}}--dry-run{{end}}
+          {{if .DRY_RUN}}--dry-run{{end}} {{ .CLI_ARGS }}
 
   models:download:plan:
     desc: "Show what task models:download would do without pulling anything"

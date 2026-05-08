@@ -214,8 +214,25 @@ _HF_FETCH_RE = re.compile(
 )
 # Per-file download progress within hf download:
 #   foo.gguf:  47%|███▎     | 19.8G/42.1G [10:00<11:00,  35MB/s]
+#
+# We anchor on `\.gguf:` so the aggregate `Fetching N files:` line
+# can't accidentally match (its only B-unit measurement is item-count,
+# which surfaces as "?it/s" in the speed slot — not what we want).
+# We also explicitly require the speed slot to end in "B/s" so partial
+# tqdm states ("?it/s", "?B/s") don't fall through.
 _HF_FILE_RE = re.compile(
-    r".*?:\s*(?P<pct>\d+)%.*?\|\s*(?P<done>[\d.]+\s*[KMGTP]?B?)/(?P<total>[\d.]+\s*[KMGTP]?B?)\s*\[(?P<elapsed>[^,]+),\s*(?P<speed>[^\]]+)\]"
+    r"""^.*?\.gguf[^:]*:\s*               # filename ending in .gguf
+        (?P<pct>\d+)%                     # 47%
+        .*?\|\s*                          # progress bar
+        (?P<done>[\d.]+\s*[KMGTP]?B?)     # 19.8G
+        /\s*
+        (?P<total>[\d.]+\s*[KMGTP]?B?)    # 42.1G
+        \s*\[
+        (?P<elapsed>[^,\]]+)              # 10:00<11:00
+        ,\s*
+        (?P<speed>[\d.]+\s*[KMGTP]?B/s)   # 35MB/s — must end in B/s
+        \]""",
+    re.VERBOSE,
 )
 
 _BYTES_RE = re.compile(r"^([\d.]+)\s*([KMGTP]?B)$", re.IGNORECASE)
@@ -600,10 +617,10 @@ def render_dashboard(jobs: list[JobState], concurrency: int):
         padding=(0, 1),
         header_style="bold cyan",
     )
-    table.add_column("", width=2, no_wrap=True)               # status glyph
-    table.add_column("model", style="bold", no_wrap=True)     # alias
-    table.add_column("stage", no_wrap=True, max_width=24)
-    table.add_column("progress", min_width=24, ratio=2)       # bar
+    table.add_column("", width=2, no_wrap=True)                 # status glyph
+    table.add_column("model", style="bold", no_wrap=True)       # alias
+    table.add_column("stage", no_wrap=True, max_width=44)       # widened so error msgs fit
+    table.add_column("progress", min_width=24, ratio=2)         # bar
     table.add_column("size", justify="right", no_wrap=True)
     table.add_column("speed", justify="right", no_wrap=True)
     table.add_column("eta", justify="right", no_wrap=True)
@@ -625,9 +642,20 @@ def render_dashboard(jobs: list[JobState], concurrency: int):
         elif j.percent and j.status == "running":
             size = f"{j.percent:.0f}%"
         elapsed = _human_elapsed(j.elapsed) if j.started_at else ""
-        stage_label = j.stage if j.status != "fail" else "failed"
-        if j.pull.strategy == "merge-gguf" and j.status == "queued":
+
+        # Stage label: for failures we surface a truncated error so
+        # the user doesn't have to wait for the summary panel. For
+        # queued merge-gguf entries we annotate the strategy.
+        if j.status == "fail":
+            stage_label = "failed"
+            if j.error:
+                stage_label = f"failed: {j.error[:36]}"
+        elif j.pull.strategy == "merge-gguf" and j.status == "queued":
             stage_label = "queued (merge)"
+        elif j.pull.strategy == "local-only" and j.status == "queued":
+            stage_label = "queued (local-only)"
+        else:
+            stage_label = j.stage
         table.add_row(
             Text(glyph, style=glyph_style),
             Text(j.alias, style=row_style or "bold"),
