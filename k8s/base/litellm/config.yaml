@@ -7,9 +7,9 @@ model_list:
   # May 2026: Opus 4.7 (released 2026-04-16, 87.6% SWE-bench Verified) is
   # the flagship — replaces opus-4 + sonnet-4 from May 2025. Haiku 4.5 is
   # the budget pair. SOTA shortlist lives in packages/mac-node/AGENTS.md.
-  - model_name: "claude-opus-4-7-20260416"
+  - model_name: "claude-opus-4-7"
     litellm_params:
-      model: "anthropic/claude-opus-4-7-20260416"
+      model: "anthropic/claude-opus-4-7"
       api_key: "os.environ/ANTHROPIC_API_KEY"
   - model_name: "claude-haiku-4-5-20251001"
     litellm_params:
