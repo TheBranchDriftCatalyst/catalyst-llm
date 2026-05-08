@@ -101,12 +101,56 @@ ollama:
       tags: [chat, reasoning]
       category: serving
 
-    # ── Uncensored ───────────────────────────────────────────────
-    - name: wizardlm-uncensored:13b
-      alias: wizardlm-uncensored
-      description: "WizardLM 13B — classic abliterated; nothing newer beat it for uncensored 13B-class as of May 2026."
-      tags: [chat, uncensored]
-      category: serving
+    # ── Uncensored RP / creative writing (May 2026 top 5) ────────
+    # Curated for A/B testing in the playground compare view —
+    # picked to span the quality/speed tradeoff space:
+    #   1. Behemoth-X 123B   — long-form literary champion (slow, ~73GB)
+    #   2. Hermes-4 70B      — daily-driver, smartest baseline
+    #   3. Cydonia 24B v4.3  — fast 24B-class daily for RP
+    #   4. Qwen3-MoE 30B-A3B — MoE wildcard (small-model speed, 30B breadth)
+    #   5. Magnum v4 72B     — explicit / Claude-prose specialist
+    #
+    # Drop log: wizardlm-uncensored (Llama-2-era, dwarfed); Midnight Miqu /
+    # Lumimaid / Llama 4 (superseded or low community signal).
+    #
+    # Sampler cheat sheet for all five — prose-heavy: temp 0.85, min_p 0.05,
+    # rep_pen 1.03; tight RP: temp 1.0, min_p 0.05, rep_pen 1.05. Avoid
+    # rep_pen >1.10 (kills prose rhythm) and temp <0.6 (AI-tell vocab loops).
+
+    - name: "hf.co/TheDrummer/Behemoth-X-123B-v2-GGUF:Q4_K_M"
+      alias: behemoth-x
+      description: "Behemoth-X 123B v2 (Mistral Large 2411 finetune) — long-form literary champion; stable prose to ~19k tokens. Use Metharme/Mistral system tokens; min_p 0.05."
+      tags: [chat, uncensored, rp, creative, literary]
+      category: rp
+      target: [mac]
+
+    - name: "hf.co/unsloth/Hermes-4-70B-GGUF:Q4_K_M"
+      alias: hermes-4-70b
+      description: "Hermes-4 70B (Llama 3.1 70B base) — top RefusalBench score, hybrid <think> toggle, lowest AI-tells baseline. Toggle reasoning OFF for prose. ChatML."
+      tags: [chat, uncensored, rp, creative, reasoning]
+      category: rp
+      target: [mac]
+
+    - name: "hf.co/TheDrummer/Cydonia-24B-v4.3-GGUF:Q5_K_M"
+      alias: cydonia-24b
+      description: "Cydonia 24B v4.3 (Mistral Small 3.2 base, Dec 2025) — Drummer's most-improved-prose release; fast 24B daily for RP. Mistral v7 Tekken template; temp 1.0 / min_p 0.05 / rep_pen 1.03."
+      tags: [chat, uncensored, rp, creative]
+      category: rp
+      target: [mac]
+
+    - name: "hf.co/DavidAU/Qwen3-30B-A3B-Claude-4.5-Opus-High-Reasoning-2507-ABLITERATED-UNCENSORED-V2-GGUF:Q4_K_M"
+      alias: qwen3-moe-uncensored
+      description: "Qwen3-30B-A3B MoE (3B active) — Claude-Opus distill, heretic-abliterated. MoE wildcard — small-model speeds with 30B breadth. Reddit-hot but bench-thin; experimental A/B candidate. ChatML; temp 0.7."
+      tags: [chat, uncensored, rp, creative, moe]
+      category: rp
+      target: [mac]
+
+    - name: "hf.co/anthracite-org/magnum-v4-72b-gguf:Q4_K_M"
+      alias: magnum-v4
+      description: "Magnum v4 72B (Qwen2.5 72B finetune) — gold standard for Claude-Sonnet-style prose mimicry and explicit content with literary craft. ChatML; 16k context (shorter); temp 1.0 / min_p 0.1."
+      tags: [chat, uncensored, rp, creative, explicit]
+      category: rp
+      target: [mac]
 
     # ── Structured extraction (specialist family) ────────────────
     # nuextract2 is the generalist; we also keep nuextract1.5 and
