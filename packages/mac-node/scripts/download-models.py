@@ -463,6 +463,80 @@ async def _hf_auth_check(hf_bin: str) -> Optional[str]:
         return "hf CLI missing (pip install huggingface_hub)"
 
 
+def _expected_bytes_for_repo(repo_id: str, pattern: str) -> int:
+    """Ask HF for the total bytes we expect to download. Returns 0 if
+    huggingface_hub isn't importable or the API is unreachable; the
+    poller falls back to "bytes-so-far without %" in that case."""
+    try:
+        from fnmatch import fnmatch
+        from huggingface_hub import HfApi  # type: ignore[import-untyped]
+
+        api = HfApi(token=os.environ.get("HF_TOKEN"))
+        info = api.repo_info(repo_id=repo_id, files_metadata=True)
+        total = 0
+        for sib in getattr(info, "siblings", []) or []:
+            name = getattr(sib, "rfilename", None) or ""
+            if not fnmatch(name, pattern):
+                continue
+            size = getattr(sib, "size", None) or 0
+            total += size
+        return int(total)
+    except Exception:
+        # Network blip or older huggingface_hub without files_metadata —
+        # not worth failing the download over. Return 0 and the dashboard
+        # just won't show a total/percentage during the fetch step.
+        return 0
+
+
+def _dir_size_bytes(root: Path) -> int:
+    """Sum the on-disk size of every file under `root`. Recursive,
+    stat-based — fast enough to call once a second."""
+    total = 0
+    try:
+        for f in root.rglob("*"):
+            try:
+                if f.is_file():
+                    total += f.stat().st_size
+            except OSError:
+                pass
+    except OSError:
+        pass
+    return total
+
+
+async def _poll_download_progress(job: JobState, work: Path, expected_bytes: int) -> None:
+    """Background coroutine: poll the working dir's on-disk size and
+    update the job's progress fields. Runs until cancelled."""
+    last_bytes = 0
+    last_t = time.monotonic()
+    job.bytes_total = expected_bytes
+    while True:
+        await asyncio.sleep(1.0)
+        try:
+            now_bytes = _dir_size_bytes(work)
+            now_t = time.monotonic()
+            dt = now_t - last_t
+            if dt > 0 and now_bytes >= last_bytes:
+                rate = (now_bytes - last_bytes) / dt
+                job.speed_str = f"{_human_bytes(int(rate))}/s" if rate > 0 else ""
+                if expected_bytes > 0 and rate > 0:
+                    remaining = max(0, expected_bytes - now_bytes)
+                    eta_s = remaining / rate
+                    job.eta_str = _human_elapsed(eta_s)
+                else:
+                    job.eta_str = ""
+            job.bytes_done = now_bytes
+            if expected_bytes > 0:
+                job.percent = min(99.9, 100.0 * now_bytes / expected_bytes)
+            last_bytes = now_bytes
+            last_t = now_t
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            # Never let a poll error crash the download — just retry.
+            continue
+
+
 async def pull_via_merge_gguf(job: JobState) -> None:
     if not job.pull.hf_repo:
         job.status = "fail"
@@ -483,31 +557,66 @@ async def pull_via_merge_gguf(job: JobState) -> None:
     work = _scratch_dir(job)
     work.mkdir(parents=True, exist_ok=True)
 
-    # Step 1 — fetch shards from HF. Pass HF_TOKEN through if set so
-    # the subprocess uses it even when the cached token is stale.
+    # Pre-flight: ask HF how big the download will be. This is a single
+    # cheap API call; if it fails we still proceed with the download
+    # but the dashboard won't show a total/percentage during fetch.
+    job.stage = "querying repo size"
+    loop = asyncio.get_running_loop()
+    expected = await loop.run_in_executor(
+        None,
+        _expected_bytes_for_repo,
+        job.pull.hf_repo,
+        job.pull.hf_pattern,
+    )
+    if expected:
+        job.bytes_total = expected
+
+    # Step 1 — fetch shards from HF. Two coroutines run in parallel:
+    #   - the actual `hf download` subprocess (we only watch its
+    #     errors via parse_hf_line — its tqdm bar buffers when piped
+    #     and is unreliable);
+    #   - a directory-size poller that updates job.bytes_done /
+    #     percent / speed / eta from on-disk reality every second.
+    # The poller is the real progress source and is independent of
+    # whatever `hf` emits to stdout.
     job.stage = "downloading shards"
     env = {**os.environ}
-    rc, last = await _run_streamed(
-        [hf, "download", job.pull.hf_repo, "--include", job.pull.hf_pattern,
-         "--local-dir", str(work)],
-        job,
-        parse_hf_line,
-        env=env,
-    )
+    poller = asyncio.create_task(_poll_download_progress(job, work, expected))
+    try:
+        rc, last = await _run_streamed(
+            [hf, "download", job.pull.hf_repo, "--include", job.pull.hf_pattern,
+             "--local-dir", str(work)],
+            job,
+            parse_hf_line,
+            env=env,
+        )
+    finally:
+        poller.cancel()
+        try:
+            await poller
+        except (asyncio.CancelledError, Exception):
+            pass
+
     if rc != 0:
-        # Translate common HF failure modes into actionable messages
-        # so the dashboard's inline error tells the user what to do.
         hint = ""
         last_lower = last.lower()
         if "invalid username" in last_lower or "401" in last_lower or "unauthorized" in last_lower:
             hint = " — run `hf auth login` and paste a read token from https://hf.co/settings/tokens"
-        elif "gated repo" in last_lower or "access" in last_lower and "denied" in last_lower:
+        elif "gated repo" in last_lower or ("access" in last_lower and "denied" in last_lower):
             hint = " — repo is gated; visit the HF page, accept the terms, then re-run"
         elif "404" in last_lower or "not found" in last_lower:
             hint = " — check pull.hf_repo in models.yaml; HF says it doesn't exist"
         job.status = "fail"
         job.error = f"hf download failed: {last}{hint}"
         return
+
+    # Snap to 100% once the subprocess exits cleanly (the poller may
+    # have stopped one tick short of the real total).
+    if expected:
+        job.bytes_done = expected
+        job.percent = 100.0
+    job.speed_str = ""
+    job.eta_str = ""
 
     first = _find_first_shard(work)
     if not first:
