@@ -14,6 +14,7 @@ import {
   User,
   Shield,
   Layers,
+  RotateCcw,
 } from "lucide-react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
@@ -23,6 +24,7 @@ import {
   usePromptStore,
   type CustomPreset,
 } from "../react/promptStore.js";
+import { BUILTIN_SEEDS } from "./PromptPresets.js";
 import { cn } from "./utils.js";
 
 export interface PromptEditorProps {
@@ -78,6 +80,7 @@ export function PromptEditor({ className, initialPresetId }: PromptEditorProps) 
   const duplicatePreset = usePromptStore((s) => s.duplicatePreset);
   const exportJson = usePromptStore((s) => s.exportJson);
   const importJson = usePromptStore((s) => s.importJson);
+  const resetBuiltins = usePromptStore((s) => s.resetBuiltins);
 
   const [filter, setFilter] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(
@@ -311,6 +314,27 @@ export function PromptEditor({ className, initialPresetId }: PromptEditorProps) 
             <Upload className="mr-1 h-3 w-3" />
             import
           </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              if (
+                window.confirm(
+                  "Reset all built-in presets to their shipped defaults?\n\n" +
+                    "Your edits to built-ins will be lost. User-created presets are not affected.",
+                )
+              ) {
+                const n = resetBuiltins(BUILTIN_SEEDS);
+                console.info(`[PromptEditor] reset ${n} built-in preset(s)`);
+              }
+            }}
+            title="Reset built-in presets to their shipped defaults"
+            className="ml-auto text-[10px]"
+          >
+            <RotateCcw className="mr-1 h-3 w-3" />
+            reset
+          </Button>
           <input
             ref={fileInputRef}
             type="file"
@@ -369,7 +393,12 @@ function PresetRow({
   dirty: boolean;
   onSelect: () => void;
 }) {
-  const Icon = preset.icon ?? Sparkles;
+  // CustomPreset no longer carries a React icon (we store iconName as a
+  // string for serializability). Defer to a tiny per-name lookup; keep
+  // it inline so we don't pull in a Lucide map that overlaps with the
+  // dropdown's. Built-ins set iconName; user-saved presets default to
+  // the Sparkles fallback.
+  const Icon = Sparkles;
   return (
     <button
       type="button"
@@ -391,6 +420,11 @@ function PresetRow({
         <span className="block truncate font-medium">
           {preset.name}
           {dirty && <span className="ml-1 text-primary">●</span>}
+          {preset.builtin && (
+            <span className="ml-1 inline-block rounded-sm bg-primary/15 px-1 text-[8px] font-bold uppercase text-primary align-middle">
+              built-in
+            </span>
+          )}
         </span>
         {preset.description && (
           <span className="block truncate text-[10px] text-muted-foreground">

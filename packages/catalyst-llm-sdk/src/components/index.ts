@@ -23,6 +23,7 @@ export {
   SystemPromptPresets,
   DEFAULT_PRESETS,
   SYSTEM_PRESETS,
+  BUILTIN_SEEDS,
   getPresetsForModel,
   type PromptPresetsProps,
   type SystemPromptPresetsProps,

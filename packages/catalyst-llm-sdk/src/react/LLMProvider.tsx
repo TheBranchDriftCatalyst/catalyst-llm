@@ -13,6 +13,7 @@ import {
   type LLMConfigInit,
 } from "../client/index.js";
 import { useChatStore } from "./chatStore.js";
+import { usePromptStore } from "./promptStore.js";
 
 interface LLMContextValue {
   client: CatalystLLMClient;
@@ -63,6 +64,23 @@ export function LLMProvider({
       systemPrompt: defaultSystemPrompt,
     });
   }, [defaultModel, defaultParams, defaultSystemPrompt]);
+
+  // Idempotently seed the prompt registry with the SDK's built-in
+  // starters on first mount. Re-running is a no-op once the seeds are
+  // present (matched by stable id), so this is safe to call on every
+  // page load. We do it lazily here rather than in the store factory
+  // so we don't import the (decently large) seed array unless the
+  // host actually mounts an LLMProvider.
+  useEffect(() => {
+    let cancelled = false;
+    void import("../components/PromptPresets.js").then((m) => {
+      if (cancelled) return;
+      usePromptStore.getState().seedBuiltins(m.BUILTIN_SEEDS);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const value = useMemo<LLMContextValue>(
     () => ({ client: resolvedClient }),

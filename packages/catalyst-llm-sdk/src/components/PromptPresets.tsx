@@ -13,10 +13,46 @@ import {
   FileSearch,
   ChevronDown,
 } from "lucide-react";
-import { usePromptStore } from "../react/promptStore.js";
+import {
+  usePromptStore,
+  type CustomPreset,
+} from "../react/promptStore.js";
 import { useFocusTrap } from "./useFocusTrap.js";
 import { useListboxKeyboard } from "./useListboxKeyboard.js";
 import { cn } from "./utils.js";
+
+/**
+ * Lucide icon registry — keys are the lowercased `iconName` strings
+ * stored on `CustomPreset`. We resolve to a React component at render
+ * time so the registry can stay JSON-serializable in localStorage.
+ *
+ * Add new icons here as new built-in presets need them; the editor's
+ * icon picker (when we add one) reads from this same map.
+ */
+const ICON_MAP: Record<string, React.ElementType> = {
+  wrench: Wrench,
+  code: Code,
+  brain: Brain,
+  "list-checks": ListChecks,
+  sparkles: Sparkles,
+  zap: Zap,
+  shield: Shield,
+  braces: Braces,
+  "graduation-cap": GraduationCap,
+  tag: Tag,
+  "file-search": FileSearch,
+};
+
+/** Resolve an iconName from a CustomPreset (or a runtime PromptPreset
+ * that already carries a React.ElementType). Falls back to Sparkles. */
+function iconForPreset(p: PromptPreset | CustomPreset): React.ElementType {
+  if ("icon" in p && p.icon) return p.icon as React.ElementType;
+  if ("iconName" in p && p.iconName) {
+    const ic = ICON_MAP[p.iconName.toLowerCase()];
+    if (ic) return ic;
+  }
+  return Sparkles;
+}
 
 export interface PromptPreset {
   /** Short label for the chip. */
@@ -62,23 +98,35 @@ export interface PromptPresetsProps {
 }
 
 /**
- * Curated benchmark prompts that exercise distinct model capabilities.
+ * Built-in seed presets that ship with the SDK. These get inserted
+ * into {@link usePromptStore} on first run via `seedBuiltins()`, and
+ * the dropdowns / `getPresetsForModel` read from the store from then
+ * on — so users can edit the wording, add tags, scope to specific
+ * models, or even delete a built-in entirely without forking.
  *
- * - **tool calling** — gives the model a fixed tool inventory and asks for
- *   a structured plan. Surfaces format adherence + tool-use reasoning.
- *   No actual tools are wired; we score on the structured output.
- * - **coding** — a HumanEval-flavored function with edge cases and a
- *   require-tests tail. Surfaces correctness + self-testing discipline.
- * - **reasoning** — a multi-step word problem with a unique numeric answer.
- *   Surfaces step-by-step reasoning + arithmetic; pairs well with the
- *   reasoning_effort control to A/B effort levels.
- * - **task following** — IFEval-flavored multi-constraint formatting test.
- *   Surfaces instruction adherence + negative constraints (must-not-contain).
+ * Stable IDs (`builtin-...`) are how the registry recognizes which
+ * entries are seeds. `Reset built-ins` (in the editor) overwrites
+ * everything matching these ids; user-created presets are untouched.
+ *
+ * Categories:
+ *  - `user`   — pre-fills the chat textarea (benchmark prompts).
+ *  - `system` — sets the chat's system role (personas).
+ *  - `both`   — applies both slots simultaneously.
+ *
+ * Model-specific bundles (NuExtract, UniversalNER) use `modelPattern`
+ * regex so they only show up in the dropdown when a matching model is
+ * selected. That's the same gate `getPresetsForModel` uses below.
  */
-export const DEFAULT_PRESETS: PromptPreset[] = [
+export const BUILTIN_SEEDS: ReadonlyArray<
+  Omit<CustomPreset, "createdAt" | "updatedAt">
+> = [
+  // ── User-prompt benchmarks ─────────────────────────────────────────
   {
+    id: "builtin-tool-calling",
     name: "Tool calling",
-    icon: Wrench,
+    iconName: "wrench",
+    category: "user",
+    builtin: true,
     description:
       "Plan a multi-step task using a fixed tool inventory. Tests structured output + tool-use reasoning.",
     user: `You have access to these tools (and ONLY these):
@@ -93,8 +141,11 @@ Output ONLY a JSON array of tool calls in the order you'd make them, like:
 No prose, no markdown, no explanation.`,
   },
   {
+    id: "builtin-coding",
     name: "Coding",
-    icon: Code,
+    iconName: "code",
+    category: "user",
+    builtin: true,
     description:
       "HumanEval-style: implement a function with explicit edge cases and self-tests. Tests correctness + test discipline.",
     user: `Write a Python function:
@@ -106,8 +157,11 @@ that returns True if every opening bracket in \`s\` (\`(\`, \`[\`, \`{\`) is clo
 Then write 5 assertions exercising: empty string, simple match, nested match, mismatch, and bracket inside non-bracket text. Output the function and assertions in a single code block.`,
   },
   {
+    id: "builtin-reasoning",
     name: "Reasoning",
-    icon: Brain,
+    iconName: "brain",
+    category: "user",
+    builtin: true,
     description:
       "Multi-step word problem with a unique numeric answer. Pairs with reasoning_effort to A/B effort levels.",
     user: `Two trains are 240 miles apart on a single track, moving toward each other. Train A leaves Station X at 8:00 AM at 50 mph. Train B leaves Station Y at 8:30 AM at 70 mph. A bird starts at Train A at 8:30 AM and flies back and forth between the trains at 100 mph until they meet.
@@ -115,8 +169,11 @@ Then write 5 assertions exercising: empty string, simple match, nested match, mi
 What time do the trains meet, and how many miles did the bird fly? Show your reasoning step by step, then give the final answer as: "Trains meet at HH:MM. Bird flew X miles."`,
   },
   {
+    id: "builtin-task-following",
     name: "Task following",
-    icon: ListChecks,
+    iconName: "list-checks",
+    category: "user",
+    builtin: true,
     description:
       "Multi-constraint format + negative constraint (must-not-contain). IFEval-style instruction-adherence test.",
     user: `Follow ALL of these instructions exactly:
@@ -140,25 +197,24 @@ SUMMARY:
 
 Do not include any other text before or after.`,
   },
-];
 
-/**
- * System-prompt presets that change the model's *role* without touching the
- * user prompt. Pair these with the user-prompt presets above to A/B how a
- * given task changes when you swap the persona — e.g. run "Coding" through
- * both `concise` and `senior code reviewer` to compare terseness vs depth.
- */
-export const SYSTEM_PRESETS: PromptPreset[] = [
+  // ── System personas ────────────────────────────────────────────────
   {
+    id: "builtin-system-concise",
     name: "Concise",
-    icon: Zap,
+    iconName: "zap",
+    category: "system",
+    builtin: true,
     description:
       "Minimum-words assistant. No preamble, no caveats, no apologies — direct answers only.",
     systemPrompt: `You are a concise assistant. Answer in the fewest words possible. No preamble, no caveats, no apologies. If asked a yes/no question, answer yes or no first, then add at most one sentence of detail. Skip any "Sure!" / "Of course!" / "I'd be happy to" prefixes.`,
   },
   {
+    id: "builtin-system-code-reviewer",
     name: "Code reviewer",
-    icon: Shield,
+    iconName: "shield",
+    category: "system",
+    builtin: true,
     description:
       "Senior engineer doing code review. Looks for bugs, security, perf, clarity. Direct, no praise.",
     systemPrompt: `You are a senior software engineer doing a thorough code review. For any code shown, identify in this exact order:
@@ -170,8 +226,11 @@ export const SYSTEM_PRESETS: PromptPreset[] = [
 Use bullet points. Reference line numbers or function names when relevant. Be direct — do not praise the code, do not soften with "consider" or "you might want to". State the problem and the fix. If the code is correct, say "Looks correct." and move on.`,
   },
   {
+    id: "builtin-system-json-only",
     name: "JSON only",
-    icon: Braces,
+    iconName: "braces",
+    category: "system",
+    builtin: true,
     description:
       "Strict JSON-API persona. Every response is valid JSON, no prose, no fences.",
     systemPrompt: `You are a JSON API. Every response you produce MUST be a single JSON object that parses successfully with json.loads in Python. No prose, no markdown, no code fences, no leading/trailing whitespace beyond what JSON requires.
@@ -182,8 +241,11 @@ If you cannot, respond with: {"error": "<short reason>"}
 Never wrap your output in \`\`\`json or any other delimiter. The first character of your response must be { and the last must be }.`,
   },
   {
+    id: "builtin-system-critic",
     name: "Critic",
-    icon: ListChecks,
+    iconName: "list-checks",
+    category: "system",
+    builtin: true,
     description:
       "Devil's advocate — only finds problems, never proposes solutions. Stress-tests your plan.",
     systemPrompt: `You are a critical reviewer whose only job is to find what could go wrong. For any plan, design, idea, or code shown to you, list:
@@ -195,18 +257,171 @@ Never wrap your output in \`\`\`json or any other delimiter. The first character
 Do NOT propose solutions, alternatives, or workarounds. Do NOT acknowledge what's good. Be specific and concrete — abstract criticism ("this might not scale") is useless without a named scenario ("at >10k QPS the unbounded queue in step 3 OOMs the worker"). Use bullet points.`,
   },
   {
+    id: "builtin-system-teacher",
     name: "Teacher",
-    icon: GraduationCap,
+    iconName: "graduation-cap",
+    category: "system",
+    builtin: true,
     description:
       "Patient step-by-step teacher. Numbered steps, why-it-matters, plain language.",
     systemPrompt: `You are a patient teacher. Break every explanation into numbered steps. After each step, add a brief "Why:" sentence explaining what makes that step matter. End with a one-line summary the student should remember.
 
 Use plain language. If you must use jargon, define it the first time it appears. Prefer concrete examples over abstract definitions. If the student asks something you can't answer with confidence, say so explicitly rather than guessing.`,
   },
+
+  // ── NuExtract bundle (template-based JSON extraction) ──────────────
+  // Scoped to NuExtract via modelPattern so the dropdown only shows
+  // them when the chat's model is one of the NuExtract checkpoints.
+  {
+    id: "builtin-nuextract-bio",
+    name: "Bio → schema",
+    iconName: "file-search",
+    category: "user",
+    builtin: true,
+    modelPattern: "(?:^|/)nuextract",
+    description:
+      "NuExtract template extraction — fill a JSON schema with values pulled from a free-form bio.",
+    user: `### Template:
+{
+    "name": "",
+    "age": "",
+    "occupation": "",
+    "company": "",
+    "location": "",
+    "skills": []
+}
+### Text:
+Mira Okafor is a 34-year-old machine learning engineer at Polymath Labs in Berlin. She specializes in reinforcement learning and graph neural networks, and previously led the search ranking team at Aetheryx. Outside of work she's an avid bouldering climber.
+`,
+  },
+  {
+    id: "builtin-nuextract-product",
+    name: "Product specs",
+    iconName: "file-search",
+    category: "user",
+    builtin: true,
+    modelPattern: "(?:^|/)nuextract",
+    description:
+      "NuExtract template extraction — pull structured product attributes from a marketing description.",
+    user: `### Template:
+{
+    "product_name": "",
+    "manufacturer": "",
+    "price_usd": "",
+    "weight_kg": "",
+    "battery_life_hours": "",
+    "ports": [],
+    "release_year": ""
+}
+### Text:
+The Zenith X1 from Lumiform Industries (announced 2025) is a 1.4 kg ultraportable laptop priced at $1,499. It packs 18 hours of battery life and ships with two Thunderbolt 5 ports, a USB-C port, and a 3.5mm audio jack.
+`,
+  },
+  {
+    id: "builtin-nuextract-recipe",
+    name: "Recipe → JSON",
+    iconName: "file-search",
+    category: "user",
+    builtin: true,
+    modelPattern: "(?:^|/)nuextract",
+    description:
+      "NuExtract template extraction — convert a recipe paragraph into structured fields.",
+    user: `### Template:
+{
+    "title": "",
+    "servings": "",
+    "prep_time_minutes": "",
+    "cook_time_minutes": "",
+    "ingredients": [
+        {
+            "item": "",
+            "quantity": "",
+            "unit": ""
+        }
+    ],
+    "difficulty": ""
+}
+### Text:
+Quick Lemon Garlic Pasta — Serves 4. Prep time: 10 minutes, cook time: 15 minutes. You'll need 400 g of spaghetti, 4 cloves of garlic finely minced, 1/2 cup of olive oil, the zest and juice of 2 lemons, 1 tsp of red pepper flakes, and a generous handful of fresh parsley. Easy enough for a weeknight dinner.
+`,
+  },
+
+  // ── UniversalNER bundle (zero-shot NER) ────────────────────────────
+  {
+    id: "builtin-universalner-people",
+    name: "Extract people",
+    iconName: "tag",
+    category: "user",
+    builtin: true,
+    modelPattern: "(?:^|/)universalner",
+    description:
+      "UniversalNER zero-shot NER — extract person mentions from a paragraph.",
+    user: `Text: At the 2026 Paris Climate Forum, Dr. Anika Devereaux opened the panel alongside finance minister Klaus Verlinden. Audience questions came from journalist Mei Hoshino and activist Rafael Costa.
+
+What describes person in the text?`,
+  },
+  {
+    id: "builtin-universalner-orgs",
+    name: "Extract orgs",
+    iconName: "tag",
+    category: "user",
+    builtin: true,
+    modelPattern: "(?:^|/)universalner",
+    description:
+      "UniversalNER zero-shot NER — extract organizations and companies.",
+    user: `Text: Bridgewater Associates and Fidelity have both reported increased exposure to AI infrastructure. Meanwhile NVIDIA shipped its newest accelerators to OpenAI and the Allen Institute for AI.
+
+What describes organization in the text?`,
+  },
+  {
+    id: "builtin-universalner-dates",
+    name: "Extract dates",
+    iconName: "tag",
+    category: "user",
+    builtin: true,
+    modelPattern: "(?:^|/)universalner",
+    description:
+      "UniversalNER zero-shot NER — extract date and time expressions.",
+    user: `Text: The merger was announced on March 14, 2025, with shareholders voting on April 22nd. The deal closes on Q3 2026, and the integration runway extends through next summer. Earnings call: 9 AM ET tomorrow.
+
+What describes date in the text?`,
+  },
+  {
+    id: "builtin-universalner-custom",
+    name: "Custom entity",
+    iconName: "tag",
+    category: "user",
+    builtin: true,
+    modelPattern: "(?:^|/)universalner",
+    description:
+      "Template you can edit — UniversalNER will extract whatever entity type you ask about.",
+    user: `Text: <paste your text here>
+
+What describes <entity type, e.g. medication, gene, vehicle> in the text?`,
+  },
 ];
 
+// ─── Backward-compat exports ──────────────────────────────────────────
+// Older callers imported DEFAULT_PRESETS / SYSTEM_PRESETS as constant
+// arrays. We keep them exported as derived snapshots of the BUILTIN_SEEDS
+// so existing imports keep working — but the dropdowns themselves now
+// read live from the store (so user edits + custom additions show up).
+const _toRuntimePreset = (cp: Omit<CustomPreset, "createdAt" | "updatedAt">): PromptPreset => ({
+  name: cp.name,
+  description: cp.description,
+  icon: cp.iconName ? ICON_MAP[cp.iconName.toLowerCase()] : undefined,
+  systemPrompt: cp.systemPrompt,
+  user: cp.user,
+});
+export const DEFAULT_PRESETS: PromptPreset[] = BUILTIN_SEEDS
+  .filter((p) => p.category === "user" && !p.modelPattern)
+  .map(_toRuntimePreset);
+export const SYSTEM_PRESETS: PromptPreset[] = BUILTIN_SEEDS
+  .filter((p) => p.category === "system")
+  .map(_toRuntimePreset);
+
 export function PromptPresets({
-  presets = DEFAULT_PRESETS,
+  presets,
   onApply,
   className,
   label = "presets",
@@ -215,37 +430,45 @@ export function PromptPresets({
   modelId,
   includeCustom = true,
 }: PromptPresetsProps) {
-  // Pull custom presets matching the current category. We infer the
-  // category from `label` — "system" maps to system, anything else to
-  // user. SystemPromptPresets always passes label="system".
-  //
-  // IMPORTANT: subscribe to the *stable* slice (the raw presets array)
-  // rather than calling the store's `presetsFor` method as a selector.
-  // Zustand re-runs the selector on every render and `presetsFor`
-  // returns a freshly-allocated array each call, which would trip the
-  // useSyncExternalStore "infinite render" guard. Filtering happens in
-  // the useMemo below where the result is referentially cached.
+  // Source of truth is the registry. We subscribe to the stable
+  // `presets` slice (NOT the `presetsFor` method, which allocates a
+  // new array each call and would trip useSyncExternalStore's
+  // "result of getSnapshot should be cached" guard). Filtering by
+  // category + modelPattern happens in the useMemo below where the
+  // result is referentially cached.
   const customCategory: "user" | "system" =
     label === "system" ? "system" : "user";
   const allCustom = usePromptStore((s) => s.presets);
-  const customPresets = useMemo(() => {
-    if (!includeCustom) return [] as typeof allCustom;
-    return allCustom.filter((p) => {
-      if (p.category !== customCategory && p.category !== "both") return false;
-      if (!p.modelPattern) return true;
-      if (!modelId) return true;
-      try {
-        return new RegExp(p.modelPattern, "i").test(modelId);
-      } catch {
-        return true;
-      }
-    });
+  const registryPresets = useMemo(() => {
+    if (!includeCustom) return [] as Array<PromptPreset>;
+    return allCustom
+      .filter((p) => {
+        if (p.category !== customCategory && p.category !== "both") return false;
+        if (!p.modelPattern) return true;
+        if (!modelId) return true;
+        try {
+          return new RegExp(p.modelPattern, "i").test(modelId);
+        } catch {
+          return true;
+        }
+      })
+      .map<PromptPreset>((p) => ({
+        name: p.name,
+        description: p.description,
+        icon: iconForPreset(p),
+        systemPrompt: p.systemPrompt,
+        user: p.user,
+      }));
   }, [allCustom, customCategory, modelId, includeCustom]);
-  // Merge built-ins (passed in or DEFAULT_PRESETS) with custom — built-ins
-  // first so the dropdown's keyboard nav still lands on them by default.
+  // If the caller supplies an explicit `presets` array, it takes
+  // priority over the registry — that's the escape hatch for stories
+  // / docs / custom hosts that want a deterministic list. Otherwise
+  // we render whatever's currently in the registry (which includes
+  // built-ins after seedBuiltins runs and any user-saved custom
+  // presets matching the current model).
   const mergedPresets = useMemo(
-    () => (customPresets.length === 0 ? presets : [...presets, ...customPresets]),
-    [presets, customPresets],
+    () => (presets ? presets : registryPresets),
+    [presets, registryPresets],
   );
   if (variant === "chips") {
     return (
@@ -255,7 +478,7 @@ export function PromptPresets({
           {label}
         </span>
         {mergedPresets.map((p) => {
-          const Icon = p.icon ?? Sparkles;
+          const Icon = iconForPreset(p);
           return (
             <button
               key={p.name}
@@ -370,7 +593,7 @@ function PromptPresetDropdown({
             className="max-h-80 overflow-y-auto p-1 outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {presets.map((p, i) => {
-              const Icon = p.icon ?? Sparkles;
+              const Icon = iconForPreset(p);
               const itemProps = getItemProps(i);
               return (
                 <button
@@ -409,155 +632,31 @@ function PromptPresetDropdown({
 }
 
 // ---------------------------------------------------------------------------
-// Model-specific preset bundles
+// Model-specific preset selection
 // ---------------------------------------------------------------------------
-// Some specialized models — NuExtract (template-based structured extraction)
-// and UniversalNER (zero-shot named-entity recognition) — have their own
-// well-defined input shapes. Showing the generic Coding/Reasoning/etc.
-// presets when the user has one of those selected is misleading: those
-// prompts won't trigger the model's specialized capability. So when one of
-// these models is active we swap the preset row for a bundle of prompts
-// that match the model's expected input format.
+// Specialized models (NuExtract template extraction, UniversalNER zero-shot
+// NER, etc.) carry their own input shape. Rather than hardcoding a separate
+// bundle per model, we use the `modelPattern` regex on each registry entry:
+// when a preset's pattern matches the current model id, that preset is the
+// preferred dropdown item for that model. Pure built-ins (no pattern) act
+// as the universal fallback.
 //
-// References:
-//   NuExtract:    numind/NuExtract / NuExtract-1.5 / NuExtract-2.0 (HF)
-//                 expects "### Template:\n{...}\n### Text:\n<source>"
-//   UniversalNER: Universal-NER/UniNER-7B-* (HF)
-//                 fine-tuned on a conversation where USER asks
-//                 "What describes <type> in the text?" given a snippet.
+// Hosts that want to know whether the dropdown is *currently* showing a
+// model-specific bundle (e.g. to swap the row's chrome to a "NUEXTRACT"
+// label) call getPresetsForModel(modelId) below.
 // ---------------------------------------------------------------------------
 
-const NUEXTRACT_PRESETS: PromptPreset[] = [
-  {
-    name: "Bio → schema",
-    icon: FileSearch,
-    description:
-      "NuExtract template extraction — fill a JSON schema with values pulled from a free-form bio.",
-    user: `### Template:
-{
-    "name": "",
-    "age": "",
-    "occupation": "",
-    "company": "",
-    "location": "",
-    "skills": []
-}
-### Text:
-Mira Okafor is a 34-year-old machine learning engineer at Polymath Labs in Berlin. She specializes in reinforcement learning and graph neural networks, and previously led the search ranking team at Aetheryx. Outside of work she's an avid bouldering climber.
-`,
-  },
-  {
-    name: "Product specs",
-    icon: FileSearch,
-    description:
-      "NuExtract template extraction — pull structured product attributes from a marketing description.",
-    user: `### Template:
-{
-    "product_name": "",
-    "manufacturer": "",
-    "price_usd": "",
-    "weight_kg": "",
-    "battery_life_hours": "",
-    "ports": [],
-    "release_year": ""
-}
-### Text:
-The Zenith X1 from Lumiform Industries (announced 2025) is a 1.4 kg ultraportable laptop priced at $1,499. It packs 18 hours of battery life and ships with two Thunderbolt 5 ports, a USB-C port, and a 3.5mm audio jack.
-`,
-  },
-  {
-    name: "Recipe → JSON",
-    icon: FileSearch,
-    description:
-      "NuExtract template extraction — convert a recipe paragraph into structured fields.",
-    user: `### Template:
-{
-    "title": "",
-    "servings": "",
-    "prep_time_minutes": "",
-    "cook_time_minutes": "",
-    "ingredients": [
-        {
-            "item": "",
-            "quantity": "",
-            "unit": ""
-        }
-    ],
-    "difficulty": ""
-}
-### Text:
-Quick Lemon Garlic Pasta — Serves 4. Prep time: 10 minutes, cook time: 15 minutes. You'll need 400 g of spaghetti, 4 cloves of garlic finely minced, 1/2 cup of olive oil, the zest and juice of 2 lemons, 1 tsp of red pepper flakes, and a generous handful of fresh parsley. Easy enough for a weeknight dinner.
-`,
-  },
-];
-
-const UNIVERSALNER_PRESETS: PromptPreset[] = [
-  {
-    name: "Extract people",
-    icon: Tag,
-    description:
-      "UniversalNER zero-shot NER — extract person mentions from a paragraph.",
-    user: `Text: At the 2026 Paris Climate Forum, Dr. Anika Devereaux opened the panel alongside finance minister Klaus Verlinden. Audience questions came from journalist Mei Hoshino and activist Rafael Costa.
-
-What describes person in the text?`,
-  },
-  {
-    name: "Extract orgs",
-    icon: Tag,
-    description:
-      "UniversalNER zero-shot NER — extract organizations and companies.",
-    user: `Text: Bridgewater Associates and Fidelity have both reported increased exposure to AI infrastructure. Meanwhile NVIDIA shipped its newest accelerators to OpenAI, Anthropic, and the Allen Institute for AI.
-
-What describes organization in the text?`,
-  },
-  {
-    name: "Extract dates",
-    icon: Tag,
-    description:
-      "UniversalNER zero-shot NER — extract date and time expressions.",
-    user: `Text: The merger was announced on March 14, 2025, with shareholders voting on April 22nd. The deal closes on Q3 2026, and the integration runway extends through next summer. Earnings call: 9 AM ET tomorrow.
-
-What describes date in the text?`,
-  },
-  {
-    name: "Custom entity",
-    icon: Tag,
-    description:
-      "Template you can edit — UniversalNER will extract whatever entity type you ask about.",
-    user: `Text: <paste your text here>
-
-What describes <entity type, e.g. medication, gene, vehicle> in the text?`,
-  },
-];
-
 /**
- * Lookup table mapping model-id patterns to specialized preset bundles. The
- * first matching pattern wins. Anything not matching gets {@link DEFAULT_PRESETS}.
- */
-const MODEL_PRESET_BUNDLES: Array<{
-  match: (modelId: string) => boolean;
-  presets: PromptPreset[];
-  bundleLabel: string;
-  bundleIcon: React.ElementType;
-}> = [
-  {
-    match: (id) => /(^|\/)nuextract/i.test(id),
-    presets: NUEXTRACT_PRESETS,
-    bundleLabel: "nuextract",
-    bundleIcon: FileSearch,
-  },
-  {
-    match: (id) => /(^|\/)universalner/i.test(id),
-    presets: UNIVERSALNER_PRESETS,
-    bundleLabel: "universalner",
-    bundleIcon: Tag,
-  },
-];
-
-/**
- * Returns the right preset bundle for a given model ID, plus the bundle's
- * label/icon so callers can swap the row's chrome to match. Falls back to
- * the generic benchmark presets when no specialized bundle matches.
+ * Hint metadata for the host UI: which preset bundle is currently
+ * "right" for the given model. This is read off the registry, not
+ * hardcoded — so adding a new model-specific bundle is just a matter
+ * of saving presets with the matching `modelPattern` (built-in or
+ * user-created; both work).
+ *
+ * The `presets` field is still returned for backward compatibility,
+ * but new code should let `<PromptPresets modelId={chat.model} />`
+ * filter the registry directly — the dropdown handles model-aware
+ * filtering on its own.
  */
 export function getPresetsForModel(modelId: string | undefined | null): {
   presets: PromptPreset[];
@@ -565,24 +664,60 @@ export function getPresetsForModel(modelId: string | undefined | null): {
   icon: React.ElementType;
   isModelSpecific: boolean;
 } {
+  // Read the live registry so any user-saved model-specific presets
+  // also count toward "is this model specialized?".
+  const all = usePromptStore.getState().presets;
   if (modelId) {
-    for (const b of MODEL_PRESET_BUNDLES) {
-      if (b.match(modelId)) {
-        return {
-          presets: b.presets,
-          label: b.bundleLabel,
-          icon: b.bundleIcon,
-          isModelSpecific: true,
-        };
+    const matches = all.filter((p) => {
+      if (!p.modelPattern) return false;
+      try {
+        return new RegExp(p.modelPattern, "i").test(modelId);
+      } catch {
+        return false;
       }
+    });
+    if (matches.length > 0) {
+      // Use the most-common modelPattern as the bundle label —
+      // typically all matches share one. Pick a representative icon
+      // from the first match (they usually share an icon too).
+      const label = _bundleLabelFromPattern(matches[0].modelPattern!);
+      const icon = ICON_MAP[(matches[0].iconName ?? "").toLowerCase()] ?? Sparkles;
+      return {
+        presets: matches.filter((p) => p.category !== "system").map(_toRuntimePreset),
+        label,
+        icon,
+        isModelSpecific: true,
+      };
     }
   }
+  // Default fallback: the user-prompt built-ins without a model
+  // restriction, plus any user-created universal presets.
+  const universalUser = all.filter(
+    (p) => (p.category === "user" || p.category === "both") && !p.modelPattern,
+  );
   return {
-    presets: DEFAULT_PRESETS,
+    presets: universalUser.map(_toRuntimePreset),
     label: "presets",
     icon: Sparkles,
     isModelSpecific: false,
   };
+}
+
+/**
+ * Heuristic: pull a short, lowercase label out of a model-pattern
+ * regex. We assume specialty bundles use patterns like
+ * `(?:^|/)nuextract` or `^mac/foo`; we strip the boundary noise and
+ * return the alphanumeric core. Falls back to "presets" otherwise.
+ */
+function _bundleLabelFromPattern(pattern: string): string {
+  const cleaned = pattern
+    .replace(/\(\?:[^)]*\)/g, "")
+    .replace(/[^A-Za-z0-9_-]+/g, " ")
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .pop();
+  return cleaned || "presets";
 }
 
 export interface SystemPromptPresetsProps {

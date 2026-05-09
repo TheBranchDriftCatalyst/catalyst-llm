@@ -1,12 +1,12 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { nanoid } from "nanoid";
-import type { PromptPreset } from "../components/PromptPresets.js";
 
 /**
- * A user-saved prompt. Extends the base {@link PromptPreset} shape that
- * the dropdown components understand, plus identity + categorization
- * fields the registry / editor needs.
+ * A persisted prompt entry — the single source of truth for both
+ * built-in starters and user-saved customs. Stored as JSON in
+ * localStorage, so the shape avoids React types (icons are stored
+ * as string names and resolved at render time via a lookup).
  *
  * `category` decides which slot a preset fills:
  *  - `"user"`   — pre-fills the chat's user-prompt textarea
@@ -15,16 +15,33 @@ import type { PromptPreset } from "../components/PromptPresets.js";
  *
  * `modelPattern` is an optional case-insensitive regex matched against
  * the model id. When set, the preset only appears in the dropdown for
- * models whose id matches — mirrors the built-in `getPresetsForModel`
- * behavior so users can ship per-model templates without forking the
- * SDK.
+ * models whose id matches — that's how the NuExtract / UniversalNER
+ * specialty bundles stay scoped to the right backends without forking
+ * the SDK.
+ *
+ * `builtin` is true for the seed presets that ship with the SDK. They
+ * survive `Reset built-ins` (re-seeded from defaults), and the editor
+ * shows a "BUILT-IN" badge so the user knows what they're editing.
+ * User-created presets always have `builtin: false`.
  */
-export interface CustomPreset extends PromptPreset {
+export interface CustomPreset {
   id: string;
+  name: string;
+  description?: string;
+  systemPrompt?: string;
+  user?: string;
+  /**
+   * Lucide icon name (lowercased), resolved by the dropdown to a
+   * React component via a small lookup table. Stored as a string so
+   * Zustand's JSON-persist middleware roundtrips cleanly.
+   */
+  iconName?: string;
   category: "user" | "system" | "both";
   modelPattern?: string;
   /** Free-form tag list for grouping in the editor sidebar. */
   tags?: string[];
+  /** True for SDK-shipped seeds; false (or absent) for user creations. */
+  builtin?: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -49,6 +66,25 @@ export interface PromptStore {
     category: "user" | "system",
     modelId?: string,
   ) => CustomPreset[];
+
+  // ── Built-in management ────────────────────────────────────────────
+  /**
+   * Idempotently seed the registry with the SDK's built-in presets.
+   * Only inserts entries whose id is not already present, so a user's
+   * edits to a built-in survive the next call. Run automatically on
+   * first store rehydrate via `seedBuiltinsIfNeeded` below.
+   */
+  seedBuiltins: (
+    seeds: ReadonlyArray<Omit<CustomPreset, "createdAt" | "updatedAt">>,
+  ) => number;
+  /**
+   * Force-overwrite all built-in entries with the supplied seeds. Any
+   * user edits to built-ins are lost. User-created presets are left
+   * alone. Exposed as a "Reset built-ins" action in the editor.
+   */
+  resetBuiltins: (
+    seeds: ReadonlyArray<Omit<CustomPreset, "createdAt" | "updatedAt">>,
+  ) => number;
 
   // ── Backup / restore ────────────────────────────────────────────────
   /** Serialize the registry to a JSON string suitable for download. */
@@ -118,6 +154,34 @@ export const usePromptStore = create<PromptStore>()(
             return true;
           }
         });
+      },
+
+      seedBuiltins: (seeds) => {
+        const now = Date.now();
+        const existing = new Set(get().presets.map((p) => p.id));
+        const additions = seeds
+          .filter((s) => !existing.has(s.id))
+          .map((s) => ({ ...s, createdAt: now, updatedAt: now } as CustomPreset));
+        if (additions.length === 0) return 0;
+        set((s) => ({ presets: [...s.presets, ...additions] }));
+        return additions.length;
+      },
+
+      resetBuiltins: (seeds) => {
+        const now = Date.now();
+        // Drop any current builtin (or any id matching a seed id, in
+        // case a user's hand-rolled preset accidentally collided), then
+        // re-insert the seeds fresh. User-created (builtin !== true and
+        // id not in the seed set) survives untouched.
+        const seedIds = new Set(seeds.map((s) => s.id));
+        const userKept = get().presets.filter(
+          (p) => !p.builtin && !seedIds.has(p.id),
+        );
+        const fresh = seeds.map(
+          (s) => ({ ...s, createdAt: now, updatedAt: now } as CustomPreset),
+        );
+        set({ presets: [...userKept, ...fresh] });
+        return fresh.length;
       },
 
       exportJson: () => {
