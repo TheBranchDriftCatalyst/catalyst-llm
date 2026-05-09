@@ -29,6 +29,7 @@ import {
   type MetricsRow,
 } from "./db.js";
 import { useMetricsStore } from "./store.js";
+import { AggregateCharts } from "./AggregateCharts.js";
 
 const DEFAULT_SQL = `-- Average tokens/sec by model, last 7 days
 SELECT
@@ -197,6 +198,13 @@ export function StatsView() {
           </Button>
         </div>
       </header>
+
+      {/* ─── Aggregate visualizations (radar + stacked rank) ─────── */}
+      {summaries.length > 0 && (
+        <div className="border-b border-border/60 bg-card/10 p-3">
+          <AggregateCharts summaries={summaries} />
+        </div>
+      )}
 
       {/* ─── Per-model summary cards ─────────────────────────────── */}
       <div className="grid grid-cols-1 gap-2 overflow-x-auto border-b border-border/60 bg-card/20 p-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
