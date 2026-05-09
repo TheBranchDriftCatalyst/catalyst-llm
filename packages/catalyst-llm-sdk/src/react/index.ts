@@ -27,3 +27,8 @@ export {
   type CompareRun,
   type UseCompareResult,
 } from "./useCompare.js";
+export {
+  usePromptStore,
+  type CustomPreset,
+  type PromptStore,
+} from "./promptStore.js";

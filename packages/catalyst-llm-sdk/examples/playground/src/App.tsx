@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ExternalLink, MessageSquare, Columns3 } from "lucide-react";
+import { ExternalLink, MessageSquare, Columns3, Wand2 } from "lucide-react";
 import {
   CatalystLLMClient,
   ChatPanel,
@@ -8,6 +8,7 @@ import {
   ConnectionStatus,
   LLMProvider,
   ModelMicroSwitcher,
+  PromptEditor,
   useChatStore,
   useCompareStore,
 } from "@catalyst/llm-sdk";
@@ -25,12 +26,13 @@ const apiKey = (import.meta.env.VITE_LITELLM_KEY as string | undefined) ?? "";
 
 const client = new CatalystLLMClient({ baseUrl, apiKey });
 
-type Page = "chat" | "compare";
+type Page = "chat" | "compare" | "prompts";
 
 const PATH_TO_PAGE: Record<string, Page> = {
   "/": "chat",
   "/chat": "chat",
   "/compare": "compare",
+  "/prompts": "prompts",
 };
 
 function pageFromPath(path: string): Page {
@@ -38,7 +40,9 @@ function pageFromPath(path: string): Page {
 }
 
 function pathFromPage(page: Page): string {
-  return page === "compare" ? "/compare" : "/chat";
+  if (page === "compare") return "/compare";
+  if (page === "prompts") return "/prompts";
+  return "/chat";
 }
 
 /**
@@ -108,6 +112,12 @@ function Header({ page, setPage }: { page: Page; setPage: (p: Page) => void }) {
             icon={Columns3}
             label="Compare"
             streaming={compareStreaming}
+          />
+          <PageTab
+            active={page === "prompts"}
+            onClick={() => setPage("prompts")}
+            icon={Wand2}
+            label="Prompts"
           />
         </nav>
         {(chatStreaming || compareStreaming) && (
@@ -236,9 +246,10 @@ function App() {
           Skip to main content
         </a>
         <Header page={page} setPage={setPage} />
-        {page === "chat" ? (
+        {page === "chat" && (
           <ChatWorkspace goCompare={() => setPage("compare")} />
-        ) : (
+        )}
+        {page === "compare" && (
           <main id="main-content" className="flex-1 overflow-hidden">
             <CompareView
               onTurnComplete={
@@ -247,6 +258,11 @@ function App() {
                   : undefined
               }
             />
+          </main>
+        )}
+        {page === "prompts" && (
+          <main id="main-content" className="flex-1 overflow-hidden">
+            <PromptEditor />
           </main>
         )}
       </div>

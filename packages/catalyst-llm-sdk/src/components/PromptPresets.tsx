@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Code,
   Wrench,
@@ -13,6 +13,7 @@ import {
   FileSearch,
   ChevronDown,
 } from "lucide-react";
+import { usePromptStore } from "../react/promptStore.js";
 import { useFocusTrap } from "./useFocusTrap.js";
 import { useListboxKeyboard } from "./useListboxKeyboard.js";
 import { cn } from "./utils.js";
@@ -45,6 +46,19 @@ export interface PromptPresetsProps {
    * have horizontal real estate to spare and want one-click application.
    */
   variant?: "dropdown" | "chips";
+  /**
+   * Optional model id used to filter custom (registry) presets via their
+   * `modelPattern`. Built-ins ignore this — the caller already chose them
+   * via {@link getPresetsForModel}. Pass `currentChat.model` here.
+   */
+  modelId?: string;
+  /**
+   * When true, custom presets from the local registry (saved via
+   * {@link PromptEditor}) are merged into the dropdown alongside the
+   * built-ins. Defaults to true. Set to false in stories / docs to
+   * keep the dropdown deterministic.
+   */
+  includeCustom?: boolean;
 }
 
 /**
@@ -198,7 +212,23 @@ export function PromptPresets({
   label = "presets",
   labelIcon: LabelIcon = Sparkles,
   variant = "dropdown",
+  modelId,
+  includeCustom = true,
 }: PromptPresetsProps) {
+  // Pull custom presets matching the current category. We infer the
+  // category from `label` — "system" maps to system, anything else to
+  // user. SystemPromptPresets always passes label="system".
+  const customCategory: "user" | "system" =
+    label === "system" ? "system" : "user";
+  const customPresets = usePromptStore((s) =>
+    includeCustom ? s.presetsFor(customCategory, modelId) : [],
+  );
+  // Merge built-ins (passed in or DEFAULT_PRESETS) with custom — built-ins
+  // first so the dropdown's keyboard nav still lands on them by default.
+  const mergedPresets = useMemo(
+    () => (customPresets.length === 0 ? presets : [...presets, ...customPresets]),
+    [presets, customPresets],
+  );
   if (variant === "chips") {
     return (
       <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
@@ -206,7 +236,7 @@ export function PromptPresets({
           <LabelIcon className="h-3 w-3" aria-hidden="true" />
           {label}
         </span>
-        {presets.map((p) => {
+        {mergedPresets.map((p) => {
           const Icon = p.icon ?? Sparkles;
           return (
             <button
@@ -230,7 +260,7 @@ export function PromptPresets({
 
   return (
     <PromptPresetDropdown
-      presets={presets}
+      presets={mergedPresets}
       onApply={onApply}
       className={className}
       label={label}
@@ -544,6 +574,10 @@ export interface SystemPromptPresetsProps {
   className?: string;
   /** See {@link PromptPresetsProps.variant}. Defaults to `"dropdown"`. */
   variant?: "dropdown" | "chips";
+  /** See {@link PromptPresetsProps.modelId}. */
+  modelId?: string;
+  /** See {@link PromptPresetsProps.includeCustom}. Defaults to true. */
+  includeCustom?: boolean;
 }
 
 /**
@@ -556,6 +590,8 @@ export function SystemPromptPresets({
   presets = SYSTEM_PRESETS,
   className,
   variant,
+  modelId,
+  includeCustom,
 }: SystemPromptPresetsProps) {
   return (
     <PromptPresets
@@ -565,6 +601,8 @@ export function SystemPromptPresets({
       label="system"
       labelIcon={Shield}
       variant={variant}
+      modelId={modelId}
+      includeCustom={includeCustom}
     />
   );
 }
