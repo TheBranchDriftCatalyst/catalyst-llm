@@ -15,6 +15,7 @@ import {
   Brain,
   Columns3,
   Table as TableIcon,
+  BarChart3,
   ChevronRight,
   ChevronDown,
   Braces,
@@ -42,6 +43,7 @@ import { ModelMultiSelect } from "./ModelMultiSelect.js";
 import { ModelInfoCard } from "./ModelInfoCard.js";
 import { PromptPresets, SystemPromptPresets } from "./PromptPresets.js";
 import { lineDiff } from "./diff.js";
+import { CompareGraphs } from "./CompareGraphs.js";
 import { RenderedContent } from "./RenderedContent.js";
 import { cn } from "./utils.js";
 
@@ -391,7 +393,9 @@ export function CompareView({ className, onTurnComplete }: CompareViewProps) {
     useState<NonNullable<ChatParams["reasoning_effort"]> | undefined>(undefined);
   const [referenceId, setReferenceId] = useState<string | null>(null);
   const [diffMode, setDiffMode] = useState(false);
-  const [viewMode, setViewMode] = useState<"columns" | "table">("columns");
+  const [viewMode, setViewMode] = useState<"columns" | "table" | "graphs">(
+    "columns",
+  );
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<
     "model" | "ttft" | "tokps" | "rt" | "cost" | "out"
@@ -489,16 +493,31 @@ export function CompareView({ className, onTurnComplete }: CompareViewProps) {
                 <TableIcon className="h-3 w-3" aria-hidden="true" />
                 Table
               </button>
+              <button
+                type="button"
+                aria-pressed={viewMode === "graphs"}
+                onClick={() => setViewMode("graphs")}
+                title="Bar charts comparing TTFT, tokens/sec, duration, etc."
+                className={cn(
+                  "flex items-center gap-1 px-2 py-1 text-[11px] font-medium uppercase tracking-wider focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  viewMode === "graphs"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-accent/40 hover:text-foreground",
+                )}
+              >
+                <BarChart3 className="h-3 w-3" aria-hidden="true" />
+                Graphs
+              </button>
             </div>
             <Button
               variant="outline"
               size="sm"
               onClick={() => setDiffMode((d) => !d)}
-              disabled={selectedIds.length < 2 || viewMode === "table"}
+              disabled={selectedIds.length < 2 || viewMode !== "columns"}
               aria-pressed={diffMode}
               className={cn(diffMode && "border-primary text-primary")}
               title={
-                viewMode === "table"
+                viewMode !== "columns"
                   ? "Diff is only available in columns view"
                   : undefined
               }
@@ -751,7 +770,7 @@ export function CompareView({ className, onTurnComplete }: CompareViewProps) {
               );
             })}
           </div>
-        ) : (
+        ) : viewMode === "table" ? (
           <ResultsTable
             modelIds={selectedIds}
             runs={runs}
@@ -769,6 +788,8 @@ export function CompareView({ className, onTurnComplete }: CompareViewProps) {
             }}
             onRemove={removeModel}
           />
+        ) : (
+          <CompareGraphs selectedIds={selectedIds} runs={runs} />
         )}
       </div>
     </div>

@@ -31,6 +31,7 @@ export {
 } from "./PromptPresets.js";
 export { PromptEditor, type PromptEditorProps } from "./PromptEditor.js";
 export { CompareView, type CompareViewProps } from "./CompareView.js";
+export { CompareGraphs, type CompareGraphsProps } from "./CompareGraphs.js";
 export { lineDiff, wordDiff, type Change as DiffChange } from "./diff.js";
 export { ParameterControls, type ParameterControlsProps } from "./ParameterControls.js";
 export { ResponseViewer, type ResponseViewerProps } from "./ResponseViewer.js";
