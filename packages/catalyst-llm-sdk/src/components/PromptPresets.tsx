@@ -218,11 +218,29 @@ export function PromptPresets({
   // Pull custom presets matching the current category. We infer the
   // category from `label` — "system" maps to system, anything else to
   // user. SystemPromptPresets always passes label="system".
+  //
+  // IMPORTANT: subscribe to the *stable* slice (the raw presets array)
+  // rather than calling the store's `presetsFor` method as a selector.
+  // Zustand re-runs the selector on every render and `presetsFor`
+  // returns a freshly-allocated array each call, which would trip the
+  // useSyncExternalStore "infinite render" guard. Filtering happens in
+  // the useMemo below where the result is referentially cached.
   const customCategory: "user" | "system" =
     label === "system" ? "system" : "user";
-  const customPresets = usePromptStore((s) =>
-    includeCustom ? s.presetsFor(customCategory, modelId) : [],
-  );
+  const allCustom = usePromptStore((s) => s.presets);
+  const customPresets = useMemo(() => {
+    if (!includeCustom) return [] as typeof allCustom;
+    return allCustom.filter((p) => {
+      if (p.category !== customCategory && p.category !== "both") return false;
+      if (!p.modelPattern) return true;
+      if (!modelId) return true;
+      try {
+        return new RegExp(p.modelPattern, "i").test(modelId);
+      } catch {
+        return true;
+      }
+    });
+  }, [allCustom, customCategory, modelId, includeCustom]);
   // Merge built-ins (passed in or DEFAULT_PRESETS) with custom — built-ins
   // first so the dropdown's keyboard nav still lands on them by default.
   const mergedPresets = useMemo(
