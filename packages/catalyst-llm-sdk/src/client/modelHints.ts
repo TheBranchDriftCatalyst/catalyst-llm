@@ -55,11 +55,26 @@ const RULES: HintRule[] = [
   { match: /phi-?4/i, maxInputTokens: 16384 },
   { match: /dolphin-?(?:mistral|3)/i, maxInputTokens: 32768 },
 
+  // ── Community RP / uncensored quants ────────────────────────────────
+  // These ship via Ollama as freshly-`ollama create`d models from a
+  // community GGUF + minimal Modelfile. The thinking/reasoning template
+  // is NOT baked into those quants, so Ollama refuses `think: true`
+  // requests with "<tag> does not support thinking" — even when the
+  // upstream finetune name implies reasoning. Mark explicitly false
+  // so the SDK strips reasoning_effort before sending.
+  // (Order matters — these have to come BEFORE generic qwen3 rules.)
+  { match: /qwen3-moe-uncensored/i, supportsReasoning: false, maxInputTokens: 262144 },
+  { match: /behemoth-?x/i, supportsReasoning: false, maxInputTokens: 32768 },
+  { match: /magnum-?v\d/i, supportsReasoning: false, maxInputTokens: 16384 },
+  { match: /cydonia/i, supportsReasoning: false, maxInputTokens: 32768 },
+  { match: /hermes-?[34]/i, supportsReasoning: false, maxInputTokens: 131072 },
+  { match: /wizardlm-?uncensored/i, supportsReasoning: false, maxInputTokens: 4096 },
+
   // ── Specialty extraction / NER ──────────────────────────────────────
   // NuExtract uses a tight context — its template-based extraction expects
   // short inputs and isn't really meant for long-context use.
-  { match: /nuextract/i, maxInputTokens: 8192 },
-  { match: /universalner/i, maxInputTokens: 4096 },
+  { match: /nuextract/i, supportsReasoning: false, maxInputTokens: 8192 },
+  { match: /universalner/i, supportsReasoning: false, maxInputTokens: 4096 },
 
   // ── Embedding models — no chat context window meaningful ────────────
   { match: /embed/i, maxInputTokens: 8192 },

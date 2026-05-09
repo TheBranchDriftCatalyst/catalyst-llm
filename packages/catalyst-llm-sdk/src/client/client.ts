@@ -1,8 +1,10 @@
 import { LLMConfig, type LLMConfigInit } from "./config.js";
 import { getEndpointInfo } from "./endpoints.js";
+import { effectiveMetadata } from "./modelHints.js";
 import { parseSSEChunks } from "./streaming.js";
 import type {
   ChatChunk,
+  ChatParams,
   ChatRequest,
   ChatResponse,
   EmbedRequest,
@@ -12,8 +14,19 @@ import type {
   ModelWithRouting,
 } from "./types.js";
 
+const MODELS_CACHE_TTL_MS = 30_000;
+
 export class CatalystLLMClient {
   readonly config: LLMConfig;
+
+  /**
+   * Lazy cache of getModelsWithRouting() output, used by the request-time
+   * params filter. We don't want every chat completion to round-trip to
+   * /v1/models + /model/info, so we cache for 30s. Cache misses fall back
+   * to "pass through unfiltered" — better to send a request that might
+   * fail than to block the user.
+   */
+  private _modelsCache: { ts: number; data: ModelWithRouting[] } | null = null;
 
   constructor(config?: LLMConfig | LLMConfigInit) {
     this.config = config instanceof LLMConfig ? config : new LLMConfig(config);
@@ -24,6 +37,57 @@ export class CatalystLLMClient {
       "Content-Type": "application/json",
       ...this.config.authHeader,
     };
+  }
+
+  private async _getModelsCached(): Promise<ModelWithRouting[]> {
+    const now = Date.now();
+    if (this._modelsCache && now - this._modelsCache.ts < MODELS_CACHE_TTL_MS) {
+      return this._modelsCache.data;
+    }
+    try {
+      const data = await this.getModelsWithRouting();
+      this._modelsCache = { ts: now, data };
+      return data;
+    } catch {
+      // Don't fail the chat just because /model/info is flaky — return
+      // whatever the previous cache held (even if stale) or empty.
+      return this._modelsCache?.data ?? [];
+    }
+  }
+
+  /**
+   * Strips request params that the target model can't actually handle.
+   *
+   * Currently: drops `reasoning_effort` when the model's effective
+   * metadata explicitly says `supports_reasoning === false`. This catches
+   * the case where a chat carries a stale reasoning_effort value (from a
+   * previous reasoning-capable model) and the user switches to a
+   * community Ollama quant whose Modelfile lacks the thinking template
+   * — Ollama would otherwise 500 with `<tag> does not support thinking`.
+   *
+   * Unknown models (no rule match, no metadata) pass through unfiltered:
+   * we'd rather let an experimental model see all params than over-strip
+   * and silently degrade behavior.
+   */
+  private async _filterParamsForModel(
+    modelId: string,
+    params: ChatParams | undefined,
+  ): Promise<ChatParams | undefined> {
+    if (!params || params.reasoning_effort === undefined) return params;
+    const models = await this._getModelsCached();
+    const model = models.find((m) => m.id === modelId);
+    const meta = effectiveMetadata(model);
+    if (meta.supports_reasoning === false) {
+      const { reasoning_effort: _stripped, ...rest } = params;
+      if (typeof console !== "undefined" && console.warn) {
+        console.warn(
+          `[catalyst-llm-sdk] dropped reasoning_effort=${_stripped} for ` +
+            `${modelId} — model doesn't support thinking template`,
+        );
+      }
+      return rest;
+    }
+    return params;
   }
 
   async verifyConnection(timeoutMs = 5000): Promise<boolean> {
@@ -86,6 +150,7 @@ export class CatalystLLMClient {
   }
 
   async createChat(req: ChatRequest): Promise<ChatResponse> {
+    const params = await this._filterParamsForModel(req.model, req.params);
     const resp = await this.config.fetchImpl(
       `${this.config.baseUrl}/v1/chat/completions`,
       {
@@ -95,7 +160,7 @@ export class CatalystLLMClient {
           model: req.model,
           messages: req.messages,
           stream: false,
-          ...(req.params ?? {}),
+          ...(params ?? {}),
         }),
         signal: req.signal,
       },
@@ -110,8 +175,11 @@ export class CatalystLLMClient {
   streamChat(req: ChatRequest): AsyncIterable<ChatChunk> {
     const config = this.config;
     const headers = this.baseHeaders;
+    const filterParams = (m: string, p: ChatParams | undefined) =>
+      this._filterParamsForModel(m, p);
     return {
       [Symbol.asyncIterator]: async function* () {
+        const params = await filterParams(req.model, req.params);
         const resp = await config.fetchImpl(
           `${config.baseUrl}/v1/chat/completions`,
           {
@@ -127,7 +195,7 @@ export class CatalystLLMClient {
               // `completion_tokens` / cost stay at zero. Caller-supplied
               // `params.stream_options` always wins.
               stream_options: { include_usage: true },
-              ...(req.params ?? {}),
+              ...(params ?? {}),
             }),
             signal: req.signal,
           },
