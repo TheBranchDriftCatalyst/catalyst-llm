@@ -75,6 +75,8 @@ spec:
     metadata:
       labels:
         app: litellm-postgresql
+      annotations:
+        backup.velero.io/backup-volumes: data
     spec:
       containers:
         - name: postgresql

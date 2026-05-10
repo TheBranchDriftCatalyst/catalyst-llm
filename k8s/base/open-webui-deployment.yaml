@@ -19,6 +19,8 @@ spec:
         app.kubernetes.io/name: open-webui
         app.kubernetes.io/component: chat-ui
         app.kubernetes.io/part-of: catalyst-llm
+      annotations:
+        backup.velero.io/backup-volumes: data
     spec:
       containers:
         - name: open-webui
