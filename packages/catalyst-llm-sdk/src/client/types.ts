@@ -1,10 +1,26 @@
 export type Role = "system" | "user" | "assistant" | "tool";
 
+/**
+ * One outstanding tool invocation requested by the model. The
+ * arguments come back as a JSON-encoded string — that's the OpenAI
+ * wire shape, not a parsing oversight on our end.
+ */
+export interface AssistantToolCall {
+  id: string;
+  type: "function";
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
 export interface Message {
   role: Role;
   content: string;
   name?: string;
   tool_call_id?: string;
+  /** Set on assistant turns when the model wants to invoke tools. */
+  tool_calls?: AssistantToolCall[];
 }
 
 export interface ChatParams {
@@ -144,6 +160,13 @@ export interface ChatChunk {
   delta: string;
   meta: StreamMeta;
   done: boolean;
+  /**
+   * Set on the final chunk of a streamed response when the model
+   * decided to invoke tools. The streaming loop in `client.streamChat`
+   * uses this to drive the tool-execution loop; downstream consumers
+   * usually don't need to read it directly.
+   */
+  tool_calls?: AssistantToolCall[];
 }
 
 export interface ChatRequest {
@@ -151,6 +174,25 @@ export interface ChatRequest {
   messages: Message[];
   params?: ChatParams;
   signal?: AbortSignal;
+  /**
+   * Optional tool registry. When provided, `client.streamChat` enables
+   * the tool-call loop: tool definitions are sent in the request body,
+   * tool invocations from the model are dispatched against the
+   * registry, results are appended as `role: "tool"` messages, and a
+   * follow-up request is streamed. The loop terminates when the model
+   * returns content without tool_calls (or hits `tool_choice="none"`).
+   */
+  tools?: import("./tools/types.js").ToolRegistryLike;
+  /**
+   * Cap on tool-call iterations to avoid infinite loops. Default 5.
+   */
+  max_tool_iterations?: number;
+  /**
+   * Optional callback fired after each tool finishes — useful for the
+   * playground to render `<ToolCallCard>`s and persist call traces
+   * into the metrics sink.
+   */
+  onToolCall?: (event: import("./tools/types.js").ToolCallEvent) => void;
 }
 
 export interface EmbedRequest {

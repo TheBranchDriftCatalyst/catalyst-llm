@@ -24,6 +24,10 @@ import {
   usePromptStore,
   type CustomPreset,
 } from "../react/promptStore.js";
+import {
+  parsePromptFile,
+  serializePromptFile,
+} from "../react/promptFile.js";
 import { BUILTIN_SEEDS } from "./PromptPresets.js";
 import { cn } from "./utils.js";
 
@@ -81,6 +85,14 @@ export function PromptEditor({ className, initialPresetId }: PromptEditorProps) 
   const exportJson = usePromptStore((s) => s.exportJson);
   const importJson = usePromptStore((s) => s.importJson);
   const resetBuiltins = usePromptStore((s) => s.resetBuiltins);
+
+  // Cheap heuristic — if the file starts with `{` or `[` we treat it
+  // as JSON regardless of extension. Stops a JSON file with a `.prompt`
+  // suffix from getting misrouted through the frontmatter parser.
+  const looksLikeJson = (s: string) => {
+    const t = s.trimStart();
+    return t.startsWith("{") || t.startsWith("[");
+  };
 
   const [filter, setFilter] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(
@@ -201,19 +213,60 @@ export function PromptEditor({ className, initialPresetId }: PromptEditorProps) 
   }
 
   async function onImportFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
     const replace = e.target.dataset.replace === "1";
-    const text = await file.text();
-    try {
-      const n = importJson(text, replace ? "replace" : "merge");
-      console.info(`[PromptEditor] imported ${n} preset(s) (${replace ? "replace" : "merge"})`);
-    } catch (err) {
-      console.error(`[PromptEditor] import failed:`, err);
-      // Surface to the user without alert() being too disruptive
-      window.alert(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
+
+    let imported = 0;
+    let failed = 0;
+    for (const file of files) {
+      const text = await file.text();
+      const isPrompt =
+        file.name.endsWith(".prompt") ||
+        file.name.endsWith(".prompt.md") ||
+        // Auto-detect by content — frontmatter delimiter on first line
+        text.trimStart().startsWith("---");
+      try {
+        if (isPrompt && !looksLikeJson(text)) {
+          const { preset } = parsePromptFile(text);
+          // Round-trip through addPreset so a fresh id + timestamps are
+          // assigned. Existing prompts with the same name+category are
+          // not deduped here — the store keeps both, and the user can
+          // delete the duplicate via the editor.
+          addPreset(preset);
+          imported += 1;
+        } else {
+          imported += importJson(text, replace ? "replace" : "merge");
+        }
+      } catch (err) {
+        failed += 1;
+        console.error(`[PromptEditor] import of ${file.name} failed:`, err);
+      }
+    }
+    console.info(
+      `[PromptEditor] imported ${imported} preset(s) (${replace ? "replace" : "merge"})${failed ? `, ${failed} failed` : ""}`,
+    );
+    if (failed > 0) {
+      window.alert(
+        `Import: ${imported} succeeded, ${failed} failed. See console for details.`,
+      );
     }
     e.target.value = "";
+  }
+
+  function downloadCurrentAsPromptFile() {
+    if (!selectedId) return;
+    const preset = presets.find((p) => p.id === selectedId);
+    if (!preset) return;
+    const text = serializePromptFile(preset);
+    const safeName = preset.name.replace(/[^A-Za-z0-9_-]+/g, "-").toLowerCase();
+    const blob = new Blob([text], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${safeName || "prompt"}.prompt.md`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
@@ -338,7 +391,8 @@ export function PromptEditor({ className, initialPresetId }: PromptEditorProps) 
           <input
             ref={fileInputRef}
             type="file"
-            accept="application/json,.json"
+            accept="application/json,.json,.prompt,.prompt.md,.md,text/markdown"
+            multiple
             className="hidden"
             onChange={onImportFile}
           />
@@ -374,6 +428,7 @@ export function PromptEditor({ className, initialPresetId }: PromptEditorProps) 
                   }
                 : undefined
             }
+            onSaveAsPromptFile={selectedId ? downloadCurrentAsPromptFile : undefined}
             isNew={!selectedId}
           />
         )}
@@ -471,6 +526,7 @@ function EditorForm({
   onDiscard,
   onDelete,
   onDuplicate,
+  onSaveAsPromptFile,
 }: {
   draft: Draft;
   dirty: boolean;
@@ -480,6 +536,7 @@ function EditorForm({
   onDiscard: () => void;
   onDelete?: () => void;
   onDuplicate?: () => void;
+  onSaveAsPromptFile?: () => void;
 }) {
   // Cmd/Ctrl-S to save while editing
   useEffect(() => {
@@ -520,6 +577,19 @@ function EditorForm({
             >
               <Copy className="mr-1 h-3 w-3" />
               dup
+            </Button>
+          )}
+          {onSaveAsPromptFile && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={onSaveAsPromptFile}
+              title="Download as .prompt.md (YAML frontmatter + body — the prompts-as-code standard)"
+              className="text-[10px]"
+            >
+              <Download className="mr-1 h-3 w-3" />
+              .prompt
             </Button>
           )}
           {onDelete && (

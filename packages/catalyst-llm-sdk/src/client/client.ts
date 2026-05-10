@@ -3,16 +3,22 @@ import { getEndpointInfo } from "./endpoints.js";
 import { effectiveMetadata } from "./modelHints.js";
 import { parseSSEChunks } from "./streaming.js";
 import type {
+  AssistantToolCall,
   ChatChunk,
   ChatParams,
   ChatRequest,
   ChatResponse,
   EmbedRequest,
   EmbedResponse,
+  Message,
   Model,
   ModelInfo,
   ModelWithRouting,
 } from "./types.js";
+import type {
+  ToolCallEvent,
+  ToolRegistryLike,
+} from "./tools/types.js";
 
 const MODELS_CACHE_TTL_MS = 30_000;
 
@@ -177,34 +183,133 @@ export class CatalystLLMClient {
     const headers = this.baseHeaders;
     const filterParams = (m: string, p: ChatParams | undefined) =>
       this._filterParamsForModel(m, p);
+    const tools = req.tools;
+    const maxIterations = req.max_tool_iterations ?? 5;
+    const onToolCall = req.onToolCall;
     return {
       [Symbol.asyncIterator]: async function* () {
-        const params = await filterParams(req.model, req.params);
-        const resp = await config.fetchImpl(
-          `${config.baseUrl}/v1/chat/completions`,
-          {
-            method: "POST",
-            headers,
-            body: JSON.stringify({
-              model: req.model,
-              messages: req.messages,
-              stream: true,
-              // OpenAI/LiteLLM omit `usage` from streamed chunks by default.
-              // Without this opt-in, downstream consumers see TTFT/RT (which
-              // come from local timestamps) but `prompt_tokens` /
-              // `completion_tokens` / cost stay at zero. Caller-supplied
-              // `params.stream_options` always wins.
-              stream_options: { include_usage: true },
-              ...(params ?? {}),
-            }),
-            signal: req.signal,
-          },
-        );
-        if (!resp.ok) {
-          const text = await resp.text();
-          throw new Error(`streamChat failed: ${resp.status} ${text}`);
+        // Working copy of the conversation — appended to between
+        // tool-call iterations so each follow-up request sees the
+        // assistant's tool_calls and the tool results.
+        let messages: Message[] = [...req.messages];
+        let iteration = 0;
+
+        while (true) {
+          const params = await filterParams(req.model, req.params);
+          const body: Record<string, unknown> = {
+            model: req.model,
+            messages,
+            stream: true,
+            stream_options: { include_usage: true },
+            ...(params ?? {}),
+          };
+          if (tools && tools.list().length > 0) {
+            body.tools = tools.toOpenAI();
+          }
+          const resp = await config.fetchImpl(
+            `${config.baseUrl}/v1/chat/completions`,
+            {
+              method: "POST",
+              headers,
+              body: JSON.stringify(body),
+              signal: req.signal,
+            },
+          );
+          if (!resp.ok) {
+            const text = await resp.text();
+            throw new Error(`streamChat failed: ${resp.status} ${text}`);
+          }
+
+          // Forward chunks to the consumer in real time. We capture
+          // the final chunk's tool_calls + content + meta separately
+          // so we can decide whether to dispatch tools and loop.
+          let assistantContent = "";
+          let pendingCalls: AssistantToolCall[] | undefined;
+          for await (const chunk of parseSSEChunks(resp)) {
+            if (!chunk.done) assistantContent += chunk.delta;
+            if (chunk.done && chunk.tool_calls) pendingCalls = chunk.tool_calls;
+            yield chunk;
+          }
+
+          // No tools requested OR no registry → done.
+          if (!pendingCalls || pendingCalls.length === 0 || !tools) {
+            return;
+          }
+          if (iteration >= maxIterations) {
+            // Safety net — emit a synthetic chunk so downstream sees
+            // the loop bailed and don't silently leave the chat in a
+            // weird "model wants more tools but we won't run them" state.
+            yield {
+              delta: `\n\n[tool-loop hit max_iterations=${maxIterations}; refusing to dispatch further calls]`,
+              meta: {},
+              done: true,
+            };
+            return;
+          }
+
+          // Append the assistant message that requested the tools.
+          messages = [
+            ...messages,
+            {
+              role: "assistant",
+              content: assistantContent,
+              tool_calls: pendingCalls,
+            },
+          ];
+
+          // Dispatch each call sequentially. Any single failure is
+          // surfaced as the tool's content (so the model can recover
+          // by trying a different argument); only catastrophic errors
+          // bubble.
+          for (const call of pendingCalls) {
+            let parsedArgs: unknown = null;
+            try {
+              parsedArgs = JSON.parse(call.function.arguments || "{}");
+            } catch {
+              parsedArgs = call.function.arguments;
+            }
+            const start = Date.now();
+            let result: unknown;
+            let errMsg: string | undefined;
+            try {
+              result = await tools.invoke(call.function.name, parsedArgs, {
+                signal: req.signal,
+                origin: { model: req.model },
+              });
+            } catch (err) {
+              errMsg = err instanceof Error ? err.message : String(err);
+              result = { error: errMsg };
+            }
+            const duration_ms = Date.now() - start;
+            if (onToolCall) {
+              try {
+                onToolCall({
+                  call,
+                  args: parsedArgs,
+                  result: errMsg ? undefined : result,
+                  error: errMsg,
+                  duration_ms,
+                  iteration,
+                });
+              } catch {
+                /* user callback errors don't break the loop */
+              }
+            }
+            messages = [
+              ...messages,
+              {
+                role: "tool",
+                tool_call_id: call.id,
+                name: call.function.name,
+                content:
+                  typeof result === "string" ? result : JSON.stringify(result),
+              },
+            ];
+          }
+          iteration += 1;
+          // Loop back — issue a follow-up request with the appended
+          // assistant + tool messages and stream the next leg.
         }
-        yield* parseSSEChunks(resp);
       },
     };
   }

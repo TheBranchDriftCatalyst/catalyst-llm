@@ -12,11 +12,16 @@ import {
   Tag,
   FileSearch,
   ChevronDown,
+  Search,
+  X,
+  ExternalLink,
 } from "lucide-react";
+import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
 import {
   usePromptStore,
   type CustomPreset,
 } from "../react/promptStore.js";
+import { fuzzyFilter } from "./fuzzy.js";
 import { useFocusTrap } from "./useFocusTrap.js";
 import { useListboxKeyboard } from "./useListboxKeyboard.js";
 import { cn } from "./utils.js";
@@ -57,6 +62,14 @@ function iconForPreset(p: PromptPreset | CustomPreset): React.ElementType {
 export interface PromptPreset {
   /** Short label for the chip. */
   name: string;
+  /**
+   * Case-insensitive regex pattern (as a string) that this preset is
+   * scoped to — when set, the dropdown is meant to surface this entry
+   * only for models matching the pattern. Persisted on CustomPreset
+   * and passed through into the runtime shape so the dropdown can
+   * render a "model spec" link next to it.
+   */
+  modelPattern?: string;
   /** Icon shown in the chip. */
   icon?: React.ElementType;
   /** Tooltip / longer description. */
@@ -412,7 +425,38 @@ const _toRuntimePreset = (cp: Omit<CustomPreset, "createdAt" | "updatedAt">): Pr
   icon: cp.iconName ? ICON_MAP[cp.iconName.toLowerCase()] : undefined,
   systemPrompt: cp.systemPrompt,
   user: cp.user,
+  modelPattern: cp.modelPattern,
 });
+
+/**
+ * Map a `modelPattern` regex string to a human-friendly model-card
+ * URL on Hugging Face. Known specialty patterns route to canonical
+ * HF pages; unknown patterns fall through to a search URL.
+ *
+ * Returns null when there's no useful link to surface (empty or
+ * uninterpretable pattern).
+ */
+function modelSpecUrl(pattern: string | undefined): string | null {
+  if (!pattern) return null;
+  // Pull the alphanumeric core out of the regex (drops `(?:^|/)`,
+  // anchors, char classes etc.) so a pattern like `(?:^|/)nuextract`
+  // maps cleanly to the model name.
+  const core = pattern
+    .replace(/\(\?:[^)]*\)/g, "")
+    .replace(/[^A-Za-z0-9._-]+/g, " ")
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .pop();
+  if (!core) return null;
+  // Curated map for our built-ins; HF search for everything else.
+  const KNOWN: Record<string, string> = {
+    nuextract: "https://huggingface.co/numind/NuExtract-2.0-8B",
+    universalner: "https://huggingface.co/Universal-NER/UniNER-7B-all",
+  };
+  return KNOWN[core] ?? `https://huggingface.co/models?search=${encodeURIComponent(core)}`;
+}
 export const DEFAULT_PRESETS: PromptPreset[] = BUILTIN_SEEDS
   .filter((p) => p.category === "user" && !p.modelPattern)
   .map(_toRuntimePreset);
@@ -524,19 +568,34 @@ function PromptPresetDropdown({
   labelIcon: React.ElementType;
 }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const wrapRef = useRef<HTMLDivElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   useFocusTrap(popoverRef, open);
+
+  // Fuzzy filter against name + description so a user typing "json" or
+  // "code rev" zeroes in fast. Empty query = full list.
+  const filtered = useMemo(
+    () =>
+      fuzzyFilter(
+        presets,
+        query,
+        (p) => `${p.name} ${p.description ?? ""}`,
+      ),
+    [presets, query],
+  );
 
   function pick(p: PromptPreset) {
     onApply(p);
     setOpen(false);
+    setQuery("");
   }
 
   const { keyboardProps, getItemProps, listboxProps } = useListboxKeyboard({
-    itemCount: presets.length,
+    itemCount: filtered.length,
     open,
-    onSelect: (i) => pick(presets[i]),
+    onSelect: (i) => pick(filtered[i]),
     onEscape: () => setOpen(false),
   });
 
@@ -548,6 +607,15 @@ function PromptPresetDropdown({
     }
     window.addEventListener("mousedown", handler);
     return () => window.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  // Auto-focus search on open + reset query when closing.
+  useEffect(() => {
+    if (open) {
+      setQuery("");
+      // Defer focus to next tick so the input is mounted.
+      requestAnimationFrame(() => searchRef.current?.focus());
+    }
   }, [open]);
 
   return (
@@ -584,44 +652,101 @@ function PromptPresetDropdown({
       {open && (
         <div
           ref={popoverRef}
-          className="absolute left-0 top-full z-50 mt-1 w-72 overflow-hidden rounded-md border border-border bg-popover shadow-2xl"
+          className="absolute left-0 top-full z-50 mt-1 w-80 overflow-hidden rounded-md border border-border bg-popover shadow-2xl"
         >
+          {/* Searchable header — auto-focused, fuzzy-filters by name + description. */}
+          <div className="flex items-center gap-2 border-b border-border bg-card/40 px-3 py-1.5">
+            <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <Input
+              ref={searchRef}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={keyboardProps.onKeyDown}
+              placeholder={`Filter ${label}…`}
+              aria-label={`Filter ${label} presets`}
+              aria-controls={listboxProps.id}
+              aria-activedescendant={listboxProps["aria-activedescendant"]}
+              className="h-7 border-0 bg-transparent px-0 text-xs focus-visible:ring-0"
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                className="text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+                title="Clear filter"
+                aria-label="Clear filter"
+              >
+                <X className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            )}
+          </div>
           <div
             {...listboxProps}
-            onKeyDown={keyboardProps.onKeyDown}
-            tabIndex={0}
             className="max-h-80 overflow-y-auto p-1 outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            {presets.map((p, i) => {
+            {filtered.length === 0 && (
+              <div className="px-3 py-6 text-center text-[10px] text-muted-foreground">
+                No prompts match "{query}"
+              </div>
+            )}
+            {filtered.map((p, i) => {
               const Icon = iconForPreset(p);
               const itemProps = getItemProps(i);
+              const specHref = modelSpecUrl(p.modelPattern);
               return (
-                <button
+                <div
                   {...itemProps}
-                  ref={(el) => itemProps.ref(el)}
-                  key={p.name}
-                  type="button"
-                  onClick={() => pick(p)}
-                  title={p.description}
+                  ref={(el: HTMLElement | null) => itemProps.ref(el)}
+                  key={`${p.name}-${i}`}
                   className={cn(
-                    "flex w-full items-start gap-2 rounded-sm px-2 py-1.5 text-left text-xs",
+                    "group flex w-full items-start gap-2 rounded-sm px-2 py-1.5 text-left text-xs",
                     "hover:bg-accent/40 hover:text-foreground transition-colors",
                     "data-[active=true]:bg-accent/60 data-[active=true]:ring-1 data-[active=true]:ring-inset data-[active=true]:ring-primary/40",
                   )}
                 >
-                  <Icon
-                    className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary"
-                    aria-hidden="true"
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="block font-medium">{p.name}</span>
-                    {p.description && (
-                      <span className="block text-[10px] leading-snug text-muted-foreground">
-                        {p.description}
+                  <button
+                    type="button"
+                    onClick={() => pick(p)}
+                    title={p.description}
+                    className="flex flex-1 min-w-0 items-start gap-2 text-left"
+                  >
+                    <Icon
+                      className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary"
+                      aria-hidden="true"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-medium">
+                        {p.name}
+                        {p.modelPattern && (
+                          <span
+                            className="ml-1.5 inline-block rounded-sm bg-primary/15 px-1 text-[8px] font-bold uppercase text-primary align-middle"
+                            title={`Scoped to models matching /${p.modelPattern}/i`}
+                          >
+                            model-specific
+                          </span>
+                        )}
                       </span>
-                    )}
-                  </span>
-                </button>
+                      {p.description && (
+                        <span className="block text-[10px] leading-snug text-muted-foreground">
+                          {p.description}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                  {specHref && (
+                    <a
+                      href={specHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      title={`Open model spec for /${p.modelPattern}/`}
+                      aria-label="Open model spec on Hugging Face"
+                      className="mt-0.5 shrink-0 rounded-sm p-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100"
+                    >
+                      <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                    </a>
+                  )}
+                </div>
               );
             })}
           </div>
