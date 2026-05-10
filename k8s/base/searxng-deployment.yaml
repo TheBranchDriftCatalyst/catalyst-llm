@@ -20,6 +20,8 @@ spec:
         app.kubernetes.io/component: search-engine
         app.kubernetes.io/part-of: catalyst-llm
     spec:
+      # Disable injected service env vars — they collide with app's own SEARXNG_PORT
+      enableServiceLinks: false
       securityContext:
         runAsUser: 977
         runAsGroup: 977

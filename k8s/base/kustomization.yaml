@@ -29,7 +29,8 @@ resources:
   - searxng-deployment.yaml
 
   # AI Assistants & Tools
-  - openclaw/
+  # Disabled 2026-05-09 — composio-api-key not yet provisioned in 1Password, re-enable when ready
+  # - openclaw/
   # Poisonarr has its own namespace - deploy separately or include here
   # - poisonarr/
 
