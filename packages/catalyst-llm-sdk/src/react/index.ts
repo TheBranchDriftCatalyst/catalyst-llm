@@ -12,7 +12,11 @@ export {
   type UseStreamingChatResult,
   type UseEmbedResult,
 } from "./hooks.js";
-export type { Chat, ChatTurn } from "./chatStore.js";
+export type {
+  Chat,
+  ChatTurn,
+  ChatToolCallRecord,
+} from "./chatStore.js";
 export {
   useChatCost,
   formatUsd,

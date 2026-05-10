@@ -9,6 +9,9 @@ import {
   Image as ImageIcon,
   X,
   RotateCcw,
+  Wrench,
+  Check,
+  ChevronDown,
 } from "lucide-react";
 import { useChatStore, type Chat } from "../react/chatStore.js";
 import { ChatMessage } from "./ChatMessage.js";
@@ -27,6 +30,7 @@ import {
 } from "./PromptPresets.js";
 import { useModels } from "../react/hooks.js";
 import { useFocusTrap } from "./useFocusTrap.js";
+import { cn } from "./utils.js";
 
 export interface ChatPanelProps {
   chat: Chat;
@@ -45,7 +49,9 @@ export function ChatPanel({ chat }: ChatPanelProps) {
     setSystemPrompt,
     setParams,
     resumeChat,
+    setEnabledTools,
   } = useChatStore();
+  const tools = useChatStore((s) => s.tools);
   const { models } = useModels();
   const selectedModel = models.find((m) => m.id === chat.model);
   const [showVisionStub, setShowVisionStub] = useState(false);
@@ -147,6 +153,13 @@ export function ChatPanel({ chat }: ChatPanelProps) {
         <div className="flex items-center justify-between gap-3 border-b border-border bg-card/30 px-4 py-2">
           <CostPins chat={chat} />
           <div className="flex items-center gap-3">
+            {tools && tools.list().length > 0 && (
+              <ToolsToggle
+                tools={tools}
+                enabled={chat.enabledTools ?? []}
+                onChange={(names) => setEnabledTools(chat.id, names)}
+              />
+            )}
             <ContextMeter chat={chat} model={selectedModel} />
             {chat.isStreaming && (
               <span className="text-[10px] uppercase tracking-wider text-primary animate-pulse">
@@ -361,3 +374,175 @@ export function ChatPanel({ chat }: ChatPanelProps) {
     </div>
   );
 }
+
+/**
+ * Compact popover that lets the user toggle which tools the model is
+ * allowed to invoke on this chat. Reads the registered tool list from
+ * the LLMProvider's shared registry; writes the per-chat enabled set
+ * via `chatStore.setEnabledTools(chatId, names)`. The button face
+ * shows the active count so the user can see at a glance that tools
+ * are armed without opening the popover.
+ */
+function ToolsToggle({
+  tools,
+  enabled,
+  onChange,
+}: {
+  tools: NonNullable<ReturnType<typeof useChatStore.getState>["tools"]>;
+  enabled: string[];
+  onChange: (names: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(popoverRef, open);
+
+  // List() allocates each call — but we only call it on render, so
+  // the rebuild is cheap and trivially memoizable if it ever isn't.
+  const list = tools.list();
+  const enabledSet = new Set(enabled);
+
+  function toggle(name: string) {
+    const next = new Set(enabled);
+    if (next.has(name)) next.delete(name);
+    else next.add(name);
+    onChange(Array.from(next));
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    function handler(e: MouseEvent) {
+      if (wrapRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    }
+    function esc(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    window.addEventListener("mousedown", handler);
+    window.addEventListener("keydown", esc);
+    return () => {
+      window.removeEventListener("mousedown", handler);
+      window.removeEventListener("keydown", esc);
+    };
+  }, [open]);
+
+  const activeCount = enabled.length;
+
+  return (
+    <div ref={wrapRef} className="relative inline-block">
+      <button
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={
+          activeCount > 0
+            ? `Tools (${activeCount} active)`
+            : "Tools — none enabled"
+        }
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          "inline-flex items-center gap-1 rounded-md border border-border bg-card/40 px-2 py-1 text-[11px] font-medium",
+          "transition-colors hover:border-primary/60 hover:bg-accent/40 hover:text-foreground",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          activeCount > 0 && "border-primary/60",
+        )}
+      >
+        <Wrench
+          className={cn(
+            "h-3 w-3",
+            activeCount > 0 ? "text-primary" : "text-muted-foreground",
+          )}
+          aria-hidden="true"
+        />
+        <span className="uppercase tracking-wider text-muted-foreground">
+          tools
+        </span>
+        {activeCount > 0 && (
+          <span className="rounded-sm bg-primary/15 px-1 text-[9px] font-bold text-primary">
+            {activeCount}
+          </span>
+        )}
+        <ChevronDown className="h-3 w-3 opacity-60" aria-hidden="true" />
+      </button>
+
+      {open && (
+        <div
+          ref={popoverRef}
+          role="dialog"
+          aria-label="Tool selection"
+          className="absolute right-0 top-full z-50 mt-1 w-72 overflow-hidden rounded-md border border-border bg-popover shadow-2xl"
+        >
+          <div className="flex items-center gap-2 border-b border-border bg-card/40 px-3 py-1.5">
+            <Wrench className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              tools · {list.length} registered
+            </span>
+            {activeCount > 0 && (
+              <button
+                type="button"
+                onClick={() => onChange([])}
+                className="ml-auto text-[10px] text-muted-foreground hover:text-foreground"
+              >
+                clear
+              </button>
+            )}
+          </div>
+          <ul className="max-h-72 overflow-y-auto p-1">
+            {list.length === 0 && (
+              <li className="px-3 py-3 text-center text-[10px] text-muted-foreground">
+                No tools registered. Pass a `tools` prop to{" "}
+                <code>&lt;LLMProvider&gt;</code>.
+              </li>
+            )}
+            {list.map((t) => {
+              const checked = enabledSet.has(t.name);
+              return (
+                <li key={t.name}>
+                  <button
+                    type="button"
+                    onClick={() => toggle(t.name)}
+                    role="menuitemcheckbox"
+                    aria-checked={checked}
+                    className={cn(
+                      "flex w-full items-start gap-2 rounded-sm px-2 py-1.5 text-left text-xs",
+                      "hover:bg-accent/40 hover:text-foreground transition-colors",
+                      checked && "bg-primary/10",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border",
+                        checked
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border bg-background",
+                      )}
+                      aria-hidden="true"
+                    >
+                      {checked && <Check className="h-2.5 w-2.5" />}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-mono font-medium">
+                        {t.name}
+                        {t.transport && (
+                          <span className="ml-1.5 inline-block rounded-sm bg-muted/60 px-1 text-[8px] font-bold uppercase text-muted-foreground align-middle">
+                            {t.transport}
+                          </span>
+                        )}
+                      </span>
+                      {t.description && (
+                        <span className="block text-[10px] leading-snug text-muted-foreground">
+                          {t.description}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+

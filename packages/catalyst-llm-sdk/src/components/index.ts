@@ -1,4 +1,5 @@
 export { ChatMessage, type ChatMessageProps } from "./ChatMessage.js";
+export { ToolCallCard, type ToolCallCardProps } from "./ToolCallCard.js";
 export { RenderedContent, type RenderedContentProps } from "./RenderedContent.js";
 export { ChatPanel, type ChatPanelProps } from "./ChatPanel.js";
 export { ChatTabs, type ChatTabsProps } from "./ChatTabs.js";

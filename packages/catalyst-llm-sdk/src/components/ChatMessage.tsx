@@ -1,6 +1,7 @@
 import { User, Bot } from "lucide-react";
 import type { ChatTurn } from "../react/chatStore.js";
 import { RenderedContent } from "./RenderedContent.js";
+import { ToolCallCard } from "./ToolCallCard.js";
 import { cn } from "./utils.js";
 
 export interface ChatMessageProps {
@@ -43,14 +44,26 @@ export function ChatMessage({ message, isStreaming }: ChatMessageProps) {
           aria-busy={isAssistant && isStreaming ? true : undefined}
         >
           {isAssistant ? (
-            isStreaming && !message.content ? (
-              <span className="text-muted-foreground">Thinking...</span>
-            ) : (
-              <RenderedContent
-                content={message.content}
-                isStreaming={isStreaming}
-              />
-            )
+            <>
+              {/* Tool invocations land before / between content chunks
+                  in the multi-iteration loop; render them inline so
+                  the user sees the "model searched, then read this
+                  page, then answered" trail. */}
+              {message.tool_calls?.map((rec, i) => (
+                <ToolCallCard
+                  key={`${rec.call.id}-${i}`}
+                  record={rec}
+                />
+              ))}
+              {isStreaming && !message.content && !message.tool_calls?.length ? (
+                <span className="text-muted-foreground">Thinking...</span>
+              ) : (
+                <RenderedContent
+                  content={message.content}
+                  isStreaming={isStreaming}
+                />
+              )}
+            </>
           ) : (
             <div className="whitespace-pre-wrap break-words text-sm">
               {message.content}

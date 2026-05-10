@@ -6,7 +6,54 @@ import type {
   ChatParams,
   Message,
   StreamMeta,
+  ToolCall,
+  ToolDefinition,
+  ToolRegistryLike,
 } from "../client/index.js";
+
+/**
+ * Return a ToolRegistryLike adapter that wraps `source` but only
+ * exposes tools whose name is in `allowed`. Used per-request to
+ * narrow the shared registry to a chat's `enabledTools` opt-in
+ * without mutating the source registry.
+ */
+function toolRegistryFiltered(
+  source: ToolRegistryLike,
+  allowed: readonly string[],
+): ToolRegistryLike {
+  const allow = new Set(allowed);
+  return {
+    has: (name) => allow.has(name) && source.has(name),
+    list: () => source.list().filter((t: ToolDefinition) => allow.has(t.name)),
+    toOpenAI: () =>
+      source.toOpenAI().filter((t) => allow.has(t.function.name)),
+    invoke: async (name, args, ctx) => {
+      if (!allow.has(name)) {
+        throw new Error(`tool ${name} not enabled for this chat`);
+      }
+      return source.invoke(name, args, ctx);
+    },
+  };
+}
+
+/**
+ * One tool invocation captured during a streaming turn. We store the
+ * call (so the assistant message has provenance), the parsed args, and
+ * either the JSON result or an error string. ToolCallCard reads this
+ * shape directly. Persisted with the chat so a refresh keeps the
+ * tool-call history.
+ */
+export interface ChatToolCallRecord {
+  call: ToolCall;
+  args: unknown;
+  result?: unknown;
+  error?: string;
+  duration_ms: number;
+  /** Iteration index within the streamChat tool-call loop (0-based). */
+  iteration: number;
+  /** Wall-clock when the call resolved (used for ordering + display). */
+  finished_at: number;
+}
 
 export interface ChatTurn {
   id: string;
@@ -14,6 +61,12 @@ export interface ChatTurn {
   content: string;
   timestamp: number;
   meta?: StreamMeta;
+  /**
+   * Tool calls invoked by the model on this assistant turn. May be
+   * empty / undefined when the turn was a plain reply. Multiple calls
+   * accumulate across the multi-iteration tool loop.
+   */
+  tool_calls?: ChatToolCallRecord[];
 }
 
 export interface Chat {
@@ -25,6 +78,13 @@ export interface Chat {
   messages: ChatTurn[];
   isStreaming: boolean;
   error?: string;
+  /**
+   * Names of tools (from the LLMProvider's ToolRegistry) the model is
+   * allowed to invoke on this chat. `undefined` = no tools (default,
+   * for backward compat with chats that pre-date tools). `[]` = also no
+   * tools (explicit). A non-empty array opts each name in.
+   */
+  enabledTools?: string[];
   /** Wall-clock time the most-recent request was dispatched. */
   streamStartTime?: number;
   /** Wall-clock time the first token of the latest response arrived (TTFT base). */
@@ -41,6 +101,12 @@ export interface Chat {
 
 interface ChatStore {
   client: CatalystLLMClient | null;
+  /**
+   * Optional tool registry shared across chats. When set, individual
+   * chats can opt into tool calls via `enabledTools`. The store calls
+   * the registry's `invoke` method during sendMessage's onToolCall.
+   */
+  tools: ToolRegistryLike | null;
   defaultModel: string;
   defaultParams: ChatParams;
   defaultSystemPrompt: string;
@@ -51,6 +117,8 @@ interface ChatStore {
 
   // Setup (called by LLMProvider on mount)
   setClient: (client: CatalystLLMClient) => void;
+  setTools: (tools: ToolRegistryLike | null) => void;
+  setEnabledTools: (chatId: string, names: string[]) => void;
   setDefaults: (init: {
     model?: string;
     params?: ChatParams;
@@ -116,6 +184,7 @@ export const useChatStore = create<ChatStore>()(
   defaultModel: "",
   defaultParams: INITIAL_PARAMS,
   defaultSystemPrompt: INITIAL_SYSTEM_PROMPT,
+  tools: null,
 
   chats: [
     createDefaultChat({
@@ -128,6 +197,15 @@ export const useChatStore = create<ChatStore>()(
   abortControllers: new Map(),
 
   setClient: (client) => set({ client }),
+
+  setTools: (tools) => set({ tools }),
+
+  setEnabledTools: (chatId, names) =>
+    set((state) => ({
+      chats: state.chats.map((c) =>
+        c.id === chatId ? { ...c, enabledTools: [...names] } : c,
+      ),
+    })),
 
   setDefaults: ({ model, params, systemPrompt }) =>
     set((state) => ({
@@ -250,12 +328,50 @@ export const useChatStore = create<ChatStore>()(
     const ctrl = new AbortController();
     state.abortControllers.set(chatId, ctrl);
 
+    // Build a per-request tool view: the global registry, narrowed to
+    // the names this chat opted into. Skipping when no registry is
+    // bound or no tools are enabled keeps non-tool chats on the same
+    // wire shape they had before this feature shipped.
+    const enabledNames = chat.enabledTools ?? [];
+    const sharedTools = state.tools;
+    const toolsForRequest =
+      sharedTools && enabledNames.length > 0
+        ? toolRegistryFiltered(sharedTools, enabledNames)
+        : undefined;
+
     try {
       const stream = client.streamChat({
         model: chat.model,
         messages,
         params: chat.params,
         signal: ctrl.signal,
+        tools: toolsForRequest,
+        onToolCall: (event) => {
+          // Append the tool call onto the *current* assistant turn so
+          // the chat UI can render <ToolCallCard>s inline. We persist
+          // the call+result so it survives reload.
+          set((s) => ({
+            chats: s.chats.map((c) => {
+              if (c.id !== chatId) return c;
+              const last = c.messages[c.messages.length - 1];
+              if (!last || last.role !== "assistant") return c;
+              const record: ChatToolCallRecord = {
+                call: event.call,
+                args: event.args,
+                result: event.result,
+                error: event.error,
+                duration_ms: event.duration_ms,
+                iteration: event.iteration,
+                finished_at: Date.now(),
+              };
+              const merged = [...c.messages.slice(0, -1), {
+                ...last,
+                tool_calls: [...(last.tool_calls ?? []), record],
+              }];
+              return { ...c, messages: merged };
+            }),
+          }));
+        },
       });
       for await (const chunk of stream) {
         if (chunk.done) {

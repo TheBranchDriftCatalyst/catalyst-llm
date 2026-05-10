@@ -11,12 +11,19 @@ import {
   LLMConfig,
   type ChatParams,
   type LLMConfigInit,
+  type ToolRegistryLike,
 } from "../client/index.js";
 import { useChatStore } from "./chatStore.js";
 import { usePromptStore } from "./promptStore.js";
 
 interface LLMContextValue {
   client: CatalystLLMClient;
+  /**
+   * Optional tool registry shared with the chat store. Hosts that
+   * pass it can let chats opt into individual tools via
+   * `chatStore.setEnabledTools(chatId, [...])` without prop drilling.
+   */
+  tools: ToolRegistryLike | null;
 }
 
 const LLMContext = createContext<LLMContextValue | null>(null);
@@ -33,6 +40,14 @@ export interface LLMProviderProps {
   defaultParams?: ChatParams;
   /** Default system prompt for new chats. */
   defaultSystemPrompt?: string;
+  /**
+   * Optional ToolRegistry the chat store can dispatch tool calls into.
+   * When set, individual chats opt into specific tool names via
+   * `chatStore.setEnabledTools(chatId, [...])`. When unset, the chat
+   * surface stays on the no-tools wire shape that pre-dates this
+   * feature — backward-compatible.
+   */
+  tools?: ToolRegistryLike | null;
 }
 
 export function LLMProvider({
@@ -42,6 +57,7 @@ export function LLMProvider({
   defaultModel,
   defaultParams,
   defaultSystemPrompt,
+  tools,
 }: LLMProviderProps) {
   const clientRef = useRef<CatalystLLMClient | null>(null);
 
@@ -56,6 +72,10 @@ export function LLMProvider({
   useEffect(() => {
     useChatStore.getState().setClient(resolvedClient);
   }, [resolvedClient]);
+
+  useEffect(() => {
+    useChatStore.getState().setTools(tools ?? null);
+  }, [tools]);
 
   useEffect(() => {
     useChatStore.getState().setDefaults({
@@ -83,8 +103,8 @@ export function LLMProvider({
   }, []);
 
   const value = useMemo<LLMContextValue>(
-    () => ({ client: resolvedClient }),
-    [resolvedClient],
+    () => ({ client: resolvedClient, tools: tools ?? null }),
+    [resolvedClient, tools],
   );
 
   return <LLMContext.Provider value={value}>{children}</LLMContext.Provider>;
