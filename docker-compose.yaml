@@ -39,6 +39,39 @@ services:
       retries: 3
 
   # ============================================
+  # Tool Host - server-side execution for the SDK's tool / function-
+  # calling loop. The browser-side @catalyst/llm-sdk dispatches each
+  # tool_call here over HTTP; this service owns the actual side effects
+  # (SearXNG queries, headless-browser fetches in Pass 2, future MCP
+  # adapters) so the playground bundle doesn't have to ship a headless
+  # browser or worry about CORS.
+  # ============================================
+  tool-host:
+    build:
+      context: ./packages/tool-host
+      dockerfile: Dockerfile
+    container_name: catalyst-tool-host
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:7077:7077"
+    environment:
+      - SEARXNG_URL=http://searxng:8080
+      # Comma-separated SearXNG engines — kept narrow to avoid rate
+      # limits we'd hit fanning out to all 70+.
+      - SEARXNG_ENGINES=google,bing,duckduckgo,brave,wikipedia,github
+      # Set TOOL_HOST_API_KEY to enable bearer auth on the public
+      # interface. Unset = open (fine on a private LAN).
+      # - TOOL_HOST_API_KEY=changeme
+    depends_on:
+      - searxng
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:7077/healthz', timeout=3).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ============================================
   # Open WebUI - General Purpose Chat
   # ============================================
   open-webui:
