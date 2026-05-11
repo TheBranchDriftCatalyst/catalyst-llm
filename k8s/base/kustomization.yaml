@@ -29,6 +29,14 @@ resources:
   #   - ollama/   → disabled across envs (external inference)
   #   - poisonarr/ → has its own namespace
 
-commonLabels:
-  app.kubernetes.io/managed-by: argocd
-  app.kubernetes.io/part-of: catalyst-llm
+# `labels:` (not `commonLabels:`) applies labels to metadata only.
+# `includeSelectors: false` is critical — letting kustomize inject these
+# into spec.selector.matchLabels makes the selector immutable AND
+# collides with whatever Tilt/Argo CD adds at runtime (which is what
+# bit us on the first apply).
+labels:
+  - pairs:
+      app.kubernetes.io/managed-by: argocd
+      app.kubernetes.io/part-of: catalyst-llm
+    includeSelectors: false
+    includeTemplates: false

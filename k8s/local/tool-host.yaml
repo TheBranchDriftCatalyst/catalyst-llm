@@ -26,6 +26,10 @@ spec:
         app.kubernetes.io/component: sdk-sidecar
         app.kubernetes.io/part-of: catalyst-llm
     spec:
+      # K8s auto-injects $TOOL_HOST_* env vars from the Service of the
+      # same name, which clobbers the app's own TOOL_HOST_PORT config.
+      # Disable the injection — pods can still reach `tool-host` via DNS.
+      enableServiceLinks: false
       containers:
         - name: tool-host
           image: catalyst-llm/tool-host:dev
