@@ -43,10 +43,13 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         choices=("mac", "litellm", "both"),
         help="Which backend(s) to target. Default: mac.",
     )
+    # Default to None and let the mac_client fixture probe localhost first
+    # (we're often *on* the mac node, where the LAN IP isn't bindable);
+    # fall back to the documented LAN IP if localhost is unreachable.
     g.addoption(
         "--mac-host",
-        default=os.getenv("MAC_HOST", "192.168.1.33"),
-        help="Mac-node host (Ollama). Default: 192.168.1.33",
+        default=os.getenv("MAC_HOST"),
+        help="Mac-node host. Default: probe localhost, fall back to 192.168.1.33.",
     )
     g.addoption(
         "--mac-port",
@@ -68,6 +71,19 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--quick",
         action="store_true",
         help="Pick one model per (backend, capability) for fast smoke runs.",
+    )
+    g.addoption(
+        "--dump-dir",
+        default=os.getenv("DUMP_DIR"),
+        help="Write per-test response.txt + meta.json under this directory. "
+             "Layout: <dump>/<capability>/<alias>-<backend>/{response.txt,meta.json}.",
+    )
+    g.addoption(
+        "--chat-timeout",
+        type=float,
+        default=float(os.getenv("CHAT_TIMEOUT", "240")),
+        help="Per-chat-request timeout in seconds. Default: 240 (big models need "
+             "load + inference budget — behemoth-x cold-loads in ~60s).",
     )
 
 
@@ -231,10 +247,31 @@ def models_registry() -> dict[str, Any]:
     return yaml.safe_load(MODELS_YAML.read_text())
 
 
+def _resolve_mac_host(explicit: str | None, _port: int = 11434) -> str:
+    """Pick a reachable mac-node host (any service on it shares this hostname).
+
+    Explicit --mac-host / MAC_HOST wins unconditionally. Otherwise probe
+    Ollama's /api/tags (always on :11434 — every mac-node service co-locates
+    with it, so reachability there is a proxy for the rest). Try localhost
+    first (we're frequently running tests *on* the mac node, where the LAN
+    IP often isn't bindable), then fall back to 192.168.1.33.
+    """
+    if explicit:
+        return explicit
+    for candidate in ("localhost", "192.168.1.33"):
+        try:
+            r = httpx.get(f"http://{candidate}:11434/api/tags", timeout=2)
+            if r.status_code == 200:
+                return candidate
+        except httpx.HTTPError:
+            continue
+    return "192.168.1.33"  # last-resort default for clearer error in tests
+
+
 @pytest.fixture(scope="session")
 def mac_client(pytestconfig: pytest.Config) -> MacClient:
-    host = pytestconfig.getoption("--mac-host")
     port = pytestconfig.getoption("--mac-port")
+    host = _resolve_mac_host(pytestconfig.getoption("--mac-host"), port)
     return MacClient(f"http://{host}:{port}")
 
 
@@ -259,6 +296,66 @@ def litellm_models(litellm_client: LiteLLMClient) -> set[str]:
 @pytest.fixture(scope="session")
 def fixture_image_b64() -> str:
     return base64.b64encode(FIXTURE_IMAGE.read_bytes()).decode()
+
+
+@pytest.fixture(scope="session")
+def dump_dir(pytestconfig: pytest.Config) -> Path | None:
+    """Resolve --dump-dir to an absolute Path (creating it), or None."""
+    raw = pytestconfig.getoption("--dump-dir")
+    if not raw:
+        return None
+    d = Path(raw).expanduser().resolve()
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def write_dump(
+    dump_dir: Path | None,
+    *,
+    capability: str,
+    alias: str,
+    backend: str,
+    backend_name: str,
+    prompt: str,
+    result: "CallResult",
+    extra: dict[str, Any] | None = None,
+) -> None:
+    """Write one test's response + metadata under <dump_dir>/<capability>/<alias>-<backend>/.
+
+    No-op when dump_dir is None. Used by test_chat / test_vision / test_embedding
+    to capture per-model outputs for regression-baselining a quant bump.
+    """
+    if dump_dir is None:
+        return
+    import json
+    out = dump_dir / capability / f"{alias}-{backend}"
+    out.mkdir(parents=True, exist_ok=True)
+    if result.text:
+        (out / "response.txt").write_text(result.text)
+    elif result.embedding is not None:
+        # Embeddings: stash the first 16 dims + norm; full vectors are noisy.
+        import math
+        preview = result.embedding[:16]
+        norm = math.sqrt(sum(float(x) * float(x) for x in result.embedding))
+        (out / "response.txt").write_text(
+            f"dim={len(result.embedding)} norm={norm:.4f} preview={preview!r}\n"
+        )
+    meta = {
+        "alias": alias,
+        "backend": backend,
+        "backend_model_name": backend_name,
+        "capability": capability,
+        "prompt": prompt,
+        "eval_count": result.eval_count,
+        "eval_duration_s": result.eval_duration_s,
+        "latency_s": result.latency_s,
+        "tok_per_s": result.tok_per_s,
+    }
+    if result.embedding is not None:
+        meta["embedding_dim"] = len(result.embedding)
+    if extra:
+        meta.update(extra)
+    (out / "meta.json").write_text(json.dumps(meta, indent=2, default=str))
 
 
 def get_client(request: pytest.FixtureRequest, backend: str) -> _BaseClient:
@@ -351,4 +448,5 @@ __all__: Iterable[str] = (
     "get_client",
     "model_name_for",
     "skip_if_unavailable",
+    "write_dump",
 )

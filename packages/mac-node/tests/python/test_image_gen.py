@@ -32,9 +32,12 @@ def _load_pipelines() -> list[dict[str, Any]]:
 
 
 def _shim_base(pytestconfig: pytest.Config) -> str:
+    from conftest import _resolve_mac_host
     cfg = yaml.safe_load((MAC_NODE_DIR / "models.yaml").read_text())
     port = (cfg.get("image_gen") or {}).get("shim_port", 8012)
-    host = pytestconfig.getoption("--mac-host")
+    # Probe localhost first, fall back to the configured LAN IP — same
+    # idiom as the Ollama client. The shim and Ollama always co-locate.
+    host = _resolve_mac_host(pytestconfig.getoption("--mac-host"), port)
     return f"http://{host}:{port}"
 
 

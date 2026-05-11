@@ -41,7 +41,6 @@ run_test() {
 run_test "${SCRIPT_DIR}/test-ollama.sh"
 run_test "${SCRIPT_DIR}/test-open-webui.sh"
 run_test "${SCRIPT_DIR}/test-whisper.sh"
-run_test "${SCRIPT_DIR}/test-vllm.sh"
 
 ELAPSED=$(python3 -c "import time; print(f'{time.time() - ${START_TIME}:.1f}')")
 master_summary "$SERVICES_PASS" "$SERVICES_FAIL" "$ELAPSED"

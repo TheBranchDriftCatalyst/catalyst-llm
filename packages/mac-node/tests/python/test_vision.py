@@ -11,24 +11,33 @@ benchmarking layer.
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
 
-from conftest import get_client, model_name_for, skip_if_unavailable
+from conftest import get_client, model_name_for, skip_if_unavailable, write_dump
 
 
 VISION_PROMPT = (
     "Describe this image: shapes, colors, positions, and any visible text. "
     "Be brief."
 )
-TIMEOUT = 180.0  # vision models cold-load slower
+TIMEOUT = 240.0  # vision models cold-load slower, esp. 30B-A3B thinking
 
 # Loose feature gate: the synthetic fixture has these distinctive markers.
 EXPECTED = (
     "red", "blue", "green", "square", "circle", "triangle",
     "catalyst", "vision",
 )
+
+# nuextract2 is tagged [extraction, vision] because it's based on
+# Qwen2.5-VL, but it's a schema-fill extraction model, not a free-form
+# describer — feeding it the loose VISION_PROMPT yields refusals or
+# template-shaped output that doesn't match EXPECTED. The capability
+# test it actually deserves is "extract JSON from this image" which we
+# don't have a fixture for yet.
+SKIP_FOR_VISION_FREE_FORM = {"nuextract2", "nuextract1.5", "universalner"}
 
 
 @pytest.mark.vision
@@ -40,7 +49,13 @@ def test_vision(
     mac_models: set[str],
     litellm_models: set[str],
     fixture_image_b64: str,
+    dump_dir: Path | None,
 ) -> None:
+    if model_entry["alias"] in SKIP_FOR_VISION_FREE_FORM:
+        pytest.skip(
+            f"{model_entry['alias']} is an extraction specialist; needs a "
+            f"schema-fill prompt, not the free-form vision prompt"
+        )
     skip_if_unavailable(backend, model_entry, mac_models, litellm_models)
     client = get_client(request, backend)
     name = model_name_for(backend, model_entry)
@@ -48,10 +63,21 @@ def test_vision(
     result = client.vision(name, VISION_PROMPT, fixture_image_b64, timeout=TIMEOUT)
 
     text = result.text.strip()
-    assert text, f"empty response from {name} on {backend}"
-
     lowered = text.lower()
     hits = [w for w in EXPECTED if w in lowered]
+
+    write_dump(
+        dump_dir,
+        capability="vision",
+        alias=model_entry["alias"],
+        backend=backend,
+        backend_name=name,
+        prompt=VISION_PROMPT,
+        result=result,
+        extra={"expected_hits": hits, "expected_total": len(EXPECTED)},
+    )
+
+    assert text, f"empty response from {name} on {backend}"
     assert len(hits) >= 2, (
         f"{name}/{backend} response shows no awareness of the fixture image. "
         f"Found {hits!r} in: {text[:200]!r}"

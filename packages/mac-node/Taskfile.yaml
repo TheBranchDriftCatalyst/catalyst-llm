@@ -218,49 +218,47 @@ tasks:
       - bash tests/test-all.sh localhost
 
   test:ollama:
-    desc: Test Ollama (smoke — single model)
+    desc: "Test Ollama service health (connectivity, /api/tags, LAN binding, single-model smoke)"
     cmds:
       - bash tests/test-ollama.sh localhost
 
-  test:ollama:all:
-    desc: "Test every mac-targeted Ollama model from models.yaml (use DUMP=path to save outputs)"
-    cmds:
-      - bash tests/test-ollama.sh localhost --all {{if .DUMP}}--dump {{.DUMP}}{{end}}
+  # Per-model coverage moved to pytest. Old `test:ollama:all` /
+  # `test:vision` bash modes were ripped out (they duplicated
+  # test_chat.py / test_vision.py with worse assertions).
 
-  test:vision:
-    desc: "Test all vision-tagged Ollama models against fixture image (use DUMP=path to save outputs)"
-    cmds:
-      - bash tests/test-ollama.sh localhost --vision {{if .DUMP}}--dump {{.DUMP}}{{end}}
-
+  # Per-target pytest invocation. Reads deps from tests/python/pyproject.toml
+  # via `uv run --project` instead of repeating --with flags per task.
+  # BACKEND=mac|litellm|both, ARGS="-k foo -x" for extra pytest args,
+  # DUMP=path to capture per-model response.txt + meta.json.
   test:py:
-    desc: "Pytest model suite against the mac node directly (use BACKEND=litellm or both)"
+    desc: "Pytest model suite (BACKEND=mac|litellm|both, DUMP=path to capture outputs)"
     cmds:
-      - 'uv run --with pytest --with httpx --with pyyaml --with pillow pytest tests/python/ --backend={{.BACKEND | default "mac"}} {{.ARGS}}'
+      - 'uv run --project tests/python pytest tests/python/ --backend={{.BACKEND | default "mac"}} {{if .DUMP}}--dump-dir={{.DUMP}}{{end}} {{.ARGS}}'
 
   test:py:chat:
     desc: "Chat tests only (parametrized over chat-tagged models)"
     cmds:
-      - 'uv run --with pytest --with httpx --with pyyaml --with pillow pytest tests/python/test_chat.py --backend={{.BACKEND | default "mac"}} {{.ARGS}}'
+      - 'uv run --project tests/python pytest tests/python/test_chat.py --backend={{.BACKEND | default "mac"}} {{if .DUMP}}--dump-dir={{.DUMP}}{{end}} {{.ARGS}}'
 
   test:py:vision:
     desc: "Vision tests only"
     cmds:
-      - 'uv run --with pytest --with httpx --with pyyaml --with pillow pytest tests/python/test_vision.py --backend={{.BACKEND | default "mac"}} {{.ARGS}}'
+      - 'uv run --project tests/python pytest tests/python/test_vision.py --backend={{.BACKEND | default "mac"}} {{if .DUMP}}--dump-dir={{.DUMP}}{{end}} {{.ARGS}}'
 
   test:py:embedding:
     desc: "Embedding tests only"
     cmds:
-      - 'uv run --with pytest --with httpx --with pyyaml --with pillow pytest tests/python/test_embedding.py --backend={{.BACKEND | default "mac"}} {{.ARGS}}'
+      - 'uv run --project tests/python pytest tests/python/test_embedding.py --backend={{.BACKEND | default "mac"}} {{if .DUMP}}--dump-dir={{.DUMP}}{{end}} {{.ARGS}}'
 
   test:py:quick:
     desc: "One model per backend per capability — fast smoke"
     cmds:
-      - 'uv run --with pytest --with httpx --with pyyaml --with pillow pytest tests/python/ --backend={{.BACKEND | default "mac"}} --quick {{.ARGS}}'
+      - 'uv run --project tests/python pytest tests/python/ --backend={{.BACKEND | default "mac"}} --quick {{if .DUMP}}--dump-dir={{.DUMP}}{{end}} {{.ARGS}}'
 
   test:py:image:
-    desc: "Image generation tests (ComfyUI shim or LiteLLM)"
+    desc: "Image generation tests (mflux shim or LiteLLM)"
     cmds:
-      - 'uv run --with pytest --with httpx --with pyyaml --with pillow pytest tests/python/test_image_gen.py --backend={{.BACKEND | default "mac"}} {{.ARGS}}'
+      - 'uv run --project tests/python pytest tests/python/test_image_gen.py --backend={{.BACKEND | default "mac"}} {{if .DUMP}}--dump-dir={{.DUMP}}{{end}} {{.ARGS}}'
 
   shim:dev:
     desc: "Run the comfyui-shim in foreground for development"
@@ -283,10 +281,9 @@ tasks:
     cmds:
       - bash tests/test-whisper.sh localhost
 
-  test:vllm:
-    desc: Test vLLM-MLX
-    cmds:
-      - bash tests/test-vllm.sh localhost
+  # test:vllm removed — vllm.instances is empty in models.yaml.
+  # When MLX serving is worth the operational cost again (see comment in
+  # models.yaml), restore tests/test-vllm.sh from git history and re-add.
 
   test:lan:
     desc: Test all services from LAN IP
