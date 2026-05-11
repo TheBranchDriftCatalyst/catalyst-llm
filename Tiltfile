@@ -12,6 +12,19 @@
 
 load('ext://uibutton', 'cmd_button', 'location', 'text_input', 'choice_input')
 
+# All `load()` statements must live at the module top (Starlark spec),
+# so we import both setup_*() functions up-front and pick which to
+# invoke after parsing the mode arg below.
+load('./tilt/common.tiltfile',
+    'setup_ollama_buttons',
+    'print_mode_banner',
+    'print_quick_start',
+    'MODELS_CREATIVE',
+    'MODELS_DARKRP',
+)
+load('./tilt/dev.tiltfile', 'setup_dev')
+load('./tilt/live.tiltfile', 'setup_live')
+
 # ============================================
 # Mode Configuration
 # ============================================
@@ -24,18 +37,6 @@ mode = cfg.get('mode', 'dev')
 if mode not in ['dev', 'live']:
     fail('Invalid mode: %s. Use "dev" or "live".' % mode)
 
-# ============================================
-# Load Common Configuration
-# ============================================
-
-load('./tilt/common.tiltfile',
-    'setup_ollama_buttons',
-    'print_mode_banner',
-    'print_quick_start',
-    'MODELS_CREATIVE',
-    'MODELS_DARKRP',
-)
-
 # Print banner
 print_mode_banner(mode)
 
@@ -44,11 +45,9 @@ print_mode_banner(mode)
 # ============================================
 
 if mode == 'live':
-    load('./tilt/live.tiltfile', 'setup_live')
     setup_live()
 else:
     # Dev mode (default)
-    load('./tilt/dev.tiltfile', 'setup_dev')
     setup_dev()
 
     # Add ollama buttons only in dev mode (ollama runs locally)

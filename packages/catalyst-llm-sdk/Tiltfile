@@ -1,0 +1,39 @@
+# Stand-alone entrypoint for developing the catalyst-llm-sdk in isolation.
+#
+#     cd packages/catalyst-llm-sdk
+#     tilt up
+#
+# Brings up the SDK's full local dev loop:
+#   * sdk-build      — yarn build:watch on src/, emits dist/ on change
+#   * playground     — vite dev server (examples/playground) on :5174
+#   * tool-host      — FastAPI sidecar for tool calls (web_search via
+#                      SearXNG) on :7077
+#   * searxng        — search backend the tool-host queries, on :8888
+#
+# When you want the SDK alongside the rest of the catalyst-llm stack
+# (open-webui, lobe-chat, ollama, litellm, ...), run `tilt up` from the
+# repo root instead — that path includes the same `setup_sdk` function
+# below, so the resources are identical and you don't pay for them
+# twice.
+
+load('./tilt/sdk.tiltfile', 'setup_sdk')
+
+# `config.main_dir` is the directory of the entrypoint Tiltfile (this
+# file). Two levels up is the repo root, which is where the shared
+# docker-compose.yaml lives.
+repo_root = os.path.realpath(os.path.join(config.main_dir, '..', '..'))
+
+setup_sdk(repo_root=repo_root, owns_compose=True)
+
+print('')
+print('────────────────────────────────────────────────────')
+print('  catalyst-llm-sdk · standalone dev mode')
+print('────────────────────────────────────────────────────')
+print('  Playground  http://localhost:5174')
+print('  Tool host   http://localhost:7077/docs')
+print('  SearXNG     http://localhost:8888')
+print('  Tilt UI     http://localhost:10350')
+print('')
+print('  For full stack (open-webui, ollama, etc.), `tilt up`')
+print('  from the repo root.')
+print('────────────────────────────────────────────────────')

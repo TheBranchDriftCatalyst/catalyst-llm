@@ -10,6 +10,10 @@
 
 load('ext://uibutton', 'cmd_button', 'location', 'text_input', 'choice_input')
 load('ext://local_output', 'local_output')
+# SDK package owns its own dev resources (tool-host, sdk-build,
+# playground). load() must live at module level in Starlark, so we
+# pull `setup_sdk` here and invoke it from inside setup_dev() below.
+load('../packages/catalyst-llm-sdk/tilt/sdk.tiltfile', 'setup_sdk')
 
 def setup_dev():
     """Configure all dev mode resources."""
@@ -126,45 +130,11 @@ def setup_dev():
         icon_name='science'
     )
 
-    # Tool Host — FastAPI sidecar that executes catalyst-llm-sdk
-    # tool calls. Currently fronts SearXNG via /v1/tools/web_search;
-    # browse_page (Playwright) lands in the next pass.
-    dc_resource('tool-host',
-        labels=['tools'],
-        resource_deps=['searxng'],
-        links=[
-            link('http://localhost:7077/healthz', 'Health'),
-            link('http://localhost:7077/v1/tools', 'Registered Tools'),
-            link('http://localhost:7077/docs', 'OpenAPI Docs'),
-        ]
-    )
-
-    cmd_button(
-        name='btn-test-tool-host',
-        resource='tool-host',
-        argv=['sh', '-c',
-            'curl -s -X POST http://localhost:7077/v1/tools/web_search '
-            '-H "Content-Type: application/json" '
-            '-d \'{"query":"qwen3-vl release notes","n":3}\' | jq'],
-        text='Test web_search',
-        icon_name='science'
-    )
-
-    cmd_button(
-        name='btn-restart-tool-host',
-        resource='tool-host',
-        argv=['docker', 'restart', 'catalyst-tool-host'],
-        text='Restart',
-        icon_name='restart_alt'
-    )
-
-    cmd_button(
-        name='btn-rebuild-tool-host',
-        resource='tool-host',
-        argv=['docker', 'compose', 'up', '-d', '--build', 'tool-host'],
-        text='Rebuild Image',
-        icon_name='build'
-    )
+    # SDK package owns its own dev resources (tool-host, sdk-build,
+    # playground). Loaded at module top above; we call it here so it
+    # picks up the docker_compose() declaration just above. Same
+    # `setup_sdk` function is used by the standalone SDK Tiltfile.
+    setup_sdk(repo_root=config.main_dir, owns_compose=False)
 
     # LobeChat
     dc_resource('lobe-chat',
@@ -225,32 +195,6 @@ def setup_dev():
         icon_name='list'
     )
 
-    # ============================================
-    # Prompt Playground (React Dev UI)
-    # ============================================
-    local_resource(
-        name='prompt-playground',
-        labels=['ui'],
-        serve_cmd='yarn dev --port 5174 --host',
-        serve_dir=os.path.join(os.getcwd(), 'apps/prompt-playground'),
-        deps=['apps/prompt-playground/src'],
-        links=[
-            link('http://localhost:5174', 'Prompt Playground'),
-        ],
-    )
-
-    cmd_button(
-        name='btn-open-playground',
-        resource='prompt-playground',
-        argv=['open', 'http://localhost:5174'],
-        text='Open Browser',
-        icon_name='open_in_new'
-    )
-
-    cmd_button(
-        name='btn-playground-install',
-        resource='prompt-playground',
-        argv=['sh', '-c', 'cd apps/prompt-playground && yarn install'],
-        text='yarn install',
-        icon_name='download'
-    )
+    # NOTE: Prompt Playground (vite dev server on :5174) is owned by
+    # the catalyst-llm-sdk Tiltfile, included via setup_sdk above.
+    # Same for sdk-build (yarn build:watch) and tool-host.

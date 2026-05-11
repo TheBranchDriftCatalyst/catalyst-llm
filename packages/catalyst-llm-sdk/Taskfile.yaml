@@ -1,0 +1,140 @@
+version: "3"
+
+# Shared commands for the catalyst-llm-sdk package + its example
+# playground + the tool-host sidecar. Mirrors the Taskfile UX of the
+# mac-node package so `task --list` from anywhere in the workspace
+# surfaces a consistent set of verbs.
+#
+#   cd packages/catalyst-llm-sdk
+#   task                            # list available tasks
+#   task tilt:up                    # standalone Tilt dev environment
+#   task dev                        # quickstart: tool-host + playground
+#   task build / test / typecheck   # SDK lifecycle
+#   task tools:up / tools:down      # docker compose for tool-host stack
+
+vars:
+  REPO_ROOT:
+    sh: cd ../.. && pwd
+  SDK_DIR:
+    sh: pwd
+  PLAYGROUND_DIR: '{{.SDK_DIR}}/examples/playground'
+  TOOL_HOST_URL: 'http://localhost:7077'
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  # ─── SDK lifecycle ────────────────────────────────────────────────
+
+  install:
+    desc: yarn install (SDK + playground)
+    cmds:
+      - yarn install
+      - cd {{.PLAYGROUND_DIR}} && yarn install
+
+  build:
+    desc: tsup build (one-shot)
+    cmds:
+      - yarn build
+
+  build:watch:
+    desc: tsup --watch (rebuild dist/ on every src/ change)
+    cmds:
+      - yarn build:watch
+
+  typecheck:
+    desc: tsc --noEmit on the SDK
+    cmds:
+      - yarn typecheck
+
+  test:
+    desc: vitest run
+    cmds:
+      - yarn test
+
+  smoke:
+    desc: tsx tests/smoke.ts (live LiteLLM hits)
+    cmds:
+      - yarn smoke
+
+  # ─── Playground ───────────────────────────────────────────────────
+
+  playground:
+    desc: vite dev server for examples/playground (port 5174)
+    cmds:
+      - cd {{.PLAYGROUND_DIR}} && yarn dev --port 5174 --host
+
+  playground:build:
+    desc: tsc + vite build for the playground (production bundle)
+    cmds:
+      - cd {{.PLAYGROUND_DIR}} && yarn build
+
+  playground:open:
+    desc: Open the playground in the default browser
+    cmds:
+      - open http://localhost:5174
+
+  # ─── Tool host (FastAPI sidecar) ──────────────────────────────────
+
+  tools:up:
+    desc: docker compose up -d searxng tool-host (build if needed)
+    cmds:
+      - cd {{.REPO_ROOT}} && docker compose up -d --build searxng tool-host
+
+  tools:down:
+    desc: docker compose stop searxng tool-host
+    cmds:
+      - cd {{.REPO_ROOT}} && docker compose stop searxng tool-host
+
+  tools:logs:
+    desc: tail tool-host logs
+    cmds:
+      - docker logs -f catalyst-tool-host
+
+  tools:logs:searxng:
+    desc: tail searxng logs
+    cmds:
+      - docker logs -f searxng
+
+  tools:health:
+    desc: GET /healthz on the tool-host
+    cmds:
+      - curl -s {{.TOOL_HOST_URL}}/healthz | jq
+
+  tools:list:
+    desc: GET /v1/tools (informational — what's implemented)
+    cmds:
+      - curl -s {{.TOOL_HOST_URL}}/v1/tools | jq
+
+  tools:test:
+    desc: 'POST /v1/tools/web_search (CLI smoke test, usage: task tools:test -- "query")'
+    cmds:
+      - |
+        Q="{{.CLI_ARGS}}"
+        : "${Q:=qwen3-vl release notes}"
+        curl -s -X POST {{.TOOL_HOST_URL}}/v1/tools/web_search \
+          -H "Content-Type: application/json" \
+          -d "$(jq -nc --arg q "$Q" '{query: $q, n: 5}')" | jq
+
+  # ─── Tilt orchestration ───────────────────────────────────────────
+
+  tilt:up:
+    desc: tilt up — standalone SDK dev environment
+    cmds:
+      - tilt up
+
+  tilt:down:
+    desc: tilt down — stop everything Tilt brought up
+    cmds:
+      - tilt down
+
+  # ─── Quickstart aggregates ────────────────────────────────────────
+
+  dev:
+    desc: One-shot quickstart — bring up tool-host + run playground
+    deps:
+      - tools:up
+    cmds:
+      - task: playground
