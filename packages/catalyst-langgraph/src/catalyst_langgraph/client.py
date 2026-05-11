@@ -126,9 +126,13 @@ class CatalystLiteLLMClient:
         Returns:
             ChatOpenAI instance configured for LiteLLM proxy
         """
+        # langchain_openai (like the OpenAI SDK) expects base_url to point at
+        # the /v1 root, e.g. http://litellm.talos00/v1. Our config strips the
+        # trailing /v1 so the raw httpx call sites in this file don't double
+        # up — append /v1 back here for ChatOpenAI.
         return ChatOpenAI(
             model=model,
-            base_url=self.config.base_url,
+            base_url=f"{self.config.base_url}/v1",
             api_key=self.config.api_key,
             temperature=temperature,
             max_tokens=max_tokens,

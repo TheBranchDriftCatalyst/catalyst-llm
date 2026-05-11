@@ -44,7 +44,17 @@ class LiteLLMConfig:
         base_url_aliases = tuple(aliases.get("base_url", ())) + BASE_URL_ENV_ORDER
         api_key_aliases = tuple(aliases.get("api_key", ())) + API_KEY_ENV_ORDER
 
-        self.base_url = base_url or _read_env(base_url_aliases) or DEFAULT_BASE_URL
+        raw_base_url = base_url or _read_env(base_url_aliases) or DEFAULT_BASE_URL
+        # Normalize: strip a trailing `/v1` (or `/v1/`) so the rest of the
+        # client can confidently prepend `/v1/...` on every call. The k8s
+        # configmap follows the OpenAI/LiteLLM convention of including /v1
+        # in LITELLM_BASE_URL (matches what ChatOpenAI / lobe-chat / open-webui
+        # consume); the raw httpx call sites in client.py were doubling it.
+        if raw_base_url.endswith("/v1/"):
+            raw_base_url = raw_base_url[:-4]
+        elif raw_base_url.endswith("/v1"):
+            raw_base_url = raw_base_url[:-3]
+        self.base_url = raw_base_url
         self.api_key = api_key or _read_env(api_key_aliases) or DEFAULT_API_KEY
 
     @property
