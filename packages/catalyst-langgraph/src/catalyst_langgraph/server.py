@@ -46,9 +46,11 @@ from .events import (
     ToolCallEnd,
     ToolCallStart,
 )
+from .agents import AGENTS
 from .graph import build_graph
 from .tools import ALL_TOOLS
 from .tools.host import TOOL_HOST_API_KEY, TOOL_HOST_URL
+from .tools.research import research_overrides
 
 log = logging.getLogger("catalyst-langgraph")
 logging.basicConfig(
@@ -133,11 +135,29 @@ async def _stream_agent_events(
     run_id = uuid.uuid4().hex[:12]
     yield RunStarted(run_id=run_id, model=request.model)
 
-    params = request.params or {}
+    # Merge the new agent_config["main"] override channel over the
+    # legacy `params` channel. Precedence: agent_config["main"] ⊃
+    # params ⊃ defaults. Both stay supported so older clients without
+    # agent_config still work.
+    agent_config = request.agent_config or {}
+    main_overrides = dict(agent_config.get("main") or {})
+    params = {**(request.params or {}), **main_overrides}
+
+    # System prompt comes from main_overrides if the Engine tab set it,
+    # else falls back to the per-chat field on the request.
+    effective_system_prompt = main_overrides.get(
+        "system_prompt", request.system_prompt
+    )
+
+    # Pull recursion_limit OUT of params before they get forwarded to
+    # build_graph — LangGraph applies it via per-invocation config, not
+    # as a graph-build kwarg. Default 25 matches LangGraph's own.
+    recursion_limit = int(params.pop("recursion_limit", 25))
+
     extra_kwargs = {
         k: v
         for k, v in params.items()
-        if k not in ("temperature", "max_tokens")
+        if k not in ("temperature", "max_tokens", "system_prompt")
     }
     # Anthropic rejects requests that set both `temperature` and `top_p`.
     # top_p=1.0 is a no-op (no nucleus sampling), so drop it before it
@@ -145,11 +165,20 @@ async def _stream_agent_events(
     # default, but the user hasn't actually opted into it.
     if extra_kwargs.get("top_p") in (1, 1.0):
         extra_kwargs.pop("top_p", None)
+
+    # Per-request research overrides flow through a ContextVar so the
+    # @tool function picks them up without changing its signature
+    # (which would break the parent's tool-calling contract). The
+    # ContextVar is reset in the finally block below.
+    research_overrides_token = research_overrides.set(
+        agent_config.get("research") or {}
+    )
+
     try:
         app_graph = build_graph(
             model=request.model,
             tool_names=request.tools or None,
-            system_prompt=request.system_prompt,
+            system_prompt=effective_system_prompt,
             temperature=params.get("temperature", 0.7),
             max_tokens=params.get("max_tokens"),
             extra_model_kwargs=extra_kwargs or None,
@@ -157,6 +186,7 @@ async def _stream_agent_events(
     except Exception as exc:  # bad model / config / wiring
         log.exception("graph build failed")
         yield ErrorEvent(message=f"graph build failed: {exc}")
+        research_overrides.reset(research_overrides_token)
         return
 
     state = {"messages": _coerce_messages(request.messages)}
@@ -167,7 +197,11 @@ async def _stream_agent_events(
     last_finish: Optional[str] = None
 
     try:
-        async for ev in app_graph.astream_events(state, version="v2"):
+        async for ev in app_graph.astream_events(
+            state,
+            version="v2",
+            config={"recursion_limit": recursion_limit},
+        ):
             kind = ev.get("event")
             data = ev.get("data") or {}
             name = ev.get("name") or ""
@@ -229,6 +263,11 @@ async def _stream_agent_events(
         log.exception("agent stream errored")
         yield ErrorEvent(message=str(exc))
         return
+    finally:
+        # Always reset the research overrides — leaving them set would
+        # leak the previous request's config into the next one running
+        # in this worker.
+        research_overrides.reset(research_overrides_token)
 
     yield MessageDone(finish_reason=last_finish, usage=last_usage)
 
@@ -345,6 +384,59 @@ async def list_tools() -> dict[str, Any]:
         host_status = {"reachable": False, "error": str(exc)}
 
     return {"tools": local, "tool_host": host_status}
+
+
+@app.get("/api/agents")
+async def list_agents() -> dict[str, Any]:
+    """Return the Agents registered with the catalyst-langgraph engine.
+
+    Each entry carries a static topology (nodes + edges of the
+    underlying LangGraph state machine) and a config_schema (the
+    tunables the Engine tab renders as a form). The playground's
+    Engine tab uses this to build a per-Agent settings page and a
+    topology visualiser; per-request overrides flow back via the
+    `agent_config` field on POST /api/chat/stream.
+    """
+    out = []
+    for desc in AGENTS.values():
+        out.append(
+            {
+                "id": desc.id,
+                "description": desc.description,
+                "tools": list(desc.tools),
+                "topology": {
+                    "nodes": [
+                        {"id": n.id, "type": n.type}
+                        for n in desc.topology.nodes
+                    ],
+                    "edges": [
+                        {
+                            "source": e.source,
+                            "target": e.target,
+                            "conditional": e.conditional,
+                        }
+                        for e in desc.topology.edges
+                    ],
+                },
+                "config_schema": [
+                    {
+                        "name": f.name,
+                        "type": f.type,
+                        "default": f.default,
+                        "label": f.label,
+                        "description": f.description,
+                        "min": f.min,
+                        "max": f.max,
+                        "step": f.step,
+                        "options": f.options,
+                        "multiline": f.multiline,
+                        "secret": f.secret,
+                    }
+                    for f in desc.config_schema
+                ],
+            }
+        )
+    return {"agents": out}
 
 
 def main() -> None:

@@ -21,23 +21,40 @@ The parent only sees `research` as a single tool call. The sub-agent's
 internal iterations are hidden from the chat UI — they're an
 implementation detail of the tool. If we want sub-agent transparency
 later, the tool can stream events upward (Phase 2).
+
+Per-request overrides (model, recursion limit, system prompt, …) flow
+in via a ContextVar set by `server.py` from the incoming
+`agent_config["research"]` payload. ContextVar is the right primitive
+here — it survives `await` boundaries, doesn't couple us to any
+LangGraph internals, and lets the @tool function read overrides
+without changing its signature (which would break the parent's
+tool-calling contract).
 """
 from __future__ import annotations
 
 import os
-from typing import Optional
+from contextvars import ContextVar
+from typing import Any, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import tool
 from langgraph.graph import START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
+from ..agents import (
+    AgentDescriptor,
+    AgentField,
+    AgentTopology,
+    AgentTopologyEdge,
+    AgentTopologyNode,
+    register_agent,
+)
 from ..client import CatalystLiteLLMClient
 from .host import web_search
 
 # Cheap + fast model by default — researcher mostly needs to call a
-# tool and summarise. Operators can override via env if they want a
-# heavier model for long-form syntheses.
+# tool and summarise. Operators can override via env, or per-request
+# from the Engine tab via `agent_config["research"]["model"]`.
 DEFAULT_RESEARCH_MODEL = "claude-haiku-4-5-20251001"
 
 # Hard cap on the sub-agent's tool-call loop. LangGraph's
@@ -47,7 +64,9 @@ DEFAULT_RESEARCH_MODEL = "claude-haiku-4-5-20251001"
 # stuck model can't burn a quota.
 DEFAULT_MAX_RECURSION = 20
 
-_RESEARCH_SYSTEM_PROMPT = (
+DEFAULT_TEMPERATURE = 0.3
+
+DEFAULT_RESEARCH_SYSTEM_PROMPT = (
     "You are a research assistant. Your job is to answer the user's "
     "question by calling web_search one or more times to gather sources, "
     "then synthesising a short, well-cited answer.\n\n"
@@ -64,26 +83,45 @@ _RESEARCH_SYSTEM_PROMPT = (
 )
 
 
-def _build_research_graph(model: str):
+# Per-request overrides. `server.py:_stream_agent_events` sets this
+# from `request.agent_config["research"]` before invoking the parent
+# graph; the `@tool research` function reads it when dispatched.
+# Keep the shape `dict[str, Any]` — it mirrors the AgentField names
+# (`model`, `recursion_limit`, `temperature`, `system_prompt`).
+research_overrides: ContextVar[dict[str, Any]] = ContextVar(
+    "research_overrides", default={}
+)
+
+
+def _resolve(field_name: str, env_var: Optional[str], fallback: Any) -> Any:
+    """Resolve a config value with precedence: ContextVar > env > default."""
+    overrides = research_overrides.get()
+    if field_name in overrides and overrides[field_name] is not None:
+        return overrides[field_name]
+    if env_var:
+        env_value = os.environ.get(env_var)
+        if env_value is not None:
+            return env_value
+    return fallback
+
+
+def _build_research_graph(model: str, temperature: float, system_prompt: str):
     """Compile the research sub-agent graph.
 
     Identical in shape to the main agent graph (agent ↔ tools loop)
     but bound to a single tool — web_search — and a fixed researcher
-    system prompt.
+    system prompt. Built fresh per dispatch so per-request overrides
+    take effect without graph caching staleness; the cost is one
+    ChatOpenAI construction per research call (cheap).
     """
     client = CatalystLiteLLMClient()
-    # Low temperature: researcher should be deterministic about when
-    # to stop. Synthesis quality > creativity here.
-    llm = client.get_chat_model(model=model, temperature=0.3)
+    llm = client.get_chat_model(model=model, temperature=temperature)
     llm = llm.bind_tools([web_search])
 
     def agent_node(state: MessagesState) -> dict:
         messages = list(state["messages"])
         if not (messages and isinstance(messages[0], SystemMessage)):
-            messages = [
-                SystemMessage(content=_RESEARCH_SYSTEM_PROMPT),
-                *messages,
-            ]
+            messages = [SystemMessage(content=system_prompt), *messages]
         return {"messages": [llm.invoke(messages)]}
 
     g = StateGraph(MessagesState)
@@ -93,22 +131,6 @@ def _build_research_graph(model: str):
     g.add_conditional_edges("agent", tools_condition)
     g.add_edge("tools", "agent")
     return g.compile()
-
-
-# Lazy build so unit tests can patch env vars / model selection
-# before the first invocation, and so a stale import-time failure
-# (e.g. LiteLLM unavailable on cold start) doesn't take down the
-# whole tool registry.
-_GRAPH = None
-_GRAPH_MODEL: Optional[str] = None
-
-
-def _get_graph(model: str):
-    global _GRAPH, _GRAPH_MODEL
-    if _GRAPH is None or _GRAPH_MODEL != model:
-        _GRAPH = _build_research_graph(model)
-        _GRAPH_MODEL = model
-    return _GRAPH
 
 
 @tool
@@ -129,9 +151,19 @@ def research(query: str, depth: str = "shallow") -> str:
     Returns:
         Markdown-formatted answer with inline source citations.
     """
-    model = os.environ.get("CATALYST_RESEARCH_MODEL", DEFAULT_RESEARCH_MODEL)
+    model = _resolve("model", "CATALYST_RESEARCH_MODEL", DEFAULT_RESEARCH_MODEL)
+    temperature = float(
+        _resolve("temperature", None, DEFAULT_TEMPERATURE)
+    )
+    system_prompt = _resolve(
+        "system_prompt", None, DEFAULT_RESEARCH_SYSTEM_PROMPT
+    )
     recursion_limit = int(
-        os.environ.get("CATALYST_RESEARCH_MAX_RECURSION", DEFAULT_MAX_RECURSION)
+        _resolve(
+            "recursion_limit",
+            "CATALYST_RESEARCH_MAX_RECURSION",
+            DEFAULT_MAX_RECURSION,
+        )
     )
 
     instruction = query.strip()
@@ -141,7 +173,8 @@ def research(query: str, depth: str = "shallow") -> str:
         )
 
     try:
-        result = _get_graph(model).invoke(
+        compiled = _build_research_graph(model, temperature, system_prompt)
+        result = compiled.invoke(
             {"messages": [HumanMessage(content=instruction)]},
             config={"recursion_limit": recursion_limit},
         )
@@ -165,3 +198,67 @@ def research(query: str, depth: str = "shallow") -> str:
             for p in content
         )
     return str(content)
+
+
+# ───────────────────────────────────────────────────────────────────────
+# Agent registry entry — surfaced on the Engine tab.
+# ───────────────────────────────────────────────────────────────────────
+
+register_agent(
+    AgentDescriptor(
+        id="research",
+        description="Web-research sub-agent. Loops over web_search until it has enough sources, then synthesises a cited markdown answer.",
+        topology=AgentTopology(
+            nodes=[
+                AgentTopologyNode(id="__start__", type="start"),
+                AgentTopologyNode(id="agent", type="agent"),
+                AgentTopologyNode(id="tools", type="tools"),
+                AgentTopologyNode(id="__end__", type="end"),
+            ],
+            edges=[
+                AgentTopologyEdge(source="__start__", target="agent"),
+                AgentTopologyEdge(source="agent", target="tools", conditional=True),
+                AgentTopologyEdge(source="agent", target="__end__", conditional=True),
+                AgentTopologyEdge(source="tools", target="agent"),
+            ],
+        ),
+        tools=["web_search"],
+        config_schema=[
+            AgentField(
+                name="model",
+                type="model",
+                default=DEFAULT_RESEARCH_MODEL,
+                label="Researcher model",
+                description="The LLM that runs inside the research loop. Defaults to a cheap, fast model since the researcher mostly needs to summarise.",
+            ),
+            AgentField(
+                name="temperature",
+                type="number",
+                default=DEFAULT_TEMPERATURE,
+                label="Temperature",
+                description="Lower = more deterministic about when to stop searching. Synthesis quality > creativity here.",
+                min=0,
+                max=2,
+                step=0.05,
+            ),
+            AgentField(
+                name="recursion_limit",
+                type="number",
+                default=DEFAULT_MAX_RECURSION,
+                label="Recursion limit",
+                description="Hard cap on internal graph steps (≈2 per search round-trip). Drop this when local models thrash.",
+                min=2,
+                max=100,
+                step=1,
+            ),
+            AgentField(
+                name="system_prompt",
+                type="string",
+                default=DEFAULT_RESEARCH_SYSTEM_PROMPT,
+                label="Researcher system prompt",
+                description="The instructions the researcher follows on every dispatch. Tweak to bias toward citations, depth, recency, etc.",
+                multiline=True,
+            ),
+        ],
+    )
+)

@@ -100,3 +100,13 @@ class ChatStreamRequest(BaseModel):
         default=None,
         description="Sampling params: temperature, max_tokens, top_p, reasoning_effort, …",
     )
+    agent_config: Optional[dict[str, dict[str, Any]]] = Field(
+        default=None,
+        description=(
+            "Per-Agent overrides for tunables advertised on GET /api/agents. "
+            'Shape: `{"main": {"model": "...", "recursion_limit": 30}, '
+            '"research": {"model": "...", "recursion_limit": 10}}`. '
+            "Backward compat: when absent, request behaves identically to "
+            "today (legacy `params` applies to the main Agent)."
+        ),
+    )

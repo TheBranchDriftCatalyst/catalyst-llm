@@ -19,9 +19,23 @@ from langchain_core.runnables import Runnable
 from langgraph.graph import START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
+from .agents import (
+    AgentDescriptor,
+    AgentField,
+    AgentTopology,
+    AgentTopologyEdge,
+    AgentTopologyNode,
+    register_agent,
+)
 from .client import CatalystLiteLLMClient
 from .config import LiteLLMConfig
 from .tools import get_tools
+
+# Default recursion budget for the main agent's tools loop. LangGraph's
+# baseline is 25; we surface it as a tunable so operators can cap stuck
+# Ollama-served models without an env-var redeploy. Each tools-loop
+# round-trip burns ~2 steps, so 25 ≈ 12 tool calls before bailout.
+DEFAULT_MAIN_RECURSION_LIMIT = 25
 
 
 def build_graph(
@@ -50,15 +64,40 @@ def build_graph(
         extra_model_kwargs: Extra kwargs forwarded to ChatOpenAI
             (reasoning_effort, top_p, presence_penalty, …).
     """
+    tools = get_tools(tool_names) if tool_names else []
+
     client = CatalystLiteLLMClient(config=config)
+    # NOTE on `streaming` flag:
+    # LiteLLM's Ollama OpenAI-compat path doesn't parse tool calls out
+    # of the streaming response — when stream=true the JSON arrives as
+    # `delta.content` tokens instead of `delta.tool_calls` and
+    # ChatOpenAI gives us back an AIMessage with no structured
+    # tool_calls. Non-streaming works correctly. langchain-ollama
+    # itself makes the same trade-off (issue #26971): no token-level
+    # streaming when tools are bound.
+    #
+    # We gate ONLY on Ollama-routed models — cloud providers (Anthropic,
+    # OpenAI, Google direct) emit proper tool_calls deltas during
+    # streaming, so those keep their live-token UX even with tools. We
+    # consult LiteLLM /model/info for the underlying provider rather
+    # than pattern-matching the friendly name; that way the gate
+    # doesn't drift when models get renamed.
+    streaming_ok = True
+    if tools:
+        info = client.get_model_info(model) or {}
+        underlying = (
+            (info.get("litellm_params") or {}).get("model") or ""
+        ).lower()
+        if underlying.startswith("ollama/"):
+            streaming_ok = False
     llm = client.get_chat_model(
         model=model,
         temperature=temperature,
         max_tokens=max_tokens,
+        streaming=streaming_ok,
         **(extra_model_kwargs or {}),
     )
 
-    tools = get_tools(tool_names) if tool_names else []
     if tools:
         llm = llm.bind_tools(tools)
 
@@ -83,3 +122,95 @@ def build_graph(
         graph.add_edge("tools", "agent")
 
     return graph.compile()
+
+
+# ───────────────────────────────────────────────────────────────────────
+# Agent registry entry — surfaced on the Engine tab.
+#
+# The descriptor advertises tunables for the schema-driven config form;
+# request-time graph construction still flows through build_graph()
+# above, parameterised by `agent_config` overrides in server.py.
+# Topology is hand-described rather than extracted from a compiled
+# graph — the shape is fixed (agent ↔ tools loop) and a static
+# descriptor avoids an HTTP roundtrip to LiteLLM on every /api/agents
+# call. If the graph shape changes, update the topology block here.
+# ───────────────────────────────────────────────────────────────────────
+
+
+register_agent(
+    AgentDescriptor(
+        id="main",
+        description="Top-level chat agent loop. Dispatches tools, threads results back, and continues until the model stops emitting tool_calls.",
+        topology=AgentTopology(
+            nodes=[
+                AgentTopologyNode(id="__start__", type="start"),
+                AgentTopologyNode(id="agent", type="agent"),
+                AgentTopologyNode(id="tools", type="tools"),
+                AgentTopologyNode(id="__end__", type="end"),
+            ],
+            edges=[
+                AgentTopologyEdge(source="__start__", target="agent"),
+                AgentTopologyEdge(source="agent", target="tools", conditional=True),
+                AgentTopologyEdge(source="agent", target="__end__", conditional=True),
+                AgentTopologyEdge(source="tools", target="agent"),
+            ],
+        ),
+        config_schema=[
+            AgentField(
+                name="model",
+                type="model",
+                default="",
+                label="Model",
+                description="The chat model the operator picks per chat — this field reflects the live selection, not a global default.",
+            ),
+            AgentField(
+                name="temperature",
+                type="number",
+                default=0.7,
+                label="Temperature",
+                description="Sampling temperature. 0 = deterministic, 2 = wild.",
+                min=0,
+                max=2,
+                step=0.05,
+            ),
+            AgentField(
+                name="max_tokens",
+                type="number",
+                default=2048,
+                label="Max tokens",
+                description="Hard ceiling on the response length.",
+                min=64,
+                max=32768,
+                step=64,
+            ),
+            AgentField(
+                name="top_p",
+                type="number",
+                default=1.0,
+                label="Top P",
+                description="Nucleus sampling. 1.0 = disabled (no-op for some providers).",
+                min=0,
+                max=1,
+                step=0.05,
+            ),
+            AgentField(
+                name="recursion_limit",
+                type="number",
+                default=DEFAULT_MAIN_RECURSION_LIMIT,
+                label="Recursion limit",
+                description="Hard cap on graph steps. Each tool-loop round-trip ≈ 2 steps. Lower this when local models thrash.",
+                min=2,
+                max=100,
+                step=1,
+            ),
+            AgentField(
+                name="system_prompt",
+                type="string",
+                default="You are a helpful assistant.",
+                label="System prompt",
+                description="Prepended to every chat request from this agent.",
+                multiline=True,
+            ),
+        ],
+    )
+)
