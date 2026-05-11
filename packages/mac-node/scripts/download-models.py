@@ -50,6 +50,7 @@ import asyncio
 import os
 import re
 import shutil
+import signal
 import sys
 import time
 from dataclasses import dataclass, field
@@ -60,6 +61,12 @@ import yaml
 
 REPO_DIR = Path(__file__).resolve().parent.parent
 MODELS_PATH = REPO_DIR / "models.yaml"
+
+# Set from --force / FORCE_REPULL=1 in main(). When true, the
+# "already in ollama" pre-checks are skipped and every job runs the
+# full pull pipeline. Use this when the upstream model has been
+# re-uploaded and you actually want to overwrite the local copy.
+_FORCE_REPULL = False
 
 
 # ───────────────────────────────────────────────────────────────────────
@@ -359,6 +366,34 @@ def _find_first_shard(work: Path) -> Optional[Path]:
     return candidates[0] if candidates else None
 
 
+async def _terminate_proc_tree(proc: asyncio.subprocess.Process, *, grace: float = 3.0) -> None:
+    """Kill `proc` and any subprocess it spawned (its whole session).
+
+    Each subprocess in this script is started with `start_new_session=True`
+    so it lives in its own process group; we send SIGTERM to the whole
+    group, wait briefly, then escalate to SIGKILL. This matters because
+    `hf download` spawns its own worker processes for parallel chunk
+    fetches — terminating just the parent leaves orphans.
+    """
+    if proc.returncode is not None:
+        return
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=grace)
+    except asyncio.TimeoutError:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=2.0)
+        except asyncio.TimeoutError:
+            pass
+
+
 async def _run_streamed(
     cmd: list[str],
     job: JobState,
@@ -367,29 +402,53 @@ async def _run_streamed(
     env: Optional[dict] = None,
 ) -> tuple[int, str]:
     """Spawn `cmd`, stream output through `parse(line, job)`, return
-    (exit_code, last_line). The parser owns mutating the job state."""
+    (exit_code, last_line). The parser owns mutating the job state.
+
+    On cancellation (Ctrl-C → CancelledError), the subprocess and any
+    of its children are terminated via `_terminate_proc_tree` before
+    the exception propagates."""
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
         env=env,
+        start_new_session=True,
     )
     last = ""
     assert proc.stdout is not None
-    async for line in stream_lines(proc.stdout):
-        if line.strip():
-            last = line
-            try:
-                parse(line, job)
-            except Exception as exc:
-                # Never let a parser bug crash the whole pull — just
-                # store the error and keep the subprocess running.
-                job.detail = f"parse error: {exc}"
-    rc = await proc.wait()
-    return rc, last
+    try:
+        async for line in stream_lines(proc.stdout):
+            if line.strip():
+                last = line
+                try:
+                    parse(line, job)
+                except Exception as exc:
+                    # Never let a parser bug crash the whole pull — just
+                    # store the error and keep the subprocess running.
+                    job.detail = f"parse error: {exc}"
+        rc = await proc.wait()
+        return rc, last
+    except (asyncio.CancelledError, KeyboardInterrupt):
+        job.stage = "cancelling"
+        job.detail = "received interrupt — terminating subprocess"
+        await _terminate_proc_tree(proc)
+        raise
 
 
 async def pull_via_ollama(job: JobState) -> None:
+    # Skip the network round-trip (manifest fetch + layer-hash check)
+    # if we already have this exact tag locally. Ollama would normally
+    # short-circuit identical layers itself, but the manifest call still
+    # waits on the registry — annoying when N models are queued and only
+    # one is actually missing.
+    job.stage = "checking ollama"
+    if not _FORCE_REPULL and await _ollama_lists_tag(job.name):
+        job.status = "done"
+        job.stage = "already present"
+        job.percent = 100.0
+        job.detail = f"{job.name} already in ollama — skipped"
+        return
+
     rc, last = await _run_streamed(["ollama", "pull", job.name], job, parse_ollama_line)
     if rc == 0:
         job.status = "done"
@@ -406,8 +465,13 @@ async def _ollama_lists_tag(tag: str) -> bool:
         "ollama", "list",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL,
+        start_new_session=True,
     )
-    stdout_b, _ = await proc.communicate()
+    try:
+        stdout_b, _ = await proc.communicate()
+    except (asyncio.CancelledError, KeyboardInterrupt):
+        await _terminate_proc_tree(proc)
+        raise
     if proc.returncode != 0:
         return False
     text = stdout_b.decode("utf-8", "replace")
@@ -450,12 +514,16 @@ async def _hf_auth_check(hf_bin: str) -> Optional[str]:
             hf_bin, "auth", "whoami",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
         )
         try:
             _, _ = await asyncio.wait_for(proc.communicate(), timeout=5.0)
         except asyncio.TimeoutError:
-            proc.kill()
+            await _terminate_proc_tree(proc, grace=1.0)
             return "hf auth whoami timed out"
+        except (asyncio.CancelledError, KeyboardInterrupt):
+            await _terminate_proc_tree(proc, grace=1.0)
+            raise
         if proc.returncode == 0:
             return None
         return "hf is not logged in (run `hf auth login` and paste a read token from https://hf.co/settings/tokens)"
@@ -488,19 +556,45 @@ def _expected_bytes_for_repo(repo_id: str, pattern: str) -> int:
         return 0
 
 
-def _dir_size_bytes(root: Path) -> int:
-    """Sum the on-disk size of every file under `root`. Recursive,
-    stat-based — fast enough to call once a second."""
+def _dir_size_bytes(root: Path, pattern: str = "*") -> int:
+    """Sum the on-disk size of files relevant to the *current* download.
+
+    Counts:
+      - top-level files matching `pattern` (completed downloads
+        for the active hf_pattern), and
+      - any `.incomplete` files under `<root>/.cache/huggingface/download/`
+        (hf-download's in-progress target — name is a hash, so we can't
+        filter it by pattern; in practice only one is live at a time).
+
+    Skips top-level files from prior runs that match a *different*
+    pattern (e.g. a stale Q4_K_M.gguf when we're now pulling Q8_0).
+
+    Recursive only into the hf-download cache subtree; everything else
+    is checked at the top level."""
+    import fnmatch
+
     total = 0
     try:
-        for f in root.rglob("*"):
+        for f in root.iterdir():
             try:
-                if f.is_file():
+                if f.is_file() and fnmatch.fnmatch(f.name, pattern):
                     total += f.stat().st_size
             except OSError:
                 pass
     except OSError:
         pass
+
+    incomplete_dir = root / ".cache" / "huggingface" / "download"
+    try:
+        for f in incomplete_dir.iterdir():
+            try:
+                if f.is_file() and f.name.endswith(".incomplete"):
+                    total += f.stat().st_size
+            except OSError:
+                pass
+    except (OSError, FileNotFoundError):
+        pass
+
     return total
 
 
@@ -521,11 +615,13 @@ async def _poll_download_progress(job: JobState, work: Path, expected_bytes: int
     samples: deque = deque(maxlen=window_samples)
     job.bytes_total = expected_bytes
 
+    pattern = job.pull.hf_pattern or "*.gguf"
+
     while True:
         try:
             await asyncio.sleep(poll_interval)
             now_t = time.monotonic()
-            now_bytes = _dir_size_bytes(work)
+            now_bytes = _dir_size_bytes(work, pattern)
             samples.append((now_t, now_bytes))
 
             # Update bytes / percent immediately every tick — those are
@@ -568,6 +664,20 @@ async def pull_via_merge_gguf(job: JobState) -> None:
         job.status = "fail"
         job.error = "merge-gguf needs pull.hf_repo in models.yaml"
         return
+
+    # Pre-check: if the target tag is already in `ollama list`, the
+    # bytes are already content-addressed in ~/.ollama/models/blobs.
+    # Re-running the full hf-download → merge → ollama-create pipeline
+    # would just re-fetch the same shards (HF's CAS backend in particular
+    # is intermittent on retries that touch leftover local state). Skip.
+    job.stage = "checking ollama"
+    if not _FORCE_REPULL and await _ollama_lists_tag(job.name):
+        job.status = "done"
+        job.stage = "already present"
+        job.percent = 100.0
+        job.detail = f"{job.name} already in ollama — skipped re-pull"
+        return
+
     hf = _which("hf", "huggingface-cli")
     if not hf:
         job.status = "fail"
@@ -632,6 +742,16 @@ async def pull_via_merge_gguf(job: JobState) -> None:
             hint = " — repo is gated; visit the HF page, accept the terms, then re-run"
         elif "404" in last_lower or "not found" in last_lower:
             hint = " — check pull.hf_repo in models.yaml; HF says it doesn't exist"
+        elif "cas service error" in last_lower or "cas error" in last_lower:
+            # HF's new content-addressed storage backend chokes when
+            # local cache state diverges from server state (typically
+            # after a partial download from a different storage tier).
+            # Nuking the staging dir for this job and retrying is the
+            # canonical workaround.
+            hint = (
+                f" — HF CAS backend error. Try: rm -rf {work} && task models:download "
+                f"ONLY={job.alias}"
+            )
         job.status = "fail"
         job.error = f"hf download failed: {last}{hint}"
         return
@@ -705,17 +825,27 @@ async def pull_via_merge_gguf(job: JobState) -> None:
         job.error = f"ollama create failed: {last}"
         return
 
-    # Step 4 — clean up.
+    # Step 4 — clean up. Ollama owns the bytes now (content-addressed
+    # blob in ~/.ollama/models/blobs), so the entire scratch dir is
+    # redundant. Wipe it: the merged .gguf, the original shards, AND
+    # the hf-download cache (.metadata + .lock + sparse `.incomplete`
+    # files that CAS-backed pulls leave behind, easily 10s of GB each).
     if not job.pull.keep_shards:
-        for f in work.rglob("*.gguf"):
+        try:
+            shutil.rmtree(work, ignore_errors=True)
+        except OSError:
+            # Best-effort fallback: at minimum remove the GGUF and
+            # any *.incomplete files individually.
+            for pattern in ("*.gguf", "*.incomplete"):
+                for f in work.rglob(pattern):
+                    try:
+                        f.unlink()
+                    except OSError:
+                        pass
             try:
-                f.unlink()
+                modelfile.unlink()
             except OSError:
                 pass
-        try:
-            modelfile.unlink()
-        except OSError:
-            pass
 
     job.status = "done"
     job.percent = 100.0
@@ -879,7 +1009,13 @@ async def run_with_dashboard(
     jobs: list[JobState], concurrency: int, plain: bool
 ) -> None:
     """Drive the worker pool and either redraw the Rich Live dashboard
-    or stream plain-text status lines (for non-TTY / --plain mode)."""
+    or stream plain-text status lines (for non-TTY / --plain mode).
+
+    On SIGINT/SIGTERM we cancel the gather, which propagates
+    CancelledError into each runner — _run_streamed catches it and
+    process-tree-kills the subprocess before re-raising. A second
+    interrupt forces immediate exit (any still-alive children become
+    the operator's problem to clean up)."""
     from rich.console import Console
     from rich.live import Live
 
@@ -890,7 +1026,54 @@ async def run_with_dashboard(
 
     async def runner(j: JobState) -> None:
         async with sem:
-            await run_one(j)
+            try:
+                await run_one(j)
+            except asyncio.CancelledError:
+                # Mark the job as cancelled so the summary reports it
+                # accurately. _run_streamed has already torn down the
+                # subprocess by the time we get here.
+                if j.status not in ("done", "fail"):
+                    j.status = "fail"
+                    j.error = j.error or "cancelled by user"
+                    j.stage = "cancelled"
+                raise
+
+    loop = asyncio.get_running_loop()
+    main_task: Optional[asyncio.Task] = None
+    interrupt_count = 0
+
+    def handle_interrupt() -> None:
+        nonlocal interrupt_count
+        interrupt_count += 1
+        if interrupt_count == 1:
+            try:
+                console.print(
+                    "\n[yellow]Interrupt received — terminating downloads "
+                    "(press Ctrl-C again to force-quit)…[/]"
+                )
+            except Exception:
+                pass
+            if main_task and not main_task.done():
+                main_task.cancel()
+        else:
+            try:
+                console.print("\n[red]Force-quit.[/]")
+            except Exception:
+                pass
+            # Cancel every running task; rely on per-subprocess setsid
+            # to keep grandchildren reachable for any cleanup that
+            # finishes before the process exits.
+            for task in asyncio.all_tasks(loop):
+                task.cancel()
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, handle_interrupt)
+        except (NotImplementedError, RuntimeError):
+            # Windows / non-main-thread fallback: rely on default
+            # KeyboardInterrupt path. Mac-node is mac-only so this is
+            # belt-and-suspenders.
+            pass
 
     if not use_rich:
         # Plain mode: print one event per state transition. We poll the
@@ -912,7 +1095,13 @@ async def run_with_dashboard(
                     return
                 await asyncio.sleep(0.5)
 
-        await asyncio.gather(watcher(), *(runner(j) for j in jobs))
+        main_task = asyncio.gather(
+            watcher(), *(runner(j) for j in jobs), return_exceptions=False
+        )
+        try:
+            await main_task
+        except asyncio.CancelledError:
+            pass
         return
 
     # Rich live dashboard mode.
@@ -929,7 +1118,13 @@ async def run_with_dashboard(
                     return
                 await asyncio.sleep(0.15)
 
-        await asyncio.gather(refresher(), *(runner(j) for j in jobs))
+        main_task = asyncio.gather(
+            refresher(), *(runner(j) for j in jobs), return_exceptions=False
+        )
+        try:
+            await main_task
+        except asyncio.CancelledError:
+            pass
 
 
 def print_summary(jobs: list[JobState]) -> int:
@@ -981,11 +1176,15 @@ def parse_args() -> argparse.Namespace:
                    help="Print the plan and exit without pulling")
     p.add_argument("--plain", action="store_true",
                    help="Disable Rich live UI; stream per-line state transitions")
+    p.add_argument("--force", action="store_true",
+                   help="Re-pull even if the tag is already in `ollama list`")
     return p.parse_args()
 
 
 def main() -> int:
+    global _FORCE_REPULL
     args = parse_args()
+    _FORCE_REPULL = args.force or os.environ.get("FORCE_REPULL") == "1"
     only = [s.strip() for s in args.only.split(",") if s.strip()]
     skip = [s.strip() for s in args.skip.split(",") if s.strip()]
 

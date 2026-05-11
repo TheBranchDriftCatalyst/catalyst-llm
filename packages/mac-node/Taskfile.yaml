@@ -168,7 +168,7 @@ tasks:
       - ollama pull {{.CLI_ARGS}}
 
   models:download:
-    desc: "Pull EVERY mac-targeted model from models.yaml in parallel (CONCURRENCY=2 by default; ONLY=alias,alias and SKIP=alias,alias to filter)"
+    desc: "Pull EVERY mac-targeted model from models.yaml in parallel (CONCURRENCY=2 by default; ONLY=alias,alias and SKIP=alias,alias to filter; FORCE=1 to re-pull tags already in ollama)"
     cmds:
       # Prefer the project venv python (has pyyaml + huggingface_hub
       # from pyproject.toml); fall back to system python3 otherwise.
@@ -178,7 +178,8 @@ tasks:
           --concurrency {{.CONCURRENCY | default 2}} \
           {{if .ONLY}}--only "{{.ONLY}}"{{end}} \
           {{if .SKIP}}--skip "{{.SKIP}}"{{end}} \
-          {{if .DRY_RUN}}--dry-run{{end}} {{ .CLI_ARGS }}
+          {{if .DRY_RUN}}--dry-run{{end}} \
+          {{if .FORCE}}--force{{end}} {{ .CLI_ARGS }}
 
   models:download:plan:
     desc: "Show what task models:download would do without pulling anything"
@@ -186,6 +187,22 @@ tasks:
       - |
         PY="$(test -x .venv/bin/python && echo .venv/bin/python || echo python3)"
         "$PY" scripts/download-models.py --dry-run
+
+  models:cleanup:
+    desc: "Remove Ollama tags not in models.yaml (dry-run; pass FORCE=1 or APPLY=1 to delete; KEEP=tag1,tag2 to protect extras)"
+    cmds:
+      - |
+        PY="$(test -x .venv/bin/python && echo .venv/bin/python || echo python3)"
+        ARGS=""
+        if [ "{{.APPLY}}" = "1" ] || [ "{{.FORCE}}" = "1" ]; then
+          ARGS="--yes"
+        fi
+        if [ -n "{{.KEEP}}" ]; then
+          for t in $(echo "{{.KEEP}}" | tr ',' ' '); do
+            ARGS="$ARGS --keep $t"
+          done
+        fi
+        "$PY" scripts/cleanup-ollama.py $ARGS
 
   models:running:
     desc: Show models loaded in memory
