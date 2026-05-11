@@ -7,6 +7,7 @@ import {
   Database,
 } from "lucide-react";
 import {
+  CatalystAgentClient,
   CatalystLLMClient,
   ChatPanel,
   ChatTabs,
@@ -42,6 +43,14 @@ const baseUrl =
 const apiKey = (import.meta.env.VITE_LITELLM_KEY as string | undefined) ?? "";
 
 const client = new CatalystLLMClient({ baseUrl, apiKey });
+
+// catalyst-langgraph backend — owns the agent loop. Tilt injects
+// VITE_AGENT_URL=http://localhost:7078 in dev (the local k3d port-
+// forward); fall back to that default for naked `vite dev` runs.
+const agentBaseUrl =
+  (import.meta.env.VITE_AGENT_URL as string | undefined) ??
+  "http://localhost:7078";
+const agentClient = new CatalystAgentClient({ baseUrl: agentBaseUrl });
 
 // Tool host base URL — defaults to the docker-compose mapping
 // (127.0.0.1:7077). Override with VITE_TOOL_HOST_URL when the host
@@ -288,7 +297,7 @@ function ChatWorkspace({ goCompare }: { goCompare: () => void }) {
 function App() {
   const [page, setPage] = useRoute();
   return (
-    <LLMProvider client={client} tools={toolRegistry}>
+    <LLMProvider client={client} agentClient={agentClient} tools={toolRegistry}>
       <div className="h-screen flex flex-col bg-background text-foreground">
         {/* Skip-to-main affordance — visually hidden but reachable by tab. */}
         <a

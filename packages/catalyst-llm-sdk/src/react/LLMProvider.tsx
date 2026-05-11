@@ -13,11 +13,20 @@ import {
   type LLMConfigInit,
   type ToolRegistryLike,
 } from "../client/index.js";
+import { CatalystAgentClient } from "../agent/index.js";
 import { useChatStore } from "./chatStore.js";
 import { usePromptStore } from "./promptStore.js";
 
 interface LLMContextValue {
   client: CatalystLLMClient;
+  /**
+   * Agent backend (catalyst-langgraph). chatStore.sendMessage routes
+   * through this when set; the legacy direct-LiteLLM streamChat path
+   * is retained on `client` only for non-chat methods (model listing,
+   * embeddings) that haven't been migrated yet. See follow-up llm-*
+   * for collapsing these into one client.
+   */
+  agentClient: CatalystAgentClient | null;
   /**
    * Optional tool registry shared with the chat store. Hosts that
    * pass it can let chats opt into individual tools via
@@ -34,6 +43,13 @@ export interface LLMProviderProps {
   client?: CatalystLLMClient;
   /** Used only when `client` is not provided. */
   config?: LLMConfig | LLMConfigInit;
+  /**
+   * Pre-built agent client (catalyst-langgraph). When provided, all
+   * chat sends route through it instead of the direct-LiteLLM path on
+   * `client`. Required for tool use post-migration; non-tool chats
+   * also work without it but will surface an error.
+   */
+  agentClient?: CatalystAgentClient;
   /** Default model selected for new chats. */
   defaultModel?: string;
   /** Default sampling parameters for new chats. */
@@ -54,6 +70,7 @@ export function LLMProvider({
   children,
   client,
   config,
+  agentClient,
   defaultModel,
   defaultParams,
   defaultSystemPrompt,
@@ -72,6 +89,10 @@ export function LLMProvider({
   useEffect(() => {
     useChatStore.getState().setClient(resolvedClient);
   }, [resolvedClient]);
+
+  useEffect(() => {
+    useChatStore.getState().setAgentClient(agentClient ?? null);
+  }, [agentClient]);
 
   useEffect(() => {
     useChatStore.getState().setTools(tools ?? null);
@@ -103,8 +124,12 @@ export function LLMProvider({
   }, []);
 
   const value = useMemo<LLMContextValue>(
-    () => ({ client: resolvedClient, tools: tools ?? null }),
-    [resolvedClient, tools],
+    () => ({
+      client: resolvedClient,
+      agentClient: agentClient ?? null,
+      tools: tools ?? null,
+    }),
+    [resolvedClient, agentClient, tools],
   );
 
   return <LLMContext.Provider value={value}>{children}</LLMContext.Provider>;

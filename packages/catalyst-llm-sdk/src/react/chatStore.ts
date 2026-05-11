@@ -10,6 +10,7 @@ import type {
   ToolDefinition,
   ToolRegistryLike,
 } from "../client/index.js";
+import type { CatalystAgentClient } from "../agent/index.js";
 
 /**
  * Return a ToolRegistryLike adapter that wraps `source` but only
@@ -102,6 +103,13 @@ export interface Chat {
 interface ChatStore {
   client: CatalystLLMClient | null;
   /**
+   * Agent backend (catalyst-langgraph). When set, sendMessage routes
+   * through the Python LangGraph service instead of calling the
+   * LiteLLM proxy directly. The TS-side tool loop is gone — the
+   * agent loop runs server-side and emits typed AgentEvents.
+   */
+  agentClient: CatalystAgentClient | null;
+  /**
    * Optional tool registry shared across chats. When set, individual
    * chats can opt into tool calls via `enabledTools`. The store calls
    * the registry's `invoke` method during sendMessage's onToolCall.
@@ -117,6 +125,7 @@ interface ChatStore {
 
   // Setup (called by LLMProvider on mount)
   setClient: (client: CatalystLLMClient) => void;
+  setAgentClient: (client: CatalystAgentClient | null) => void;
   setTools: (tools: ToolRegistryLike | null) => void;
   setEnabledTools: (chatId: string, names: string[]) => void;
   setDefaults: (init: {
@@ -181,6 +190,7 @@ export const useChatStore = create<ChatStore>()(
   persist(
     (set, get) => ({
   client: null,
+  agentClient: null,
   defaultModel: "",
   defaultParams: INITIAL_PARAMS,
   defaultSystemPrompt: INITIAL_SYSTEM_PROMPT,
@@ -197,6 +207,8 @@ export const useChatStore = create<ChatStore>()(
   abortControllers: new Map(),
 
   setClient: (client) => set({ client }),
+
+  setAgentClient: (agentClient) => set({ agentClient }),
 
   setTools: (tools) => set({ tools }),
 
@@ -279,9 +291,12 @@ export const useChatStore = create<ChatStore>()(
     const state = get();
     const chat = state.chats.find((c) => c.id === chatId);
     if (!chat || !chat.model) return;
-    const client = state.client;
-    if (!client) {
-      get().setError(chatId, "No CatalystLLMClient configured");
+    const agentClient = state.agentClient;
+    if (!agentClient) {
+      get().setError(
+        chatId,
+        "No CatalystAgentClient configured — set VITE_AGENT_URL and pass agentClient to <LLMProvider>.",
+      );
       return;
     }
 
@@ -314,80 +329,165 @@ export const useChatStore = create<ChatStore>()(
       ),
     }));
 
-    const messages: Message[] = [];
-    if (chat.systemPrompt) {
-      messages.push({ role: "system", content: chat.systemPrompt });
-    }
-    for (const msg of chat.messages) {
-      if (msg.role !== "system") {
-        messages.push({ role: msg.role, content: msg.content });
-      }
-    }
-    messages.push({ role: "user", content });
+    // Build the request body in the shape catalyst-langgraph expects.
+    // System prompt is sent separately so the backend can prepend it
+    // idempotently on every tool-loop iteration; per-chat history is
+    // forwarded verbatim so the agent has full context.
+    const history = chat.messages
+      .filter((m) => m.role !== "system")
+      .map((m) => ({ role: m.role, content: m.content }));
+    history.push({ role: "user", content });
 
     const ctrl = new AbortController();
     state.abortControllers.set(chatId, ctrl);
 
-    // Build a per-request tool view: the global registry, narrowed to
-    // the names this chat opted into. Skipping when no registry is
-    // bound or no tools are enabled keeps non-tool chats on the same
-    // wire shape they had before this feature shipped.
-    const enabledNames = chat.enabledTools ?? [];
-    const sharedTools = state.tools;
-    const toolsForRequest =
-      sharedTools && enabledNames.length > 0
-        ? toolRegistryFiltered(sharedTools, enabledNames)
-        : undefined;
+    // Tracks tool calls in flight by event.id so tool_call_end events
+    // can patch their matching record (instead of double-appending).
+    const recordIndex = new Map<string, number>();
+    let iteration = 0;
 
     try {
-      const stream = client.streamChat({
-        model: chat.model,
-        messages,
-        params: chat.params,
-        signal: ctrl.signal,
-        tools: toolsForRequest,
-        onToolCall: (event) => {
-          // Append the tool call onto the *current* assistant turn so
-          // the chat UI can render <ToolCallCard>s inline. We persist
-          // the call+result so it survives reload.
-          set((s) => ({
-            chats: s.chats.map((c) => {
-              if (c.id !== chatId) return c;
-              const last = c.messages[c.messages.length - 1];
-              if (!last || last.role !== "assistant") return c;
-              const record: ChatToolCallRecord = {
-                call: event.call,
-                args: event.args,
-                result: event.result,
-                error: event.error,
-                duration_ms: event.duration_ms,
-                iteration: event.iteration,
-                finished_at: Date.now(),
-              };
-              const merged = [...c.messages.slice(0, -1), {
-                ...last,
-                tool_calls: [...(last.tool_calls ?? []), record],
-              }];
-              return { ...c, messages: merged };
-            }),
-          }));
+      const stream = agentClient.streamAgent(
+        {
+          model: chat.model,
+          messages: history,
+          system_prompt: chat.systemPrompt || undefined,
+          tools: chat.enabledTools && chat.enabledTools.length > 0
+            ? chat.enabledTools
+            : undefined,
+          params: chat.params as Record<string, unknown>,
         },
-      });
-      for await (const chunk of stream) {
-        if (chunk.done) {
-          // Intermediate done chunks happen between tool-call iterations
-          // (the SDK emits one per loop turn so consumers can flush UI
-          // state). Keep iterating until we see a done chunk without
-          // tool_calls — that's the actual end of the assistant's turn.
-          if (chunk.tool_calls && chunk.tool_calls.length > 0) continue;
-          get().finishStreaming(chatId, chunk.meta);
-          break;
+        { signal: ctrl.signal },
+      );
+
+      for await (const ev of stream) {
+        switch (ev.type) {
+          case "run_started": {
+            // Stash run_id on the assistant turn's meta for traceability.
+            set((s) => ({
+              chats: s.chats.map((c) => {
+                if (c.id !== chatId) return c;
+                const msgs = [...c.messages];
+                const last = msgs[msgs.length - 1];
+                if (last?.role !== "assistant") return c;
+                msgs[msgs.length - 1] = {
+                  ...last,
+                  meta: { ...(last.meta ?? {}), id: ev.run_id, model: ev.model },
+                };
+                return { ...c, messages: msgs };
+              }),
+            }));
+            break;
+          }
+          case "iteration":
+            iteration = ev.n;
+            break;
+          case "token":
+          case "reasoning": {
+            // Both flow into the assistant's content. Reasoning
+            // segments are recognised + collapsed downstream by
+            // ChatMessage's splitReasoning() — the wire format
+            // doesn't need to differentiate yet.
+            if (!get().chats.find((c) => c.id === chatId)?.firstTokenTime) {
+              get().setFirstTokenTime(chatId);
+            }
+            get().appendToken(chatId, ev.content);
+            break;
+          }
+          case "tool_call_start": {
+            // Append a placeholder ChatToolCallRecord so ToolCallCard
+            // can render an in-flight state immediately. We reconstruct
+            // the OpenAI-shape `call` field so the existing UI keeps
+            // working unchanged.
+            const placeholder: ChatToolCallRecord = {
+              call: {
+                id: ev.id,
+                type: "function",
+                function: {
+                  name: ev.name,
+                  arguments: JSON.stringify(ev.args ?? {}),
+                },
+              } as unknown as ToolCall,
+              args: ev.args,
+              duration_ms: 0,
+              iteration,
+              finished_at: 0,
+            };
+            set((s) => ({
+              chats: s.chats.map((c) => {
+                if (c.id !== chatId) return c;
+                const msgs = [...c.messages];
+                const last = msgs[msgs.length - 1];
+                if (last?.role !== "assistant") return c;
+                const next = {
+                  ...last,
+                  tool_calls: [...(last.tool_calls ?? []), placeholder],
+                };
+                msgs[msgs.length - 1] = next;
+                recordIndex.set(ev.id, (next.tool_calls!.length - 1));
+                return { ...c, messages: msgs };
+              }),
+            }));
+            break;
+          }
+          case "tool_call_end": {
+            // Patch the placeholder created at tool_call_start. If we
+            // somehow missed the start (race / reorder) we just append
+            // a record with what we have — better than dropping it.
+            set((s) => ({
+              chats: s.chats.map((c) => {
+                if (c.id !== chatId) return c;
+                const msgs = [...c.messages];
+                const last = msgs[msgs.length - 1];
+                if (last?.role !== "assistant") return c;
+                const idx = recordIndex.get(ev.id);
+                const calls = [...(last.tool_calls ?? [])];
+                if (idx !== undefined && calls[idx]) {
+                  calls[idx] = {
+                    ...calls[idx],
+                    result: ev.result,
+                    error: ev.error,
+                    duration_ms: ev.duration_ms,
+                    finished_at: Date.now(),
+                  };
+                } else {
+                  calls.push({
+                    call: {
+                      id: ev.id,
+                      type: "function",
+                      function: { name: "", arguments: "" },
+                    } as unknown as ToolCall,
+                    args: undefined,
+                    result: ev.result,
+                    error: ev.error,
+                    duration_ms: ev.duration_ms,
+                    iteration,
+                    finished_at: Date.now(),
+                  });
+                }
+                msgs[msgs.length - 1] = { ...last, tool_calls: calls };
+                return { ...c, messages: msgs };
+              }),
+            }));
+            break;
+          }
+          case "message_done": {
+            const meta: StreamMeta = {};
+            if (ev.finish_reason) meta.finish_reason = ev.finish_reason;
+            if (ev.usage) meta.usage = ev.usage as StreamMeta["usage"];
+            get().finishStreaming(chatId, meta);
+            return;
+          }
+          case "error": {
+            get().setError(chatId, ev.message);
+            get().finishStreaming(chatId);
+            return;
+          }
         }
-        if (!get().chats.find((c) => c.id === chatId)?.firstTokenTime) {
-          get().setFirstTokenTime(chatId);
-        }
-        get().appendToken(chatId, chunk.delta, chunk.meta);
       }
+      // Stream ended without a message_done (rare — backend should always
+      // emit it). Treat as a clean finish so UI doesn't get stuck.
+      get().finishStreaming(chatId);
     } catch (error) {
       const err = error as Error;
       if (err.name === "AbortError") {
