@@ -55,7 +55,7 @@ print_dev_banner()
 # ============================================
 local_resource(
     name='ollama',
-    labels=_labels('llm'),
+    labels=_labels('services'),
     serve_cmd='./scripts/ollama-serve.sh',
     readiness_probe=probe(
         http_get=http_get_action(port=11434, path='/api/tags'),
@@ -93,7 +93,7 @@ k8s_yaml(kustomize('./k8s/local'))
 
 k8s_resource(
     'open-webui',
-    labels=_labels('ui'),
+    labels=_labels('services'),
     port_forwards=['3030:8080'],
     resource_deps=['k3d-cluster', 'ollama'],
     links=[
@@ -105,7 +105,7 @@ add_open_browser_button('open-webui', 'http://localhost:3030')
 
 k8s_resource(
     'lobe-chat',
-    labels=_labels('ui'),
+    labels=_labels('services'),
     port_forwards=['3210:3210'],
     resource_deps=['k3d-cluster', 'ollama'],
     links=[
@@ -117,7 +117,7 @@ add_open_browser_button('lobe-chat', 'http://localhost:3210')
 
 k8s_resource(
     'searxng',
-    labels=_labels('tools'),
+    labels=_labels('services'),
     port_forwards=['8888:8080'],
     resource_deps=['k3d-cluster'],
     links=[
@@ -129,7 +129,7 @@ add_open_browser_button('searxng', 'http://localhost:8888')
 
 k8s_resource(
     'tool-host',
-    labels=_labels('tools'),
+    labels=_labels('backend'),
     port_forwards=['7077:7077'],
     resource_deps=['k3d-cluster', 'searxng'],
     links=[
@@ -141,7 +141,7 @@ k8s_resource(
 
 k8s_resource(
     'catalyst-langgraph',
-    labels=_labels('agent'),
+    labels=_labels('backend'),
     port_forwards=['7078:7078'],
     resource_deps=['k3d-cluster', 'tool-host'],
     links=[
@@ -187,7 +187,7 @@ if not LITELLM_KEY:
 
 local_resource(
     name='sdk-build',
-    labels=_labels('sdk'),
+    labels=_labels('build'),
     cmd='yarn --cwd ' + SDK_DIR + ' build',
     serve_cmd='yarn --cwd ' + SDK_DIR + ' build:watch',
     deps=[SDK_DIR + '/src'],
@@ -196,7 +196,7 @@ local_resource(
 
 local_resource(
     name='playground',
-    labels=_labels('ui'),
+    labels=_labels('frontend'),
     serve_cmd=(
         'VITE_LITELLM_URL=' + LITELLM_URL + ' ' +
         'VITE_LITELLM_KEY=' + LITELLM_KEY + ' ' +
