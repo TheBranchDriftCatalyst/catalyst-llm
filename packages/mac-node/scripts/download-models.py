@@ -59,6 +59,8 @@ from typing import AsyncIterator, Optional
 
 import yaml
 
+from _chat_templates import render_modelfile_body
+
 REPO_DIR = Path(__file__).resolve().parent.parent
 MODELS_PATH = REPO_DIR / "models.yaml"
 
@@ -94,6 +96,12 @@ class PullSpec:
     hf_pattern: str = "*.gguf"
     scratch_root: str = ""
     keep_shards: bool = False
+    # Optional name of a canonical chat template (see _chat_templates.py)
+    # to splice into the Modelfile during `ollama create`. Used only by
+    # the merge-gguf flow, since ollama-pull leaves the upstream
+    # template alone. Empty = use the per-model `modelfile:` block or
+    # fall back to a bare `FROM …`.
+    template_from: str = ""
 
 
 @dataclass
@@ -108,6 +116,14 @@ class JobState:
     name: str
     pull: PullSpec = field(default_factory=PullSpec)
     description: str = ""
+    # Optional raw Modelfile body (TEMPLATE/PARAMETER lines), highest
+    # precedence — used as-is, no canonical-template merge.
+    modelfile: str = ""
+    # Optional PARAMETER overrides (temperature, min_p, num_ctx, etc.)
+    # combined with the canonical template's stop tokens to produce
+    # PARAMETER lines. Only used when pull.template_from is set and
+    # modelfile is empty.
+    parameters: dict = field(default_factory=dict)
 
     # Status: "queued" | "running" | "done" | "fail"
     status: str = "queued"
@@ -159,6 +175,7 @@ def load_plan(only: list[str], skip: list[str]) -> list[JobState]:
             hf_pattern=str(pull_cfg.get("hf_pattern", "*.gguf")),
             scratch_root=str(pull_cfg.get("scratch_root", "")),
             keep_shards=bool(pull_cfg.get("keep_shards", False)),
+            template_from=str(pull_cfg.get("template_from", "") or ""),
         )
         out.append(
             JobState(
@@ -166,6 +183,8 @@ def load_plan(only: list[str], skip: list[str]) -> list[JobState]:
                 name=name,
                 pull=pull,
                 description=m.get("description", ""),
+                modelfile=str(m.get("modelfile", "") or ""),
+                parameters=dict(m.get("parameters") or {}),
             )
         )
     return out
@@ -811,8 +830,23 @@ async def pull_via_merge_gguf(job: JobState) -> None:
         job.detail = f"using {first.name} directly"
 
     # Step 3 — register with Ollama under the configured local tag.
+    # Modelfile body comes from (in priority order):
+    #   1. the raw `modelfile:` block on the entry (escape hatch)
+    #   2. `pull.template_from` + top-level `parameters:` map
+    #      (the canonical-template path — see _chat_templates.py)
+    # Without either, Ollama uses a `{{ .Prompt }}` passthrough +
+    # default sampler, which loops forever on reasoning models that
+    # need ChatML wrapping and stop tokens.
+    body_extra = render_modelfile_body(
+        template_from=job.pull.template_from,
+        parameters=job.parameters,
+        raw_modelfile=job.modelfile,
+    )
     modelfile = work / "Modelfile"
-    modelfile.write_text(f"FROM {merged}\n")
+    body = f"FROM {merged}\n"
+    if body_extra:
+        body += "\n" + body_extra
+    modelfile.write_text(body)
     job.stage = "ollama create"
     job.percent = 0.0
     rc, last = await _run_streamed(

@@ -92,9 +92,6 @@ model_list:
       description: Qwen3-Coder 30B-A3B MoE @ Q8_0 (~33GB) — 256K ctx, ~Sonnet 4.5-class agentic coding, BFCL v3 top tier. Q8
         over Q4 because MoE active path is small and we have the memory. - Mac M5 Max Metal
       supports_function_calling: true
-      license: apache-2.0
-      pipeline_tag: text-generation
-      hf_repo: ggml-org/Qwen3-Coder-30B-A3B-Instruct-Q8_0-GGUF
 
   - model_name: mac/qwen3-coder-opus
     litellm_params:
@@ -125,9 +122,6 @@ model_list:
       description: DeepSeek R1 Distill Qwen 32B @ Q8_0 (~34GB) — beats o1-mini on math/code reasoning. ~7-9 tok/s on M5 Max.
         Q8 over Q4 because CoT amplifies quant noise. - Mac M5 Max Metal
       supports_reasoning: true
-      pipeline_tag: text-generation
-      param_count: 9215644672
-      hf_repo: S010/DeepSeek-R1-Distill-Qwen-32B-abliterated-Q8-mlx
 
   - model_name: mac/gemma4-26b
     litellm_params:
@@ -137,9 +131,6 @@ model_list:
       description: Gemma 4 26B-A4B MoE @ Q8_0 (~28GB, multimodal + thinking). Vision routing alias for the playground until
         qwen3-vl is pulled and verified. MoE → Q8 cost is small. - Mac M5 Max Metal
       supports_vision: true
-      license: apache-2.0
-      pipeline_tag: image-text-to-text
-      hf_repo: drmcbride/gemma-4-26B-A4B-it-heretic-Q8_0-GGUF
 
   - model_name: mac/gemma4-vision
     litellm_params:
@@ -157,10 +148,6 @@ model_list:
       description: Gemma 4 E4B MoE (multimodal + thinking) — fast vision-capable daily. Kept at Ollama default (Q4_K_M) because
         speed is the whole point. - Mac M5 Max Metal
       supports_vision: true
-      license: apache-2.0
-      pipeline_tag: any-to-any
-      param_count: 7996156490
-      hf_repo: google/gemma-4-E4B-it
 
   - model_name: mac/phi4
     litellm_params:
@@ -170,8 +157,6 @@ model_list:
       description: Phi-4 14B @ Q8_0 (~16GB) — punches above its weight, default daily driver under 14B. Q8 because at this size
         it costs nothing. - Mac M5 Max Metal
       supports_reasoning: true
-      license: cc-by-nc-sa-4.0
-      hf_repo: yinghy2018/CLIENS_PHI4_14B_BF16-Q8_0-GGUF
 
   - model_name: mac/behemoth-x
     litellm_params:
@@ -189,8 +174,6 @@ model_list:
       description: Hermes-4 70B (Llama 3.1 70B base) @ Q5_K_M (~50GB) — top RefusalBench, hybrid <think> toggle, lowest AI-tells
         baseline. Toggle reasoning OFF for prose. ChatML. - Mac M5 Max Metal
       supports_reasoning: true
-      license: llama3
-      hf_repo: unsloth/Hermes-4-70B-GGUF
 
   - model_name: mac/cydonia-24b
     litellm_params:
@@ -199,8 +182,6 @@ model_list:
     model_info:
       description: Cydonia 24B v4.3 (Mistral Small 3.2 base, Dec 2025) @ Q8_0 (~26GB) — Drummer's most-improved-prose release;
         fast 24B daily for RP. Mistral v7 Tekken template; temp 1.0 / min_p 0.05 / rep_pen 1.03. - Mac M5 Max Metal
-      pipeline_tag: text-generation
-      hf_repo: bartowski/TheDrummer_Cydonia-24B-v4.3-GGUF
 
   - model_name: mac/qwen3-moe-uncensored
     litellm_params:
@@ -227,10 +208,6 @@ model_list:
       description: NuExtract-2.0-8B (Qwen2.5-VL based) — beats GPT-4.1 by +9 F-score on schema extraction. Generalist extractor.
         - Mac M5 Max Metal
       supports_vision: true
-      license: mit
-      pipeline_tag: image-text-to-text
-      param_count: 8292166656
-      hf_repo: numind/NuExtract-2.0-8B-GPTQ
 
   - model_name: mac/nuextract1.5
     litellm_params:
@@ -247,9 +224,6 @@ model_list:
     model_info:
       description: UniversalNER 7B — zero-shot named-entity recognition ("What describes <type> in the text?"). Specialist for
         ad-hoc NER. - Mac M5 Max Metal
-      license: mit
-      pipeline_tag: token-classification
-      hf_repo: universalner/uner_slo_snk
 
   - model_name: mac/qwen3-embed-8b
     litellm_params:
@@ -268,10 +242,6 @@ model_list:
       description: Qwen3-VL 2B (latest) — fast OCR + visual QA, beats InternVL3 on DocVQA / OS-World at this size. Sub-second
         on M5 Max for screenshot-class tasks. - Mac M5 Max Metal
       supports_vision: true
-      license: apache-2.0
-      pipeline_tag: image-text-to-text
-      param_count: 2127532032
-      hf_repo: Qwen/Qwen3-VL-2B-Instruct
 
   - model_name: mac/qwen3-vl-think
     litellm_params:

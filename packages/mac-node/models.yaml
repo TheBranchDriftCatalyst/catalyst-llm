@@ -164,6 +164,11 @@ ollama:
         strategy: merge-gguf
         hf_repo: "samuelcardillo/Qwen3-Coder-Next-Opus-4.6-Reasoning-Distilled-GGUF"
         hf_pattern: "*Q6_K*.gguf"
+        template_from: chatml
+      parameters:
+        temperature: 0.6
+        min_p: 0.05
+        repeat_penalty: 1.02
 
     - name: qwen3-coder-opus-uncensored:i1-Q6_K
       alias: qwen3-coder-opus-uncensored
@@ -175,6 +180,11 @@ ollama:
         strategy: merge-gguf
         hf_repo: "mradermacher/Huihui-Qwen3-Coder-Next-Opus-4.6-Reasoning-Distilled-abliterated-i1-GGUF"
         hf_pattern: "*i1-Q6_K.gguf"
+        template_from: chatml
+      parameters:
+        temperature: 0.6
+        min_p: 0.05
+        repeat_penalty: 1.02
 
     # ── Reasoning ────────────────────────────────────────────────
     # Dense 32B — Q8 pays a real speed tax (~30-40% vs Q4) but
@@ -250,6 +260,14 @@ ollama:
         strategy: merge-gguf
         hf_repo: "TheDrummer/Behemoth-X-123B-v2-GGUF"
         hf_pattern: "*Q4_K_M*.gguf"
+        # Mistral Large 2411 = v7 Tekken format (with [SYSTEM_PROMPT] tag).
+        template_from: mistral-v7
+      parameters:
+        # Long-form-prose end of the RP cheat sheet — see header
+        # comment above (temp 0.85, min_p 0.05, rep_pen 1.03).
+        temperature: 0.85
+        min_p: 0.05
+        repeat_penalty: 1.03
 
     # Hermes-4 70B — bumped to Q5_K_M (~50GB) from Q4 (~42GB).
     # Dense 70B; Q6_K (~58GB) is also viable but Q5_K_M is the
@@ -289,6 +307,13 @@ ollama:
         strategy: merge-gguf
         hf_repo: "mradermacher/Qwen3-30B-A3B-Claude-4.5-Opus-High-Reasoning-2507-ABLITERATED-UNCENSORED-V2-i1-GGUF"
         hf_pattern: "*i1-Q6_K.gguf"
+        template_from: chatml
+      parameters:
+        # Reasoning distill → temp 0.7 (per description), slightly
+        # lower rep_pen because RP prose breathes more.
+        temperature: 0.7
+        min_p: 0.05
+        repeat_penalty: 1.03
 
     # Magnum v4 72B — bumped to Q5_K_M (~52GB) from Q4_K_M (~41GB).
     # Sharded either way; merge-gguf flow handles both.
@@ -302,6 +327,15 @@ ollama:
         strategy: merge-gguf
         hf_repo: "anthracite-org/magnum-v4-72b-gguf"
         hf_pattern: "*Q5_K_M*.gguf"
+        # Qwen2.5 72B base = ChatML.
+        template_from: chatml
+      parameters:
+        # Creative-prose sampler from description (temp 1.0 / min_p 0.1).
+        # 16k native ctx capped via num_ctx.
+        temperature: 1.0
+        min_p: 0.1
+        repeat_penalty: 1.03
+        num_ctx: 16384
 
     # ── Structured extraction (specialist family) ────────────────
     # nuextract2 is the generalist; we also keep nuextract1.5 and

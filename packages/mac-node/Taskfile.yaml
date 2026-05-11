@@ -153,6 +153,15 @@ tasks:
       - python3 scripts/gen-pull-models.py
       - python3 scripts/gen-sdk-hints.py
 
+  models:rebuild-modelfiles:
+    desc: "Re-apply Modelfile template/params from models.yaml to pulled Ollama tags — no re-download. ONLY=alias,alias to filter; DRY_RUN=1 to preview"
+    cmds:
+      - |
+        PY="$(test -x .venv/bin/python && echo .venv/bin/python || echo python3)"
+        "$PY" scripts/rebuild-modelfiles.py \
+          {{if .ONLY}}--only "{{.ONLY}}"{{end}} \
+          {{if .DRY_RUN}}--dry-run{{end}}
+
   models:
     desc: Show all models (Ollama + vLLM) with live status
     cmds:

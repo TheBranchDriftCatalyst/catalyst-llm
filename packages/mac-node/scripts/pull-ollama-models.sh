@@ -3,7 +3,7 @@
 # Regenerate with: python3 scripts/gen-pull-models.py --target mac
 # Target: mac
 #
-# Models: 38 total
+# Models: 18 total
 
 set -e
 
@@ -20,86 +20,25 @@ echo ""
 # ══════════════════════════════════════════════════════════════════════
 
 echo "--- Serving: primary mac-node models ---"
-ollama pull devstral:latest                               # Devstral 24B coding
-ollama pull deepseek-r1:32b                               # DeepSeek R1 32B reasoning
-ollama pull qwen3:32b                                     # Qwen3 32B general purpose
-ollama pull qwen3-coder:latest \
-    || ollama pull hf.co/bartowski/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_K_M \
-    || echo "WARNING: qwen3-coder:latest not available"
-ollama pull mistral-nemo:latest                           # Mistral Nemo 12B
-ollama pull dolphin-mistral:7b                            # Uncensored Mistral 7B
-ollama pull qwen2.5-coder:7b                              # Qwen 2.5 Coder 7B
-ollama pull deepseek-r1:7b                                # DeepSeek R1 reasoning 7B
-
-# ══════════════════════════════════════════════════════════════════════
-# Benchmark: catalyst-data test models
-# ══════════════════════════════════════════════════════════════════════
-
-echo "--- Benchmark: catalyst-data test models ---"
-ollama pull nuextract1.5:latest                           # NuExtract 1.5 structured extraction
-ollama pull nuextract2:latest                             # NuExtract 2.0 8B multimodal extraction
-ollama pull universalner:latest                           # UniversalNER 7B zero-shot NER
-ollama pull gemma3:12b                                    # Gemma3 12B — best ≤12B on LLMStructBench
-ollama pull mistral:latest                                # Mistral 7B — best recall in our benchmarks
-ollama pull qwen2.5:7b-instruct                           # Qwen 2.5 7B Instruct — best balanced extraction
-ollama pull llama3.1:8b                                   # Llama 3.1 8B — best SPO extraction
-ollama pull llama3.2:latest                               # Llama 3.2 3B — fastest (116 tok/s)
-ollama pull gemma3:4b                                     # Gemma3 4B — smallest high scorer
-
-# ══════════════════════════════════════════════════════════════════════
-# Community: bleeding edge + abliterated
-# ══════════════════════════════════════════════════════════════════════
-
-echo "--- Community: bleeding edge + abliterated ---"
-ollama pull qwen3.6:27b                                   # Qwen 3.6 27B — SWE-bench 77.2%
-ollama pull gemma4:26b                                    # Gemma 4 26B-A4B MoE (multimodal + thinking, Q4_K_M)
-ollama pull gemma4:26b-mlx-bf16                           # Gemma 4 26B-A4B MoE — MLX-converted BF16 safetensors (text-only: ships without vision projector on Ollama)
-ollama pull gemma4:e4b                                    # Gemma 4 E4B MoE (multimodal + thinking)
-ollama pull phi4:14b                                      # Phi-4 14B — punches above its weight
-ollama pull dolphin3:8b                                   # Dolphin 3 8B uncensored
-ollama pull wizardlm-uncensored:13b                       # WizardLM 13B — classic abliterated model
-
-# ══════════════════════════════════════════════════════════════════════
-# Finance / domain-specific
-# ══════════════════════════════════════════════════════════════════════
-
-echo "--- Finance / domain-specific ---"
-ollama pull 0xroyce/plutus                                # Llama 3.1 8B fine-tuned for finance
+ollama pull qwen3-coder:30b-a3b-q8_0                      # Qwen3-Coder 30B-A3B MoE @ Q8_0 (~33GB) — 256K ctx, ~Sonnet 4.5-class agentic coding, BFCL v3 top tier. Q8 over Q4 because MoE active path is small and we have the memory.
+ollama pull qwen3-coder-opus:Q6_K                         # Qwen3-Coder-Next (~80B base) + Opus-4.6 reasoning distill (samuelcardillo, full SFT) @ Q6_K (~65GB) — Opus-style multi-step planning. Reasoning distills benefit from higher quants (CoT noise compounds). ChatML; temp 0.6.
+ollama pull qwen3-coder-opus-uncensored:i1-Q6_K           # Huihui-Qwen3-Coder-Next-Opus-4.6 abliterated (mradermacher i1) @ Q6_K (~65GB) — uncensored sibling of qwen3-coder-opus. Same Opus-distilled reasoning, fewer refusals, imatrix-calibrated. ChatML; temp 0.6.
+ollama pull deepseek-r1:32b-qwen-distill-q8_0             # DeepSeek R1 Distill Qwen 32B @ Q8_0 (~34GB) — beats o1-mini on math/code reasoning. ~7-9 tok/s on M5 Max. Q8 over Q4 because CoT amplifies quant noise.
+ollama pull gemma4:26b-a4b-it-q8_0                        # Gemma 4 26B-A4B MoE @ Q8_0 (~28GB, multimodal + thinking). Vision routing alias for the playground until qwen3-vl is pulled and verified. MoE → Q8 cost is small.
+ollama pull gemma4:e4b                                    # Gemma 4 E4B MoE (multimodal + thinking) — fast vision-capable daily. Kept at Ollama default (Q4_K_M) because speed is the whole point.
+ollama pull phi4:14b-q8_0                                 # Phi-4 14B @ Q8_0 (~16GB) — punches above its weight, default daily driver under 14B. Q8 because at this size it costs nothing.
+ollama pull nuextract2:latest                             # NuExtract-2.0-8B (Qwen2.5-VL based) — beats GPT-4.1 by +9 F-score on schema extraction. Generalist extractor.
+ollama pull nuextract1.5:latest                           # NuExtract 1.5 — template-based JSON fill (### Template / ### Text shape). Kept for legacy prompts.
+ollama pull universalner:latest                           # UniversalNER 7B — zero-shot named-entity recognition ("What describes <type> in the text?"). Specialist for ad-hoc NER.
+ollama pull qwen3-vl:latest                               # Qwen3-VL 2B (latest) — fast OCR + visual QA, beats InternVL3 on DocVQA / OS-World at this size. Sub-second on M5 Max for screenshot-class tasks.
+ollama pull qwen3-vl:30b-a3b-thinking-q8_0                # Qwen3-VL 30B-A3B Thinking @ Q8_0 (~33GB, 3B active) — heavyweight vision reasoning with <think> traces. For charts, multi-step doc analysis, visual planning. MoE keeps it usable on M5 Max.
 
 # ══════════════════════════════════════════════════════════════════════
 # Embedding models
 # ══════════════════════════════════════════════════════════════════════
 
 echo "--- Embedding models ---"
-ollama pull qwen3-embedding:8b                            # #1 MTEB multilingual (70.58), 100+ langs, dims 32-4096
-ollama pull qwen3-embedding:4b                            # ~67 MTEB, half the VRAM of 8B
-ollama pull jina-embeddings-v4                            # Multimodal (text+images+docs), 30+ langs
-ollama pull bge-m3                                        # 568M, dense+sparse+ColBERT, 100+ langs, 8K ctx
-ollama pull snowflake-arctic-embed2                       # 568M, multilingual, best retrieval under 500M
-ollama pull mxbai-embed-large                             # 335M, 1024 dims, strong MTEB English
-ollama pull granite-embedding:278m                        # IBM Granite MoE embedding, low latency
-ollama pull nomic-embed-text:latest                       # 137M, 768 dims, 8K ctx — the reliable workhorse
-ollama pull snowflake-arctic-embed:335m                   # 335M, best retrieval-specific MTEB under 500M
-ollama pull snowflake-arctic-embed:110m                   # 110M, good speed/quality tradeoff
-ollama pull all-minilm                                    # 23M, 384 dims — fastest, good for prototyping
-ollama pull qwen3-embedding:0.6b                          # ~60 MTEB, tiny but surprisingly capable
-
-# ══════════════════════════════════════════════════════════════════════
-# Utility models
-# ══════════════════════════════════════════════════════════════════════
-
-echo "--- Utility models ---"
-ollama pull nuextract:latest                              # NuExtract structured extraction (v1.0)
-
-# ══════════════════════════════════════════════════════════════════════
-# Custom modelfiles
-# ══════════════════════════════════════════════════════════════════════
-
-ollama create embedding-server -f - <<'MODELFILE'
-FROM nomic-embed-text:latest
-PARAMETER num_ctx 8192
-MODELFILE
-
+ollama pull qwen3-embedding:8b                            # Qwen3 Embedding 8B — #1 MTEB multilingual at 70.58, 100+ langs, dims 32-4096. The single embedding model we need.
 
 echo ""
 echo "=== All models ==="
