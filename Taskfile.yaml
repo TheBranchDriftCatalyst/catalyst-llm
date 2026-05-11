@@ -14,9 +14,9 @@ includes:
   sdk:
     taskfile: ./packages/catalyst-llm-sdk/Taskfile.yaml
     dir: ./packages/catalyst-llm-sdk
-  litellm-client:
-    taskfile: ./packages/catalyst-litellm-client/Taskfile.yaml
-    dir: ./packages/catalyst-litellm-client
+  langgraph:
+    taskfile: ./packages/catalyst-langgraph/Taskfile.yaml
+    dir: ./packages/catalyst-langgraph
   tool-host:
     taskfile: ./packages/tool-host/Taskfile.yaml
     dir: ./packages/tool-host
@@ -48,7 +48,7 @@ tasks:
     deps:
       - mac-node:test:lint
       - sdk:test:lint
-      - litellm-client:test:lint
+      - langgraph:test:lint
       - tool-host:test:lint
 
   test:unit:
@@ -56,7 +56,7 @@ tasks:
     deps:
       - mac-node:test:unit
       - sdk:test:unit
-      - litellm-client:test:unit
+      - langgraph:test:unit
       - tool-host:test:unit
 
   test:smoke:

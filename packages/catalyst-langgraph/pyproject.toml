@@ -3,11 +3,11 @@ requires = ["setuptools>=65.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "catalyst-litellm-client"
-version = "0.2.0"
-description = "Unified LLM API access through LiteLLM proxy for all Catalyst projects"
+name = "catalyst-langgraph"
+version = "0.3.0"
+description = "LangGraph-based agent service for Catalyst — wraps LiteLLM, calls tool-host, streams typed events to UIs"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
     { name = "Catalyst Team" }
@@ -27,10 +27,10 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["catalyst_litellm_client*"]
+include = ["catalyst_langgraph*"]
 
 [tool.setuptools.package-data]
-catalyst_litellm_client = ["py.typed"]
+catalyst_langgraph = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

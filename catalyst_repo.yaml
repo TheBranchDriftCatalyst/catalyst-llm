@@ -42,5 +42,5 @@ highlights:
   - "Three chat UIs for different use cases: Open WebUI (RAG + web search), LobeChat (plugins), SillyTavern (roleplay)"
   - "OpenClaw multi-agent orchestration framework with 23 specialized agents organized into L1-L4 hierarchy"
   - "Prompt Playground React app for interactive model testing with shared catalyst-ui components"
-  - "Python SDK (catalyst-litellm-client) providing LangChain-compatible access to all configured LLM providers"
+  - "Python LangGraph agent service (catalyst-langgraph) providing LangChain-compatible access to all configured LLM providers and a typed event stream to UIs"
   - "Tilt-based dev environment with mode switching between local Docker Compose and Kubernetes cluster deployment"

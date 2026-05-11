@@ -1,6 +1,6 @@
 version: "3"
 
-# Standard testing contract — see catalyst-litellm-client/Taskfile.yaml
+# Standard testing contract — see catalyst-langgraph/Taskfile.yaml
 # for the convention. Every package exposes:
 #   test:lint   — formatters + static checks
 #   test:unit   — no network, no services       (default `task test` tier)

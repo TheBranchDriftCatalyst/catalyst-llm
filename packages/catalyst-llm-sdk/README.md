@@ -1,6 +1,6 @@
 # @catalyst/llm-sdk
 
-Unified LLM access SDK for the Catalyst workspace. Routes all LLM calls through the LiteLLM proxy with one client per language; mirrors the Python `catalyst-litellm-client` API.
+Unified LLM access SDK for the Catalyst workspace. Routes all LLM calls through the LiteLLM proxy with one client per language; the Python equivalent lives in `catalyst-langgraph`.
 
 Three coordinated layers in one package:
 
