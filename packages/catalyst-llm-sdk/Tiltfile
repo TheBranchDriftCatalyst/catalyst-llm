@@ -1,189 +1,100 @@
-# Tilt resources for catalyst-llm-sdk + its example playground + the
-# tool-host sidecar. Single source of truth — used in two ways:
+# catalyst-llm-sdk — standalone Tiltfile
 #
-#   1. Standalone:  `cd packages/catalyst-llm-sdk && tilt up`
-#      This file is the entrypoint Tiltfile. The bottom of the file
-#      detects that (via `config.main_dir`) and fires `setup_sdk`
-#      with `owns_compose=True`, pulling in the repo's docker-compose
-#      so the SDK runtime deps (tool-host, searxng) come up too.
+# Lightweight playground-iteration mode: brings up only the SDK
+# build-watch and the Vite dev server. No cluster, no Docker, no Ollama.
 #
-#   2. Included from the root:  `tilt up` at repo root.
-#      The root `tilt/dev.tiltfile` does
-#        load('../packages/catalyst-llm-sdk/Tiltfile', 'setup_sdk')
-#      and calls `setup_sdk(repo_root=..., owns_compose=False)` after
-#      it has already declared the compose project itself.
+#   cd packages/catalyst-llm-sdk
+#   tilt up
 #
-# `load()` in Starlark always re-evaluates the loaded file's top-level
-# code (caching the result). So we keep the top-level body lean: just
-# the function definition and a single guarded standalone invocation
-# at the bottom. No side effects fire when the function is merely
-# imported.
+# The playground will run at http://localhost:5174 and talk to whatever
+# LiteLLM proxy you've configured (VITE_LITELLM_URL env var, defaults to
+# the deployed litellm.talos00). Tool-call features (web_search,
+# browse_page) require tool-host — bring it up via the root Tiltfile:
+#
+#   cd ../..
+#   tilt up                     # k3d cluster + native ollama + tool-host
+#
+# Then the playground here can target tool-host at http://localhost:7077.
 
 load('ext://uibutton', 'cmd_button')
 
+SDK_DIR = config.main_dir
+PLAYGROUND_DIR = os.path.join(SDK_DIR, 'examples/playground')
+SDK_SRC = os.path.join(SDK_DIR, 'src')
 
-def setup_sdk(repo_root, owns_compose=False):
-    """Declare the SDK's Tilt resources.
+# ─── SDK build:watch ────────────────────────────────────────────────
+# Re-emits dist/ on every src/ change. The playground link:'s the SDK
+# package so a rebuilt dist/ triggers Vite's hot reload.
+local_resource(
+    name='sdk-build',
+    labels=['sdk'],
+    cmd='yarn --cwd ' + SDK_DIR + ' build',
+    serve_cmd='yarn --cwd ' + SDK_DIR + ' build:watch',
+    deps=[SDK_SRC],
+    ignore=[os.path.join(SDK_DIR, 'dist')],
+)
 
-    Args:
-        repo_root: absolute path to the repo root (where
-            docker-compose.yaml lives). Both standalone and included
-            callers compute this from `config.main_dir`.
-        owns_compose: when True, this function calls docker_compose()
-            and dc_resource('searxng', ...) — used when no parent
-            Tiltfile has declared them. Set false when called from
-            the root dev.tiltfile.
-    """
-    sdk_dir = os.path.join(repo_root, 'packages/catalyst-llm-sdk')
-    playground_dir = os.path.join(sdk_dir, 'examples/playground')
-    sdk_src = os.path.join(sdk_dir, 'src')
+cmd_button(
+    name='btn-sdk-typecheck',
+    resource='sdk-build',
+    argv=['sh', '-c', 'cd ' + SDK_DIR + ' && yarn typecheck'],
+    text='Typecheck',
+    icon_name='checklist',
+)
 
-    # ─── docker-compose ownership (standalone only) ─────────────────
-    # When this Tiltfile is the entrypoint, no parent has declared
-    # the compose project. Pull it in and label searxng (tool-host's
-    # dependency) ourselves.
-    if owns_compose:
-        docker_compose(os.path.join(repo_root, 'docker-compose.yaml'))
+cmd_button(
+    name='btn-sdk-test',
+    resource='sdk-build',
+    argv=['sh', '-c', 'cd ' + SDK_DIR + ' && yarn test'],
+    text='Run tests',
+    icon_name='science',
+)
 
-        dc_resource('searxng',
-            labels=['tools'],
-            links=[
-                link('http://localhost:8888', 'SearXNG Search'),
-            ],
-        )
+# ─── Playground vite dev server ──────────────────────────────────────
+local_resource(
+    name='playground',
+    labels=['ui', 'sdk'],
+    serve_cmd='yarn --cwd ' + PLAYGROUND_DIR + ' dev --port 5174 --host',
+    deps=[os.path.join(PLAYGROUND_DIR, 'src')],
+    resource_deps=['sdk-build'],
+    readiness_probe=probe(
+        http_get=http_get_action(port=5174, path='/'),
+        initial_delay_secs=3,
+        period_secs=5,
+    ),
+    links=[
+        link('http://localhost:5174', 'Playground'),
+        link('http://localhost:5174/stats', 'Stats (DuckDB)'),
+        link('http://localhost:5174/prompts', 'Prompt Registry'),
+        link('http://localhost:5174/compare', 'Compare'),
+    ],
+)
 
-        cmd_button(
-            name='btn-test-searxng-sdk',
-            resource='searxng',
-            argv=['sh', '-c', 'curl -s "http://localhost:8888/search?q=test&format=json" | jq ".results[:3]"'],
-            text='Test JSON API',
-            icon_name='science',
-        )
+cmd_button(
+    name='btn-open-playground',
+    resource='playground',
+    argv=['open', 'http://localhost:5174'],
+    text='Open Browser',
+    icon_name='open_in_new',
+)
 
-    # ─── tool-host ─────────────────────────────────────────────────
-    dc_resource('tool-host',
-        labels=['tools', 'sdk'],
-        resource_deps=['searxng'],
-        links=[
-            link('http://localhost:7077/healthz', 'Health'),
-            link('http://localhost:7077/v1/tools', 'Registered Tools'),
-            link('http://localhost:7077/docs', 'OpenAPI Docs'),
-        ],
-    )
+cmd_button(
+    name='btn-playground-install',
+    resource='playground',
+    argv=['sh', '-c', 'cd ' + PLAYGROUND_DIR + ' && yarn install'],
+    text='yarn install',
+    icon_name='download',
+)
 
-    cmd_button(
-        name='btn-test-tool-host',
-        resource='tool-host',
-        argv=['sh', '-c',
-            'curl -s -X POST http://localhost:7077/v1/tools/web_search ' +
-            '-H "Content-Type: application/json" ' +
-            '-d \'{"query":"qwen3-vl release notes","n":3}\' | jq'],
-        text='Test web_search',
-        icon_name='science',
-    )
-
-    cmd_button(
-        name='btn-restart-tool-host',
-        resource='tool-host',
-        argv=['docker', 'restart', 'catalyst-tool-host'],
-        text='Restart',
-        icon_name='restart_alt',
-    )
-
-    cmd_button(
-        name='btn-rebuild-tool-host',
-        resource='tool-host',
-        argv=['sh', '-c', 'cd ' + repo_root + ' && docker compose up -d --build tool-host'],
-        text='Rebuild Image',
-        icon_name='build',
-    )
-
-    # ─── SDK build:watch ───────────────────────────────────────────
-    # Re-emits dist/ on every src/ change. The playground link:'s the
-    # SDK package, so a rebuilt dist/ triggers vite's hot reload.
-    local_resource(
-        name='sdk-build',
-        labels=['sdk'],
-        cmd='yarn --cwd ' + sdk_dir + ' build',
-        serve_cmd='yarn --cwd ' + sdk_dir + ' build:watch',
-        deps=[sdk_src],
-        ignore=[os.path.join(sdk_dir, 'dist')],
-    )
-
-    # ─── Playground vite dev server ────────────────────────────────
-    local_resource(
-        name='playground',
-        labels=['ui', 'sdk'],
-        serve_cmd='yarn --cwd ' + playground_dir + ' dev --port 5174 --host',
-        deps=[os.path.join(playground_dir, 'src')],
-        resource_deps=['sdk-build', 'tool-host'],
-        readiness_probe=probe(
-            http_get=http_get_action(port=5174, path='/'),
-            initial_delay_secs=3,
-            period_secs=5,
-        ),
-        links=[
-            link('http://localhost:5174', 'Playground'),
-            link('http://localhost:5174/stats', 'Stats (DuckDB)'),
-            link('http://localhost:5174/prompts', 'Prompt Registry'),
-            link('http://localhost:5174/compare', 'Compare'),
-        ],
-    )
-
-    cmd_button(
-        name='btn-open-playground',
-        resource='playground',
-        argv=['open', 'http://localhost:5174'],
-        text='Open Browser',
-        icon_name='open_in_new',
-    )
-
-    cmd_button(
-        name='btn-playground-install',
-        resource='playground',
-        argv=['sh', '-c', 'cd ' + playground_dir + ' && yarn install'],
-        text='yarn install',
-        icon_name='download',
-    )
-
-    cmd_button(
-        name='btn-sdk-typecheck',
-        resource='sdk-build',
-        argv=['sh', '-c', 'cd ' + sdk_dir + ' && yarn typecheck'],
-        text='Typecheck',
-        icon_name='checklist',
-    )
-
-    cmd_button(
-        name='btn-sdk-test',
-        resource='sdk-build',
-        argv=['sh', '-c', 'cd ' + sdk_dir + ' && yarn test'],
-        text='Run tests',
-        icon_name='science',
-    )
-
-
-# ─── Standalone entrypoint guard ─────────────────────────────────────
-# When `tilt up` runs from inside this directory, this Tiltfile is the
-# entrypoint and `config.main_dir` points here. When the root
-# tilt/dev.tiltfile loads us via `load(...)`, `config.main_dir` is the
-# repo root. The check below makes standalone usage automatic without
-# firing twice on the loaded path.
-if config.main_dir.endswith('catalyst-llm-sdk'):
-    setup_sdk(
-        repo_root=os.path.realpath(os.path.join(config.main_dir, '..', '..')),
-        owns_compose=True,
-    )
-
-    print('')
-    print('────────────────────────────────────────────────────')
-    print('  catalyst-llm-sdk · standalone dev mode')
-    print('────────────────────────────────────────────────────')
-    print('  Playground  http://localhost:5174')
-    print('  Tool host   http://localhost:7077/docs')
-    print('  SearXNG     http://localhost:8888')
-    print('  Tilt UI     http://localhost:10350')
-    print('')
-    print('  For full stack (open-webui, ollama, etc.), `tilt up`')
-    print('  from the repo root.')
-    print('────────────────────────────────────────────────────')
+print('')
+print('────────────────────────────────────────────────────')
+print('  catalyst-llm-sdk · standalone (playground-only)')
+print('────────────────────────────────────────────────────')
+print('  Playground   http://localhost:5174')
+print('  Tilt UI      http://localhost:10350')
+print('')
+print('  This mode runs the Vite playground + SDK build-watch only.')
+print('  For tool-host / Ollama / the full UI stack, use the root')
+print('  Tiltfile:')
+print('      cd ../..   &&   tilt up')
+print('────────────────────────────────────────────────────')
