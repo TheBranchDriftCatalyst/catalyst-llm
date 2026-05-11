@@ -31,7 +31,10 @@ from langchain_core.messages import (
 )
 from sse_starlette.sse import EventSourceResponse
 
+import httpx
+
 from . import __version__
+from .client import CatalystLiteLLMClient
 from .events import (
     AgentEvent,
     ChatStreamRequest,
@@ -44,6 +47,7 @@ from .events import (
     ToolCallStart,
 )
 from .graph import build_graph
+from .tools.host import ALL_TOOLS, TOOL_HOST_API_KEY, TOOL_HOST_URL
 
 log = logging.getLogger("catalyst-langgraph")
 logging.basicConfig(
@@ -255,6 +259,85 @@ async def chat_stream(req: ChatStreamRequest) -> EventSourceResponse:
             yield _to_sse(ev)
 
     return EventSourceResponse(gen())
+
+
+# ───────────────────────────────────────────────────────────────────────
+# Discovery — /api/models proxies LiteLLM, /api/tools mirrors what the
+# agent can call. UIs use these to populate dropdowns / toggles.
+# ───────────────────────────────────────────────────────────────────────
+
+
+@app.get("/api/models")
+def list_models() -> dict[str, Any]:
+    """Return the union of /v1/models + /model/info from LiteLLM.
+
+    Same shape we used in the TS SDK (see CatalystLLMClient.getModelsWithRouting):
+    each entry is {id, endpoint?, metadata?, underlyingModel?} so the UI can
+    render the same chips/dropdowns it does today."""
+    client = CatalystLiteLLMClient()
+    models = client.get_models() or []
+    info_list = client.get_model_info() or []
+    info_by_name = {
+        entry.get("model_name"): entry
+        for entry in info_list
+        if isinstance(entry, dict) and entry.get("model_name")
+    }
+    out = []
+    for mid in models:
+        entry = info_by_name.get(mid) or {}
+        litellm_params = entry.get("litellm_params") or {}
+        out.append(
+            {
+                "id": mid,
+                "underlying_model": litellm_params.get("model"),
+                "api_base": litellm_params.get("api_base"),
+                "metadata": entry.get("model_info"),
+            }
+        )
+    return {"data": out}
+
+
+@app.get("/api/tools")
+async def list_tools() -> dict[str, Any]:
+    """Return the tools the agent can dispatch.
+
+    Source of truth is the local ALL_TOOLS registry (since that's what
+    LangGraph would actually invoke), enriched with tool-host's own
+    /v1/tools list so an operator can spot drift between what we expose
+    and what the executor implements."""
+    local = [
+        {
+            "name": t.name,
+            "description": (t.description or "").strip(),
+            "args_schema": (
+                t.args_schema.model_json_schema()
+                if t.args_schema is not None
+                else None
+            ),
+        }
+        for t in ALL_TOOLS.values()
+    ]
+
+    host_status: dict[str, Any] = {"reachable": False}
+    try:
+        async with httpx.AsyncClient(timeout=5) as ac:
+            headers = (
+                {"Authorization": f"Bearer {TOOL_HOST_API_KEY}"}
+                if TOOL_HOST_API_KEY
+                else {}
+            )
+            resp = await ac.get(f"{TOOL_HOST_URL}/v1/tools", headers=headers)
+            if resp.status_code == 200:
+                host_status = {"reachable": True, **resp.json()}
+            else:
+                host_status = {
+                    "reachable": False,
+                    "status_code": resp.status_code,
+                }
+    except httpx.HTTPError as exc:
+        host_status = {"reachable": False, "error": str(exc)}
+
+    return {"tools": local, "tool_host": host_status}
 
 
 def main() -> None:
