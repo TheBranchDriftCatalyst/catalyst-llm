@@ -30,12 +30,21 @@ spec:
               containerPort: 8080
               protocol: TCP
           env:
-            # Ollama connection - configurable via configmap/secret
-            - name: OLLAMA_BASE_URL
+            # All chat traffic routes through the LiteLLM proxy
+            # (deployed at litellm.talos00). Configmap supplies the
+            # env-appropriate URL; the auth key comes from the
+            # `litellm-secrets` Secret (provided by ESO/1Password in
+            # talos00; by a secretGenerator in the local overlay).
+            - name: OPENAI_API_BASE_URL
               valueFrom:
                 configMapKeyRef:
                   name: catalyst-llm-config
-                  key: OLLAMA_BASE_URL
+                  key: LITELLM_BASE_URL
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-secrets
+                  key: master-key
             # Disable telemetry
             - name: SCARF_NO_ANALYTICS
               value: "true"
@@ -44,11 +53,11 @@ spec:
             # Auth settings
             - name: WEBUI_AUTH
               value: "true"
-            # API settings
+            # API settings — OpenAI-compatible (LiteLLM), Ollama off
             - name: ENABLE_OPENAI_API
-              value: "false"
-            - name: ENABLE_OLLAMA_API
               value: "true"
+            - name: ENABLE_OLLAMA_API
+              value: "false"
             # RAG settings
             - name: RAG_EMBEDDING_MODEL
               value: "sentence-transformers/all-MiniLM-L6-v2"

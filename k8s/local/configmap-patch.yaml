@@ -9,5 +9,7 @@ kind: ConfigMap
 metadata:
   name: catalyst-llm-config
 data:
+  # Pods in k3d reach the deployed proxy via its talos00 ingress.
+  LITELLM_BASE_URL: "http://litellm.talos00/v1"
   OLLAMA_BASE_URL: "http://ollama:11434"
   SEARXNG_BASE_URL: "http://searxng.local.lan/"

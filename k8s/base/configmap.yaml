@@ -14,10 +14,16 @@ metadata:
     app.kubernetes.io/name: catalyst-llm-config
     app.kubernetes.io/part-of: catalyst-llm
 data:
-  # In-cluster default — UIs resolve `ollama` Service in the catalyst-llm
-  # namespace. The k8s/local overlay swaps this for an ExternalName Service
-  # pointing at host.k3d.internal so the cluster reaches the Mac's native
-  # Ollama. talos00 keeps the in-cluster default (or patches as needed).
+  # LiteLLM proxy endpoint — UIs route all chat traffic through this.
+  # Overlays patch with the env-appropriate URL:
+  #   talos00 → http://litellm.catalyst-llm.svc.cluster.local:4000/v1
+  #             (in-cluster, no ingress hop)
+  #   local   → http://litellm.talos00/v1
+  #             (UI in k3d → external ingress to the talos cluster)
+  LITELLM_BASE_URL: "http://litellm:4000/v1"
+
+  # Kept for callers that still want direct Ollama access (the
+  # ExternalName service in k8s/local maps `ollama` → host.k3d.internal).
   OLLAMA_BASE_URL: "http://ollama:11434"
 
   # External SearXNG URL — overlays patch this per environment.

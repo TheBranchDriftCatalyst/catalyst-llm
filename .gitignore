@@ -38,3 +38,4 @@ apps/prompt-playground/catalyst-ui
 .dolt/
 *.db
 .beads-credential-key
+k8s/local/litellm-secrets.env

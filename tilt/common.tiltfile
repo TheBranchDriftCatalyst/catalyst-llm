@@ -208,13 +208,20 @@ Service URLs (dev cluster ingress, k3d Traefik):
   - Prompt Play:  http://localhost:5174    (dev playground + streaming)
   - Open WebUI:   http://openwebui.local.lan
   - LobeChat:     http://lobechat.local.lan
-  - SillyTavern:  http://sillytavern.local.lan
   - SearXNG:      http://searxng.local.lan
-  - Ollama API:   http://localhost:11434   (native)
+  - Ollama API:   http://localhost:11434   (native, direct access)
 
-LLM proxy (remote):  http://litellm.talos00
-  Override per service via the LITELLM_URL configmap key in
-  k8s/local/configmap-patch.yaml when targeting a different host.
+All chat traffic routes through the LiteLLM proxy:
+  - URL:   http://litellm.talos00 (configurable via the LITELLM_BASE_URL
+           key in k8s/local/configmap-patch.yaml)
+  - Auth:  cluster UIs pull `master-key` from the `litellm-secrets`
+           Secret. In dev we generate it via kustomize secretGenerator
+           from k8s/local/litellm-secrets.env (gitignored — copy from
+           .example and fill in).
+  - Playground: reads VITE_LITELLM_URL/VITE_LITELLM_KEY from your shell
+           (direnv handles this if .envrc is loaded). Defaults point at
+           http://litellm.talos00 with no key; auth will 401 if you
+           skip the key.
 
 Models: packages/mac-node/models.yaml is the only list.
         Tilt buttons, LiteLLM config, tests, and download scripts

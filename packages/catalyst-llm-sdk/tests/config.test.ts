@@ -30,7 +30,8 @@ describe("LLMConfig", () => {
 
   it("uses defaults when nothing is set", () => {
     const c = new LLMConfig();
-    expect(c.baseUrl).toBe("http://localhost:4000");
+    // Default points at the deployed LiteLLM proxy — see config.ts.
+    expect(c.baseUrl).toBe("http://litellm.talos00");
     expect(c.apiKey).toBe("");
   });
 

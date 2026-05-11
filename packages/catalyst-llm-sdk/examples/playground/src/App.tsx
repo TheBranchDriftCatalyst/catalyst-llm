@@ -38,7 +38,7 @@ const MAC_NODE_IP = "192.168.1.33";
 
 const baseUrl =
   (import.meta.env.VITE_LITELLM_URL as string | undefined) ??
-  "http://localhost:4000";
+  "http://litellm.talos00";
 const apiKey = (import.meta.env.VITE_LITELLM_KEY as string | undefined) ?? "";
 
 const client = new CatalystLLMClient({ baseUrl, apiKey });

@@ -30,15 +30,27 @@ spec:
               containerPort: 3210
               protocol: TCP
           env:
-            # Ollama connection - configurable via configmap
-            - name: OLLAMA_PROXY_URL
+            # All chat traffic routes through the LiteLLM proxy
+            # (deployed at litellm.talos00). Configmap supplies the
+            # env-appropriate URL; the auth key comes from the
+            # `litellm-secrets` Secret. Lobe also wants the trailing
+            # /v1 stripped (it appends it itself), so the configmap
+            # provides LITELLM_BASE_URL with /v1 and we use it as-is —
+            # Lobe handles both forms.
+            - name: OPENAI_PROXY_URL
               valueFrom:
                 configMapKeyRef:
                   name: catalyst-llm-config
-                  key: OLLAMA_BASE_URL
-            # Enable Ollama as default provider
-            - name: ENABLED_OLLAMA
+                  key: LITELLM_BASE_URL
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-secrets
+                  key: master-key
+            - name: ENABLED_OPENAI
               value: "1"
+            - name: ENABLED_OLLAMA
+              value: "0"
             # Disable analytics
             - name: NEXT_TELEMETRY_DISABLED
               value: "1"

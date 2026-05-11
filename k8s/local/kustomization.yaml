@@ -22,6 +22,16 @@ resources:
   - ollama-externalname.yaml
   - tool-host.yaml
 
+# The `litellm-secrets` Secret matches what the talos00 overlay gets
+# from External Secrets Operator (1Password). In dev we generate it
+# locally from a gitignored .env file the developer maintains.
+secretGenerator:
+  - name: litellm-secrets
+    envs:
+      - litellm-secrets.env
+    options:
+      disableNameSuffixHash: true
+
 patches:
   - path: configmap-patch.yaml
     target:

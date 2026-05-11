@@ -5,7 +5,11 @@ export interface LLMConfigInit {
   fetch?: typeof fetch;
 }
 
-const DEFAULT_BASE_URL = "http://localhost:4000";
+// Deployed LiteLLM proxy is the canonical default. Stays in sync with
+// packages/catalyst-llm-sdk/examples/playground/.env.example. Override
+// with VITE_LITELLM_URL / LITELLM_URL when developing against a local
+// proxy.
+const DEFAULT_BASE_URL = "http://litellm.talos00";
 const DEFAULT_API_KEY = "";
 
 const DEFAULT_BASE_URL_ENV = [
