@@ -47,7 +47,8 @@ from .events import (
     ToolCallStart,
 )
 from .graph import build_graph
-from .tools.host import ALL_TOOLS, TOOL_HOST_API_KEY, TOOL_HOST_URL
+from .tools import ALL_TOOLS
+from .tools.host import TOOL_HOST_API_KEY, TOOL_HOST_URL
 
 log = logging.getLogger("catalyst-langgraph")
 logging.basicConfig(

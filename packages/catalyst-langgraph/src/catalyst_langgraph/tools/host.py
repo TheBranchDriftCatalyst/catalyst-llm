@@ -69,19 +69,20 @@ def web_search(query: str, n: int = 5, time_range: Optional[str] = None) -> str:
     return "\n".join(lines)
 
 
-# Registry — maps the public tool name (the model-facing name) to the
-# LangChain Tool. Keep this in sync with what tool-host implements.
+# Local registry kept for legacy importers / partial-rollout safety.
+# The canonical, merged registry (host tools + sub-agent tools) lives
+# in `tools/__init__.py`; new code should import from there.
 ALL_TOOLS = {
     "web_search": web_search,
 }
 
 
 def get_tools(names: Optional[list[str]] = None) -> list:
-    """Return the LangChain Tool objects matching the requested names.
+    """Deprecated: prefer `from catalyst_langgraph.tools import get_tools`.
 
-    If `names` is None, all registered tools are returned. Unknown names
-    are silently dropped — the caller (the API layer) is the right place
-    to validate the tool list against what the user is allowed to use.
+    Returns only the host-level tools so this remains safe to call from
+    older code paths. The package-level `get_tools` covers sub-agent
+    tools too.
     """
     if names is None:
         return list(ALL_TOOLS.values())
