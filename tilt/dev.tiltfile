@@ -3,8 +3,12 @@
 # This mode runs services locally for development:
 # - Ollama: Native process with Metal GPU acceleration
 # - Open WebUI, SillyTavern, LobeChat, SearXNG: Docker containers
-# - LiteLLM: Docker container as unified proxy
+# - Tool-host: FastAPI sidecar for the SDK's tool-call loop
 # - Prompt Playground: Local Vite dev server
+#
+# LiteLLM proxy is deployed at http://litellm.talos00 — it is no longer
+# brought up locally. Set LITELLM_URL in your shell to point the
+# compose services at a different host.
 #
 # Usage: tilt up (default) or tilt up -- --mode=dev
 
@@ -43,7 +47,7 @@ def setup_dev():
     # Open WebUI
     dc_resource('open-webui',
         labels=['llm'],
-        resource_deps=['ollama', 'litellm'],
+        resource_deps=['ollama'],
         links=[
             link('http://localhost:3030', 'Open WebUI'),
         ]
@@ -139,7 +143,7 @@ def setup_dev():
     # LobeChat
     dc_resource('lobe-chat',
         labels=['llm'],
-        resource_deps=['ollama', 'litellm'],
+        resource_deps=['ollama'],
         links=[
             link('http://localhost:3210', 'LobeChat'),
         ]
@@ -161,39 +165,10 @@ def setup_dev():
         icon_name='refresh'
     )
 
-    # LiteLLM
-    dc_resource('litellm',
-        labels=['llm'],
-        resource_deps=['ollama'],
-        links=[
-            link('http://localhost:4000', 'LiteLLM API'),
-            link('http://localhost:4000/ui', 'LiteLLM UI'),
-        ]
-    )
-
-    cmd_button(
-        name='btn-open-litellm',
-        resource='litellm',
-        argv=['open', 'http://localhost:4000/ui'],
-        text='Open UI',
-        icon_name='open_in_new'
-    )
-
-    cmd_button(
-        name='btn-restart-litellm',
-        resource='litellm',
-        argv=['docker', 'restart', 'litellm'],
-        text='Restart',
-        icon_name='refresh'
-    )
-
-    cmd_button(
-        name='btn-litellm-models',
-        resource='litellm',
-        argv=['sh', '-c', 'curl -s http://localhost:4000/v1/models | jq ".data[].id"'],
-        text='List Models',
-        icon_name='list'
-    )
+    # NOTE: LiteLLM proxy lives at http://litellm.talos00 — it is not
+    # brought up locally. The compose services target it directly via
+    # the LITELLM_URL env (see docker-compose.yaml). No dc_resource
+    # here intentionally.
 
     # NOTE: Prompt Playground (vite dev server on :5174) is owned by
     # the catalyst-llm-sdk Tiltfile, included via setup_sdk above.

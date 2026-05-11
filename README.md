@@ -48,24 +48,23 @@ Self-hosted uncensored LLM stack running locally with web search, MCP tools, and
 │          │                │                │                │        │
 │          └────────────────┼────────────────┘                │        │
 │                           │                                 │        │
-│                           ▼                                 │        │
-│   ┌───────────────────────────────────────┐                │        │
-│   │         LiteLLM (Proxy)               │◄───────────────┘        │
-│   │         localhost:4000                │                          │
-│   │   Unified API for all LLM providers   │                          │
-│   └───────────────┬───────────────────────┘                          │
-│                   │                                                  │
-│         ┌─────────┼─────────┬─────────────────┐                      │
-│         ▼         ▼         ▼                 ▼                      │
-│   ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐               │
-│   │ Ollama   │ │ OpenAI   │ │Anthropic │ │  Other   │               │
-│   │ :11434   │ │ (cloud)  │ │ (cloud)  │ │ Providers│               │
-│   │ (native) │ │          │ │          │ │          │               │
-│   └──────────┘ └──────────┘ └──────────┘ └──────────┘               │
-│                                                                       │
-│   Models: dolphin-mistral, llama3.2, gpt-4o, claude-sonnet-4, etc.   │
-│                                                                       │
-└──────────────────────────────────────────────────────────────────────┘
+└───────────────────────────┼─────────────────────────────────┼────────┘
+                            │                                 │
+                            ▼  (out-of-cluster proxy)         │
+                ┌───────────────────────────┐                 │
+                │  LiteLLM @ litellm.talos00 │                │
+                │  Unified API for all LLMs  │                │
+                └─────────────┬─────────────┘                 │
+                              │                               │
+                  ┌───────────┼───────────┬─────────┐         │
+                  ▼           ▼           ▼         ▼         │
+            ┌──────────┐ ┌─────────┐ ┌─────────┐ ┌────────┐   │
+            │ Ollama   │ │ OpenAI  │ │Anthropic│ │ Other  │   │
+            │ :11434   │ │ (cloud) │ │ (cloud) │ │Providers│  │
+            │ (native) │ │         │ │         │ │        │   │
+            └──────────┘ └─────────┘ └─────────┘ └────────┘   │
+                                                              │
+   Models: dolphin-mistral, llama3.2, gpt-4o, claude-sonnet-4, …
 ```
 
 ## Quick Start
@@ -97,8 +96,9 @@ open http://localhost:8888   # SearXNG (search engine)
 | LobeChat | 3210 | Modern UI with plugin ecosystem |
 | SillyTavern | 8000 | Roleplay with character cards |
 | SearXNG | 8888 | Privacy-focused metasearch |
-| LiteLLM | 4000 | OpenAI-compatible proxy (Ollama + cloud) |
+| Tool host | 7077 | FastAPI sidecar for the SDK tool-call loop |
 | Ollama | 11434 | LLM inference (native, Metal GPU) |
+| LiteLLM | — | OpenAI-compatible proxy — runs out-of-cluster at `http://litellm.talos00`. Override with `LITELLM_URL`. |
 
 ## Commands
 
@@ -164,9 +164,9 @@ catalyst-llm/
 ├── data/                  # Persistent data (gitignored)
 │   ├── ollama/           # Model weights (local only)
 │   └── open-webui/       # Chat history, users
-├── config/               # Service configurations
+├── config/               # Service configurations (local-only — LiteLLM
+│   │                      #   config lives with the deployment in k8s/)
 │   ├── searxng/          # SearXNG search engine config
-│   ├── litellm/          # LiteLLM proxy config
 │   └── sillytavern-config.yaml
 ├── scripts/
 │   ├── pull-models.sh    # Batch download models
@@ -220,11 +220,11 @@ LiteLLM provides a unified OpenAI-compatible API for all LLM providers:
 | OpenAI | gpt-4o, gpt-4o-mini | Set `OPENAI_API_KEY` |
 | Anthropic | claude-sonnet-4, claude-opus-4 | Set `ANTHROPIC_API_KEY` |
 
-**Usage**: All UIs connect through LiteLLM at `localhost:4000`. Cloud models require API keys in `.env`.
+**Usage**: All UIs connect through the deployed LiteLLM proxy at `http://litellm.talos00`. Cloud models require API keys configured on the proxy itself (talos cluster), not in this repo. Override with `LITELLM_URL` if you point at a different host.
 
-**Configuration**: Edit `config/litellm/config.yaml` to add/remove models.
+**Configuration**: Live config lives with the deployment in `k8s/base/litellm/`. Local edits to `config/` no longer affect anything because the proxy is no longer brought up by docker-compose.
 
-**UI**: Access the LiteLLM admin UI at http://localhost:4000/ui
+**UI**: Access the LiteLLM admin UI at `http://litellm.talos00/ui`.
 
 ## LobeChat Features
 
@@ -331,22 +331,17 @@ search:
 ```
 
 ### LobeChat can't connect to Ollama
-Verify LiteLLM is running and Ollama is accessible:
+Verify the deployed LiteLLM proxy is reachable and Ollama is up:
 ```bash
-curl http://localhost:4000/health
+curl http://litellm.talos00/health
 curl http://localhost:11434/api/tags
 ```
 
 ### LiteLLM not working
-Check the logs and verify config:
+The proxy lives in the talos cluster. Check it from there:
 ```bash
-docker logs litellm
-curl http://localhost:4000/v1/models
+kubectl -n catalyst-llm logs deploy/litellm --tail=200
+curl http://litellm.talos00/v1/models
 ```
-
-### Cloud models not available
-Ensure API keys are set in `.env`:
-```bash
-grep -E "OPENAI_API_KEY|ANTHROPIC_API_KEY" .env
-# Should show non-empty values for cloud provider access
-```
+Cloud-provider keys (OpenAI / Anthropic / etc.) are configured on the
+deployment, not in this repo's `.env`.

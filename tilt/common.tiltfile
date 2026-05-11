@@ -245,8 +245,11 @@ Web UIs:
   - LobeChat:     http://localhost:3210 (modern UI + plugins)
   - SillyTavern:  http://localhost:8000 (roleplay, character cards)
   - SearXNG:      http://localhost:8888 (web search engine)
-  - LiteLLM:      http://localhost:4000 (proxy API + UI)
+  - Tool host:    http://localhost:7077 (SDK tool-call sidecar)
   - Ollama API:   http://localhost:11434
+
+LLM Proxy (out-of-cluster): http://litellm.talos00
+  Override via LITELLM_URL when targeting a different host.
 
 Web Search: Open WebUI can search the web via SearXNG.
             Enable "Web Search" toggle in the chat interface.
