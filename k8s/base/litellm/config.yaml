@@ -98,12 +98,12 @@ model_list:
 
   - model_name: mac/qwen3-coder-opus
     litellm_params:
-      model: ollama/qwen3-coder-opus:Q8_0
+      model: ollama/qwen3-coder-opus:Q6_K
       api_base: http://192.168.1.33:11434
     model_info:
-      description: Qwen3-Coder-Next (~80B base) + Opus-4.6 reasoning distill (samuelcardillo, full SFT) @ Q8_0 (~85GB) — Opus-style
-        multi-step planning at max available quality. Reasoning distills benefit from higher quants (CoT noise compounds). ChatML;
-        temp 0.6. - Mac M5 Max Metal
+      description: Qwen3-Coder-Next (~80B base) + Opus-4.6 reasoning distill (samuelcardillo, full SFT) @ Q6_K (~65GB) — Opus-style
+        multi-step planning. Reasoning distills benefit from higher quants (CoT noise compounds). ChatML; temp 0.6. - Mac M5
+        Max Metal
       supports_reasoning: true
       supports_function_calling: true
 

@@ -147,25 +147,23 @@ ollama:
     # temp than RP defaults — these are reasoning models).
     # IMPORTANT: Qwen3-Coder-Next is ~80B class (NOT 30B). Verified
     # against HF file sizes: Q4_K_M=48GB, Q5_K_M=57GB, Q6_K=65GB,
-    # Q8_0=85GB, BF16=159GB. We keep these as the heaviest mac-side
-    # coding models — Q8 for the clean SFT (max quality available),
-    # Q6_K for the abliterated (mradermacher i1 caps at Q6_K, and at
-    # Q8 the imatrix calibration gains are marginal anyway).
-    #
-    # On 128GB the 85GB Q8 fits comfortably as a single-loaded model
-    # (we already accept 73GB for behemoth-x). Don't load it
-    # simultaneously with hermes-4-70b @ Q5 (50GB) — Ollama's default
-    # OLLAMA_MAX_LOADED_MODELS=1 handles this for you.
-    - name: qwen3-coder-opus:Q8_0
+    # Q8_0=85GB, BF16=159GB. Both Opus-distilled coding entries land
+    # at Q6_K — the mradermacher i1 sibling caps at Q6_K, and the
+    # samuelcardillo Q8_0 has a verifiably broken CAS chunk in HF's
+    # storage that wedges hf-download on the last ~130MB (2x reproduced
+    # 2026-05-10). Q6_K is the sweet spot anyway: noticeable quality
+    # bump over Q4_K_M without the Q8 tail-fetch lottery, and ~65GB
+    # leaves plenty of KV headroom on 128GB unified memory.
+    - name: qwen3-coder-opus:Q6_K
       alias: qwen3-coder-opus
-      description: "Qwen3-Coder-Next (~80B base) + Opus-4.6 reasoning distill (samuelcardillo, full SFT) @ Q8_0 (~85GB) — Opus-style multi-step planning at max available quality. Reasoning distills benefit from higher quants (CoT noise compounds). ChatML; temp 0.6."
+      description: "Qwen3-Coder-Next (~80B base) + Opus-4.6 reasoning distill (samuelcardillo, full SFT) @ Q6_K (~65GB) — Opus-style multi-step planning. Reasoning distills benefit from higher quants (CoT noise compounds). ChatML; temp 0.6."
       tags: [coding, reasoning, distillation, claude-opus]
       category: serving
       target: [mac]
       pull:
         strategy: merge-gguf
         hf_repo: "samuelcardillo/Qwen3-Coder-Next-Opus-4.6-Reasoning-Distilled-GGUF"
-        hf_pattern: "*Q8_0*.gguf"
+        hf_pattern: "*Q6_K*.gguf"
 
     - name: qwen3-coder-opus-uncensored:i1-Q6_K
       alias: qwen3-coder-opus-uncensored
