@@ -126,6 +126,46 @@ def setup_dev():
         icon_name='science'
     )
 
+    # Tool Host — FastAPI sidecar that executes catalyst-llm-sdk
+    # tool calls. Currently fronts SearXNG via /v1/tools/web_search;
+    # browse_page (Playwright) lands in the next pass.
+    dc_resource('tool-host',
+        labels=['tools'],
+        resource_deps=['searxng'],
+        links=[
+            link('http://localhost:7077/healthz', 'Health'),
+            link('http://localhost:7077/v1/tools', 'Registered Tools'),
+            link('http://localhost:7077/docs', 'OpenAPI Docs'),
+        ]
+    )
+
+    cmd_button(
+        name='btn-test-tool-host',
+        resource='tool-host',
+        argv=['sh', '-c',
+            'curl -s -X POST http://localhost:7077/v1/tools/web_search '
+            '-H "Content-Type: application/json" '
+            '-d \'{"query":"qwen3-vl release notes","n":3}\' | jq'],
+        text='Test web_search',
+        icon_name='science'
+    )
+
+    cmd_button(
+        name='btn-restart-tool-host',
+        resource='tool-host',
+        argv=['docker', 'restart', 'catalyst-tool-host'],
+        text='Restart',
+        icon_name='restart_alt'
+    )
+
+    cmd_button(
+        name='btn-rebuild-tool-host',
+        resource='tool-host',
+        argv=['docker', 'compose', 'up', '-d', '--build', 'tool-host'],
+        text='Rebuild Image',
+        icon_name='build'
+    )
+
     # LobeChat
     dc_resource('lobe-chat',
         labels=['llm'],
