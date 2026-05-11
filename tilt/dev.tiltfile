@@ -13,7 +13,7 @@ load('ext://local_output', 'local_output')
 # SDK package owns its own dev resources (tool-host, sdk-build,
 # playground). load() must live at module level in Starlark, so we
 # pull `setup_sdk` here and invoke it from inside setup_dev() below.
-load('../packages/catalyst-llm-sdk/tilt/sdk.tiltfile', 'setup_sdk')
+load('../packages/catalyst-llm-sdk/Tiltfile', 'setup_sdk')
 
 def setup_dev():
     """Configure all dev mode resources."""
