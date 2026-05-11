@@ -14,6 +14,7 @@ import type {
   Model,
   ModelInfo,
   ModelWithRouting,
+  StreamMeta,
 } from "./types.js";
 import type {
   ToolCallEvent,
@@ -196,16 +197,23 @@ export class CatalystLLMClient {
 
         while (true) {
           const params = await filterParams(req.model, req.params);
+          // When tools are registered we must request non-streaming.
+          // LiteLLM+Ollama emit streaming tool calls as plain
+          // `delta.content` chunks (the JSON gets built up char-by-char
+          // in the text channel) instead of the `delta.tool_calls`
+          // deltas the OpenAI spec calls for, so the stream parser
+          // can never reconstruct a real tool_calls array. Non-streaming
+          // returns a proper `message.tool_calls` field on the same
+          // backends, so we use that whenever tools could fire.
+          const hasTools = !!(tools && tools.list().length > 0);
           const body: Record<string, unknown> = {
             model: req.model,
             messages,
-            stream: true,
-            stream_options: { include_usage: true },
+            stream: !hasTools,
+            ...(hasTools ? {} : { stream_options: { include_usage: true } }),
             ...(params ?? {}),
           };
-          if (tools && tools.list().length > 0) {
-            body.tools = tools.toOpenAI();
-          }
+          if (hasTools) body.tools = tools!.toOpenAI();
           const resp = await config.fetchImpl(
             `${config.baseUrl}/v1/chat/completions`,
             {
@@ -225,10 +233,40 @@ export class CatalystLLMClient {
           // so we can decide whether to dispatch tools and loop.
           let assistantContent = "";
           let pendingCalls: AssistantToolCall[] | undefined;
-          for await (const chunk of parseSSEChunks(resp)) {
-            if (!chunk.done) assistantContent += chunk.delta;
-            if (chunk.done && chunk.tool_calls) pendingCalls = chunk.tool_calls;
-            yield chunk;
+          if (hasTools) {
+            // Non-streaming path: parse the full response and synthesize
+            // ChatChunks so the public streaming API is unchanged.
+            const json: any = await resp.json();
+            const choice = json?.choices?.[0] ?? {};
+            const message = choice.message ?? {};
+            assistantContent = message.content ?? "";
+            const toolCalls: AssistantToolCall[] | undefined =
+              Array.isArray(message.tool_calls) && message.tool_calls.length
+                ? (message.tool_calls as AssistantToolCall[])
+                : undefined;
+            const meta: StreamMeta = {
+              id: json?.id,
+              model: json?.model,
+              created: json?.created,
+              usage: json?.usage,
+              finish_reason: choice.finish_reason,
+            };
+            if (assistantContent) {
+              yield { delta: assistantContent, meta, done: false };
+            }
+            yield {
+              delta: "",
+              meta,
+              done: true,
+              tool_calls: toolCalls,
+            };
+            if (toolCalls) pendingCalls = toolCalls;
+          } else {
+            for await (const chunk of parseSSEChunks(resp)) {
+              if (!chunk.done) assistantContent += chunk.delta;
+              if (chunk.done && chunk.tool_calls) pendingCalls = chunk.tool_calls;
+              yield chunk;
+            }
           }
 
           // No tools requested OR no registry → done.

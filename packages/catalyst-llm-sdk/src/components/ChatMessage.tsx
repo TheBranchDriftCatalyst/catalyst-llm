@@ -1,6 +1,7 @@
 import { User, Bot } from "lucide-react";
 import type { ChatTurn } from "../react/chatStore.js";
 import { RenderedContent } from "./RenderedContent.js";
+import { ReasoningBlock, splitReasoning } from "./ReasoningBlock.js";
 import { ToolCallCard } from "./ToolCallCard.js";
 import { cn } from "./utils.js";
 
@@ -58,10 +59,29 @@ export function ChatMessage({ message, isStreaming }: ChatMessageProps) {
               {isStreaming && !message.content && !message.tool_calls?.length ? (
                 <span className="text-muted-foreground">Thinking...</span>
               ) : (
-                <RenderedContent
-                  content={message.content}
-                  isStreaming={isStreaming}
-                />
+                /*
+                  Split <think>...</think> reasoning traces out of the
+                  content stream and render them in collapsible blocks
+                  alongside the actual answer. Reasoning distills
+                  (deepseek-r1, qwen3-coder-opus, qwen3 thinking
+                  variants) emit these inline; without splitting they
+                  drown the real answer in chain-of-thought prose.
+                */
+                splitReasoning(message.content).map((seg, i) =>
+                  seg.kind === "thinking" ? (
+                    <ReasoningBlock
+                      key={`r-${i}`}
+                      content={seg.content}
+                      isStreaming={!!seg.partial}
+                    />
+                  ) : (
+                    <RenderedContent
+                      key={`t-${i}`}
+                      content={seg.content}
+                      isStreaming={isStreaming}
+                    />
+                  ),
+                )
               )}
             </>
           ) : (

@@ -375,6 +375,11 @@ export const useChatStore = create<ChatStore>()(
       });
       for await (const chunk of stream) {
         if (chunk.done) {
+          // Intermediate done chunks happen between tool-call iterations
+          // (the SDK emits one per loop turn so consumers can flush UI
+          // state). Keep iterating until we see a done chunk without
+          // tool_calls — that's the actual end of the assistant's turn.
+          if (chunk.tool_calls && chunk.tool_calls.length > 0) continue;
           get().finishStreaming(chatId, chunk.meta);
           break;
         }
