@@ -27,6 +27,16 @@ ports:
     nodeFilters:
       - loadbalancer
 
+# Cluster-attached registry so Tilt's docker_build() can push to a
+# location k3d can actually pull from. k3d publishes a
+# LocalRegistryHosting ConfigMap in kube-public that Tilt auto-detects
+# (no default_registry() call needed in the Tiltfile).
+registries:
+  create:
+    name: catalyst-llm-registry
+    host: "0.0.0.0"
+    hostPort: "5005"
+
 options:
   k3d:
     wait: true

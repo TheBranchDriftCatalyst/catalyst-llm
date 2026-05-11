@@ -1,0 +1,18 @@
+---
+# Talos prod uses an NFS-backed storage class so PVCs survive node
+# failures and node rebuilds (Talos image is ephemeral).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: catalyst-llm-config
+  namespace: catalyst-llm
+spec:
+  storageClassName: fatboy-nfs-appdata
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: catalyst-llm-data
+  namespace: catalyst-llm
+spec:
+  storageClassName: fatboy-nfs-appdata
