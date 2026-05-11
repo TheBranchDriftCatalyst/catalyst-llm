@@ -122,6 +122,30 @@ k8s_resource(
 # ============================================
 SDK_DIR = './packages/catalyst-llm-sdk'
 PLAYGROUND_DIR = SDK_DIR + '/examples/playground'
+LITELLM_URL = 'http://litellm.talos00'
+
+# Single source of truth for the LiteLLM master key:
+# k8s/local/litellm-secrets.env (gitignored, format `master-key=sk-...`).
+# kustomize's secretGenerator turns this into the in-cluster
+# `litellm-secrets` Secret AND the Tiltfile reads the same value to
+# inject VITE_LITELLM_KEY into the playground's vite process — so
+# users don't need direnv loaded for the playground to authenticate.
+SECRETS_ENV = './k8s/local/litellm-secrets.env'
+LITELLM_KEY = ''
+if os.path.exists(SECRETS_ENV):
+    for line in str(read_file(SECRETS_ENV)).splitlines():
+        line = line.strip()
+        if line.startswith('master-key='):
+            LITELLM_KEY = line.split('=', 1)[1].strip()
+            break
+if not LITELLM_KEY:
+    print('')
+    print('!!  k8s/local/litellm-secrets.env missing or has no master-key.')
+    print('!!  Playground will boot but /v1/models will 401.')
+    print('!!  Fix: cp k8s/local/litellm-secrets.env.example')
+    print('!!        k8s/local/litellm-secrets.env')
+    print('!!     then fill in the key (see .envrc or 1Password).')
+    print('')
 
 local_resource(
     name='sdk-build',
@@ -135,7 +159,11 @@ local_resource(
 local_resource(
     name='playground',
     labels=['ui', 'sdk'],
-    serve_cmd='yarn --cwd ' + PLAYGROUND_DIR + ' dev --port 5174 --host',
+    serve_cmd=(
+        'VITE_LITELLM_URL=' + LITELLM_URL + ' ' +
+        'VITE_LITELLM_KEY=' + LITELLM_KEY + ' ' +
+        'yarn --cwd ' + PLAYGROUND_DIR + ' dev --port 5174 --host'
+    ),
     deps=[PLAYGROUND_DIR + '/src'],
     resource_deps=['sdk-build', 'tool-host'],
     readiness_probe=probe(
