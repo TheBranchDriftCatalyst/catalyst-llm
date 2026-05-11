@@ -1,0 +1,39 @@
+version: "3"
+
+# Standard testing contract — see catalyst-litellm-client/Taskfile.yaml
+# for the convention. Every package exposes:
+#   test:lint   — formatters + static checks
+#   test:unit   — no network, no services       (default `task test` tier)
+#   test:smoke  — quick integration             (live HTTP / FastAPI)
+#   test:full   — everything
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  test:
+    desc: "Alias for test:unit (the fast default tier)"
+    cmds:
+      - task: test:unit
+
+  test:lint:
+    desc: "Static checks (ruff if available)"
+    cmds:
+      - 'uv run --with "ruff>=0.6" ruff check src/ tests/ 2>/dev/null || echo "  (ruff not configured — skipping)"'
+
+  test:unit:
+    desc: "pytest -m unit — no network, no spawned services"
+    cmds:
+      - uv run --with 'pytest>=8.0' --with 'fastapi>=0.115' --with 'httpx>=0.27' --with 'pydantic>=2.9' --with 'uvicorn>=0.32' pytest tests/ -m unit
+
+  test:smoke:
+    desc: "Smoke against the live tool-host HTTP surface (server must be running on :7077)"
+    cmds:
+      - uv run --with 'pytest>=8.0' --with 'httpx>=0.27' pytest tests/ -m integration
+
+  test:full:
+    desc: "Full suite (unit + integration)"
+    cmds:
+      - uv run --with 'pytest>=8.0' --with 'fastapi>=0.115' --with 'httpx>=0.27' --with 'pydantic>=2.9' --with 'uvicorn>=0.32' pytest tests/

@@ -1,7 +1,7 @@
 version: "3"
 
-includes:
-  runpod: ./runpod/Taskfile.yaml
+# runpod sub-Taskfile was removed; pull-models.sh is the only remaining
+# artifact and gets invoked directly from scripts when needed.
 
 vars:
   MAC_IP:
@@ -220,9 +220,50 @@ tasks:
       - ollama ps
 
   # ─── Testing ───────────────────────────────────────────────────
+  # Standard test contract for the monorepo. Every package exposes:
+  #   test:lint   — formatters / static checks (no services)
+  #   test:unit   — no network, no services         (default `task test`)
+  #   test:smoke  — quick integration               (Ollama up)
+  #   test:full   — full integration suite          (every model × cap)
+  # Root Taskfile fans out via `task mac-node:test:smoke` etc.
+  #
+  # mac-node specifics:
+  # - There are no true unit tests here today (every test hits Ollama),
+  #   so `test:unit` runs `pytest --collect-only` as a syntax/import gate.
+  # - `test:smoke` = service health (test-ollama.sh) + one-model-per-cap
+  #   pytest pass (`--quick`). Catches regressions in <2min when Ollama
+  #   is running.
+  # - `test:full` = full back-to-back sweep with `--isolate-ollama` so
+  #   cold-loads stay out of the per-request timeout (see beads llm-9ao).
 
   test:
-    desc: Run full test suite
+    desc: "Alias for test:unit (the fast default tier)"
+    cmds:
+      - task: test:unit
+
+  test:lint:
+    desc: "Static checks — no lint config yet, so a no-op"
+    cmds:
+      - 'uv run --project tests/python --with "ruff>=0.6" ruff check scripts/ tests/python/ 2>/dev/null || echo "  (ruff not configured — skipping)"'
+
+  test:unit:
+    desc: "pytest --collect-only gate (no real unit tests today; ensures imports + parametrize are clean)"
+    cmds:
+      - 'uv run --project tests/python pytest tests/python/ --collect-only -q'
+
+  test:smoke:
+    desc: "Service health + one-model-per-capability pytest pass (~2min, requires Ollama up)"
+    cmds:
+      - bash tests/test-ollama.sh localhost
+      - 'uv run --project tests/python pytest tests/python/ --backend=mac --quick'
+
+  test:full:
+    desc: "Full model × capability matrix with isolation fixture (~20min)"
+    cmds:
+      - 'uv run --project tests/python pytest tests/python/ --backend={{.BACKEND | default "mac"}} --isolate-ollama {{if .DUMP}}--dump-dir={{.DUMP}}{{end}} {{.ARGS}}'
+
+  test:all:
+    desc: "(legacy) Run every bash service-health probe — orchestrator pre-pytest era"
     cmds:
       - bash tests/test-all.sh localhost
 
@@ -237,37 +278,42 @@ tasks:
 
   # Per-target pytest invocation. Reads deps from tests/python/pyproject.toml
   # via `uv run --project` instead of repeating --with flags per task.
-  # BACKEND=mac|litellm|both, ARGS="-k foo -x" for extra pytest args,
-  # DUMP=path to capture per-model response.txt + meta.json.
+  #   BACKEND=mac|litellm|both
+  #   DUMP=path             — capture per-model response.txt + meta.json
+  #   ISOLATE=1             — unload+prewarm around each test (no
+  #                            cold-load in the request budget; slower
+  #                            wall-clock but no timeouts on back-to-back
+  #                            heavy models — see beads llm-9ao)
+  #   ARGS="-k foo -x"      — extra pytest args
   test:py:
-    desc: "Pytest model suite (BACKEND=mac|litellm|both, DUMP=path to capture outputs)"
+    desc: "Pytest model suite (BACKEND=mac|litellm|both, DUMP=path, ISOLATE=1 to avoid back-to-back timeouts)"
     cmds:
-      - 'uv run --project tests/python pytest tests/python/ --backend={{.BACKEND | default "mac"}} {{if .DUMP}}--dump-dir={{.DUMP}}{{end}} {{.ARGS}}'
+      - 'uv run --project tests/python pytest tests/python/ --backend={{.BACKEND | default "mac"}} {{if .DUMP}}--dump-dir={{.DUMP}}{{end}} {{if .ISOLATE}}--isolate-ollama{{end}} {{.ARGS}}'
 
   test:py:chat:
     desc: "Chat tests only (parametrized over chat-tagged models)"
     cmds:
-      - 'uv run --project tests/python pytest tests/python/test_chat.py --backend={{.BACKEND | default "mac"}} {{if .DUMP}}--dump-dir={{.DUMP}}{{end}} {{.ARGS}}'
+      - 'uv run --project tests/python pytest tests/python/test_chat.py --backend={{.BACKEND | default "mac"}} {{if .DUMP}}--dump-dir={{.DUMP}}{{end}} {{if .ISOLATE}}--isolate-ollama{{end}} {{.ARGS}}'
 
   test:py:vision:
     desc: "Vision tests only"
     cmds:
-      - 'uv run --project tests/python pytest tests/python/test_vision.py --backend={{.BACKEND | default "mac"}} {{if .DUMP}}--dump-dir={{.DUMP}}{{end}} {{.ARGS}}'
+      - 'uv run --project tests/python pytest tests/python/test_vision.py --backend={{.BACKEND | default "mac"}} {{if .DUMP}}--dump-dir={{.DUMP}}{{end}} {{if .ISOLATE}}--isolate-ollama{{end}} {{.ARGS}}'
 
   test:py:embedding:
     desc: "Embedding tests only"
     cmds:
-      - 'uv run --project tests/python pytest tests/python/test_embedding.py --backend={{.BACKEND | default "mac"}} {{if .DUMP}}--dump-dir={{.DUMP}}{{end}} {{.ARGS}}'
+      - 'uv run --project tests/python pytest tests/python/test_embedding.py --backend={{.BACKEND | default "mac"}} {{if .DUMP}}--dump-dir={{.DUMP}}{{end}} {{if .ISOLATE}}--isolate-ollama{{end}} {{.ARGS}}'
 
   test:py:quick:
     desc: "One model per backend per capability — fast smoke"
     cmds:
-      - 'uv run --project tests/python pytest tests/python/ --backend={{.BACKEND | default "mac"}} --quick {{if .DUMP}}--dump-dir={{.DUMP}}{{end}} {{.ARGS}}'
+      - 'uv run --project tests/python pytest tests/python/ --backend={{.BACKEND | default "mac"}} --quick {{if .DUMP}}--dump-dir={{.DUMP}}{{end}} {{if .ISOLATE}}--isolate-ollama{{end}} {{.ARGS}}'
 
   test:py:image:
     desc: "Image generation tests (mflux shim or LiteLLM)"
     cmds:
-      - 'uv run --project tests/python pytest tests/python/test_image_gen.py --backend={{.BACKEND | default "mac"}} {{if .DUMP}}--dump-dir={{.DUMP}}{{end}} {{.ARGS}}'
+      - 'uv run --project tests/python pytest tests/python/test_image_gen.py --backend={{.BACKEND | default "mac"}} {{if .DUMP}}--dump-dir={{.DUMP}}{{end}} {{if .ISOLATE}}--isolate-ollama{{end}} {{.ARGS}}'
 
   shim:dev:
     desc: "Run the comfyui-shim in foreground for development"

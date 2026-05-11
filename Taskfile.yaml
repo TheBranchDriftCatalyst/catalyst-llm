@@ -1,7 +1,25 @@
-# Root Taskfile — thin DX wrapper around Tilt / k3d / Argo CD / model gen.
+# Root Taskfile — thin DX wrapper around Tilt / k3d / Argo CD / model gen
+# plus the cross-package test aggregator.
 #
 # Run: task --list
 version: '3'
+
+# Per-package Taskfiles are mounted as namespaces here. Invoke nested
+# tasks as `task <ns>:<task>` (e.g. `task mac-node:test:smoke`). The
+# `dir:` setting makes each task run with the package as its cwd.
+includes:
+  mac-node:
+    taskfile: ./packages/mac-node/Taskfile.yaml
+    dir: ./packages/mac-node
+  sdk:
+    taskfile: ./packages/catalyst-llm-sdk/Taskfile.yaml
+    dir: ./packages/catalyst-llm-sdk
+  litellm-client:
+    taskfile: ./packages/catalyst-litellm-client/Taskfile.yaml
+    dir: ./packages/catalyst-litellm-client
+  tool-host:
+    taskfile: ./packages/tool-host/Taskfile.yaml
+    dir: ./packages/tool-host
 
 vars:
   K8S_LOCAL: k8s/local
@@ -13,6 +31,48 @@ tasks:
     desc: Show all available tasks
     cmds:
       - task --list
+
+  # ─── Cross-package testing ───────────────────────────────────────────
+  # Progressive tiers, each strictly faster/cheaper than the next.
+  # Every package exposes the same four verbs (test:lint / test:unit /
+  # test:smoke / test:full) so root aggregators just fan out via `deps:`.
+  # `task test` (no args) defaults to test:unit — the fast tier.
+
+  test:
+    desc: "Alias for test:unit (fast default — unit tests across all packages)"
+    cmds:
+      - task: test:unit
+
+  test:lint:
+    desc: "L1: typecheck + lint across all packages (no services, fast)"
+    deps:
+      - mac-node:test:lint
+      - sdk:test:lint
+      - litellm-client:test:lint
+      - tool-host:test:lint
+
+  test:unit:
+    desc: "L2: pure unit tests across all packages (no services, parallel)"
+    deps:
+      - mac-node:test:unit
+      - sdk:test:unit
+      - litellm-client:test:unit
+      - tool-host:test:unit
+
+  test:smoke:
+    desc: "L3: unit + service-health smoke across all packages (requires local services)"
+    cmds:
+      - task: test:unit
+      - task: mac-node:test:smoke
+      - task: sdk:test:smoke
+
+  test:full:
+    desc: "L4: everything — full model × backend sweep (~20min, ISOLATE on)"
+    cmds:
+      - task: test:lint
+      - task: test:unit
+      - task: mac-node:test:full
+      - task: sdk:test:full
 
   # ─── Tilt ────────────────────────────────────────────────────────────
   up:

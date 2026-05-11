@@ -25,3 +25,12 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tool_host"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --strict-markers"
+pythonpath = ["src"]
+markers = [
+    "unit: tests with no external deps (no network, no spawned services)",
+    "integration: tests that hit the live tool-host HTTP surface",
+]

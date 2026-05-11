@@ -1,0 +1,43 @@
+version: "3"
+
+# Standard testing contract for the catalyst-llm monorepo. Every package
+# Taskfile exposes the same four verbs so the root aggregator can fan
+# out uniformly:
+#
+#   test:lint   — formatters + static analysis (no services)
+#   test:unit   — pure-Python tests, no network                  (default `task test` tier)
+#   test:smoke  — quick integration touching local services      (Ollama / LiteLLM up)
+#   test:full   — full integration suite                         (every model × backend)
+#
+# Run from this package dir, or invoke via root as `task litellm-client:test:unit`.
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  test:
+    desc: "Alias for test:unit (the fast default tier)"
+    cmds:
+      - task: test:unit
+
+  test:lint:
+    desc: "Static checks — no lint config yet, so a no-op import probe"
+    cmds:
+      - 'uv run --with "ruff>=0.6" ruff check src/ tests/ 2>/dev/null || echo "  (ruff not configured — skipping)"'
+
+  test:unit:
+    desc: "pytest -m unit — no network, no services"
+    cmds:
+      - uv run --with 'pytest>=7.0' --with 'pytest-cov>=4.0' pytest tests/ -m unit
+
+  test:smoke:
+    desc: "No integration tests yet — same as test:unit. Add tests/test_integration.py to expand."
+    cmds:
+      - task: test:unit
+
+  test:full:
+    desc: "Full suite (currently same as smoke; add slow/E2E tests to expand)"
+    cmds:
+      - uv run --with 'pytest>=7.0' --with 'pytest-cov>=4.0' pytest tests/

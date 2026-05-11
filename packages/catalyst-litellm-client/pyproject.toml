@@ -31,3 +31,12 @@ include = ["catalyst_litellm_client*"]
 
 [tool.setuptools.package-data]
 catalyst_litellm_client = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --strict-markers"
+pythonpath = ["src"]
+markers = [
+    "unit: tests with no external deps (no network, no services)",
+    "integration: tests that touch local services (litellm proxy, ollama)",
+]

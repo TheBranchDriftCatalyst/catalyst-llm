@@ -49,15 +49,43 @@ tasks:
     cmds:
       - yarn typecheck
 
+  # ─── Standard test contract (matches monorepo convention) ─────────
+  # Every package exposes test:lint / test:unit / test:smoke / test:full
+  # so the root Taskfile can fan out via `task test:unit` etc.
+  # `test` (no qualifier) aliases to `test:unit` — the fast default.
+
   test:
-    desc: vitest run
+    desc: "Alias for test:unit (the fast default tier)"
+    cmds:
+      - task: test:unit
+
+  test:lint:
+    desc: "tsc --noEmit (typecheck) — no network, no services"
+    cmds:
+      - yarn typecheck
+
+  test:unit:
+    desc: "vitest run — pure unit tests, no live LiteLLM"
     cmds:
       - yarn test
 
-  smoke:
-    desc: tsx tests/smoke.ts (live LiteLLM hits)
+  test:smoke:
+    desc: "tsx tests/smoke.ts — live LiteLLM hits (requires proxy running)"
     cmds:
       - yarn smoke
+
+  test:full:
+    desc: "Typecheck + unit + smoke"
+    cmds:
+      - task: test:lint
+      - task: test:unit
+      - task: test:smoke
+
+  # Back-compat alias for the old `task smoke` muscle memory.
+  smoke:
+    desc: "(deprecated) alias for test:smoke"
+    cmds:
+      - task: test:smoke
 
   # ─── Playground ───────────────────────────────────────────────────
 

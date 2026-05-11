@@ -85,6 +85,18 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="Per-chat-request timeout in seconds. Default: 240 (big models need "
              "load + inference budget — behemoth-x cold-loads in ~60s).",
     )
+    # Off by default: isolation prewarms each model before the timed test
+    # and unloads it after, which adds 60–90s per heavy model. Worth it
+    # for reliable back-to-back runs (see beads llm-9ao) but slows down
+    # smoke runs where you just want to ping models. Opt in with
+    # --isolate-ollama or ISOLATE=1.
+    g.addoption(
+        "--isolate-ollama",
+        action="store_true",
+        default=os.getenv("ISOLATE") == "1",
+        help="Unload+prewarm around each mac-backend test to keep cold-load "
+             "out of the per-request timeout. Default: off.",
+    )
 
 
 # --- Backend abstractions -----------------------------------------------
@@ -296,6 +308,122 @@ def litellm_models(litellm_client: LiteLLMClient) -> set[str]:
 @pytest.fixture(scope="session")
 def fixture_image_b64() -> str:
     return base64.b64encode(FIXTURE_IMAGE.read_bytes()).decode()
+
+
+# --- Model lifecycle isolation -----------------------------------------
+#
+# When pytest runs models back-to-back, ollama's default keep_alive=5m +
+# MAX_LOADED_MODELS=1 bundles "evict previous + load this" into the same
+# httpx.post() that's measuring the inference. Heavy back-to-back swaps
+# (e.g. behemoth-x 73GB → qwen3-moe-uncensored 25GB) exceed the per-request
+# chat-timeout and surface as ReadTimeout failures that look like model
+# bugs but are really test-infra bugs (see beads llm-9ao).
+#
+# This autouse fixture wraps each mac-backend test with:
+#   pre  — `keep_alive: 0` on every model currently in /api/ps, then a
+#          warmup call to load the target model (empty prompt /api/generate
+#          or a 1-char /api/embeddings depending on capability)
+#   post — `keep_alive: 0` on the target so the next test starts with
+#          empty VRAM
+#
+# Per Ollama docs (verified 2026-05-10): an empty-prompt /api/generate
+# with keep_alive:0 returns `done_reason: "unload"`; empty prompt without
+# keep_alive preloads. Same pattern works on /api/chat and /api/embeddings.
+
+
+def _ollama_currently_loaded(base: str) -> list[str]:
+    """Tags Ollama reports as resident in /api/ps. Empty on any error."""
+    try:
+        r = httpx.get(f"{base}/api/ps", timeout=5)
+        return [m["name"] for m in (r.json() or {}).get("models", [])]
+    except (httpx.HTTPError, ValueError, KeyError):
+        return []
+
+
+def _ollama_unload(base: str, tag: str, timeout: float = 15.0) -> None:
+    """Force-evict `tag` from VRAM. Best-effort: silent on failure."""
+    try:
+        httpx.post(
+            f"{base}/api/generate",
+            json={"model": tag, "keep_alive": 0},
+            timeout=timeout,
+        )
+    except httpx.HTTPError:
+        pass
+
+
+def _ollama_prewarm(base: str, tag: str, *, embedding: bool, timeout: float) -> None:
+    """Load `tag` into VRAM without consuming the test's inference budget.
+
+    For chat/vision models we use `/api/generate` with an empty prompt —
+    ollama documents this as the canonical preload call. For embedding
+    models `/api/generate` rejects the request, so we hit `/api/embeddings`
+    with a minimal payload instead."""
+    try:
+        if embedding:
+            httpx.post(
+                f"{base}/api/embeddings",
+                json={"model": tag, "prompt": "."},
+                timeout=timeout,
+            )
+        else:
+            httpx.post(
+                f"{base}/api/generate",
+                json={"model": tag, "prompt": "", "keep_alive": "5m"},
+                timeout=timeout,
+            )
+    except httpx.HTTPError:
+        # Don't fail the test from prewarm — let the real test surface
+        # whatever's actually wrong.
+        pass
+
+
+@pytest.fixture(autouse=True)
+def _isolate_ollama_model(request: pytest.FixtureRequest, pytestconfig: pytest.Config):
+    """Per-test: unload VRAM, preload the target, then unload again on teardown.
+
+    Opt-in via `--isolate-ollama` / `ISOLATE=1` (default off). Even when
+    enabled, only engages for mac-backend tests parametrized over
+    `model_entry` (test_chat / test_vision / test_embedding). No-op for
+    litellm tests (proxy manages its own pool), image_gen
+    (pipeline-not-model), and any test without these fixtures.
+    """
+    if not pytestconfig.getoption("--isolate-ollama"):
+        yield
+        return
+    fixturenames = set(request.fixturenames)
+    if "backend" not in fixturenames or "model_entry" not in fixturenames:
+        yield
+        return
+    backend = request.getfixturevalue("backend")
+    if backend != "mac":
+        yield
+        return
+    entry = request.getfixturevalue("model_entry")
+    tag = entry["name"]
+    is_embedding = "embedding" in (entry.get("tags") or [])
+
+    port = pytestconfig.getoption("--mac-port")
+    host = _resolve_mac_host(pytestconfig.getoption("--mac-host"), port)
+    base = f"http://{host}:{port}"
+
+    # Generous prewarm budget — 70B+ from cold disk can take 60-90s. The
+    # actual test's timeout (--chat-timeout default 240s) then only needs
+    # to cover prompt eval + token generation.
+    prewarm_timeout = float(pytestconfig.getoption("--chat-timeout")) * 2
+
+    # 1) Drop anything in VRAM so we start clean.
+    for resident in _ollama_currently_loaded(base):
+        if resident != tag:
+            _ollama_unload(base, resident)
+
+    # 2) Preload the target so the timed test doesn't pay for it.
+    _ollama_prewarm(base, tag, embedding=is_embedding, timeout=prewarm_timeout)
+
+    yield
+
+    # 3) Clean up so the next test's prewarm has full memory to play with.
+    _ollama_unload(base, tag)
 
 
 @pytest.fixture(scope="session")

@@ -20,4 +20,6 @@ markers = [
     "mac: tests that hit the mac node directly",
     "litellm: tests that hit the LiteLLM proxy",
     "slow: tests that take >5s",
+    "unit: tests with no external deps (currently none — every model test hits ollama)",
+    "integration: tests that touch local services (chat/vision/embedding all qualify)",
 ]
