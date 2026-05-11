@@ -138,6 +138,12 @@ async def _stream_agent_events(
         for k, v in params.items()
         if k not in ("temperature", "max_tokens")
     }
+    # Anthropic rejects requests that set both `temperature` and `top_p`.
+    # top_p=1.0 is a no-op (no nucleus sampling), so drop it before it
+    # reaches the provider — the UI sends it unconditionally as a slider
+    # default, but the user hasn't actually opted into it.
+    if extra_kwargs.get("top_p") in (1, 1.0):
+        extra_kwargs.pop("top_p", None)
     try:
         app_graph = build_graph(
             model=request.model,
