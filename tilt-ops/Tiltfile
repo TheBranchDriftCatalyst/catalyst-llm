@@ -1,56 +1,34 @@
-# Catalyst LLM — PROD (talos00 read/ops view)
+# catalyst-llm — PROD/OPS spoke
 #
-# Run with:
-#   tilt up -f Tiltfile.prod
+# Read/ops view of the talos prod cluster. Runs as:
+#   - part of the fleet hub: cd ~/catalyst-devspace/tilt-ops && tilt up
+#   - standalone:            cd <here> && tilt up
 #
-# Connects to the talos cluster (admin@catalyst-cluster) and binds
-# Tilt's UI to the deployed resources reconciled by Argo CD. This is an
-# ops console, not a deploy tool — manifests still live in
-# talos-homelab via the Argo CD Application.
-#
-# What you get:
-#   - Port-forwards to every service (read-only inspection)
-#   - Buttons for: rollout restart, tail logs, exec shell, argocd sync
+# Manifests live in the parent repo at ../k8s/talos00 and are reconciled
+# by Argo CD; this Tiltfile renders them so Tilt can bind resources but
+# nothing fires until you click a button (auto_init=False, MANUAL).
 
 load('ext://uibutton', 'cmd_button')
-load('./tilt/common.tiltfile',
-    'add_k8s_restart_button',
-    'add_k8s_logs_button',
-    'add_k8s_shell_button',
-    'print_prod_banner',
+load('../../../tilt-ops/common.tiltfile',
+    'prod_resource',
+    'print_prod_spoke_banner',
 )
 
-allow_k8s_contexts('admin@catalyst-cluster')
-
-print_prod_banner()
-
-# We render the talos00 overlay so Tilt knows which Deployments / Services
-# exist, but Argo CD owns reconciliation. Manifests below set
-# trigger_mode=TRIGGER_MODE_MANUAL so Tilt won't push updates on its own;
-# clicking a button does the explicit op.
-k8s_yaml(kustomize('./k8s/talos00'))
-
 NAMESPACE = 'catalyst-llm'
+CONTEXT = 'admin@catalyst-cluster'
 
+allow_k8s_contexts(CONTEXT)
 
-def prod_resource(name, deployment=None, port_forwards=None, links=None):
-    """Standard prod resource: manual trigger + ops buttons."""
-    deployment = deployment or name
-    k8s_resource(
-        name,
-        labels=['prod'],
-        port_forwards=port_forwards or [],
-        auto_init=False,
-        trigger_mode=TRIGGER_MODE_MANUAL,
-        links=links or [],
-    )
-    add_k8s_restart_button(name, deployment, namespace=NAMESPACE)
-    add_k8s_logs_button(name, deployment, namespace=NAMESPACE)
-    add_k8s_shell_button(name, deployment, namespace=NAMESPACE)
+print_prod_spoke_banner('catalyst-llm', CONTEXT)
+
+# Render the prod overlay so Tilt knows which Deployments / Services exist.
+# Resources are manual-trigger; Argo CD owns reconciliation.
+k8s_yaml(kustomize('../k8s/talos00'))
 
 
 prod_resource(
     'open-webui',
+    namespace=NAMESPACE,
     port_forwards=['3030:8080'],
     links=[
         link('http://localhost:3030', 'Open WebUI (port-forward)'),
@@ -59,6 +37,7 @@ prod_resource(
 )
 prod_resource(
     'lobe-chat',
+    namespace=NAMESPACE,
     port_forwards=['3210:3210'],
     links=[
         link('http://localhost:3210', 'LobeChat (port-forward)'),
@@ -67,6 +46,7 @@ prod_resource(
 )
 prod_resource(
     'searxng',
+    namespace=NAMESPACE,
     port_forwards=['8888:8080'],
     links=[
         link('http://localhost:8888', 'SearXNG (port-forward)'),
@@ -75,6 +55,7 @@ prod_resource(
 )
 prod_resource(
     'litellm',
+    namespace=NAMESPACE,
     port_forwards=['4000:4000'],
     links=[
         link('http://localhost:4000', 'LiteLLM API (port-forward)'),
@@ -84,6 +65,7 @@ prod_resource(
 )
 prod_resource(
     'litellm-postgresql',
+    namespace=NAMESPACE,
     deployment='litellm-postgresql',
     port_forwards=['5432:5432'],
 )

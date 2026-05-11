@@ -1,13 +1,16 @@
-# Catalyst LLM — DEV (local k3d cluster + native Ollama)
+# Catalyst LLM — DEV (shared k3d cluster + native Ollama)
 #
 # Run with:
 #   tilt up
 #
-# Bootstraps the k3d cluster if absent, applies the k8s/local overlay,
-# and runs Ollama natively on the Mac (Metal GPU). LiteLLM stays remote
-# at http://litellm.talos00.
+# Uses the shared catalyst-dev k3d cluster (brought up by
+# infra/k3d/cluster.Tiltfile), applies the k8s/local overlay into the
+# `catalyst-llm` namespace, and runs Ollama natively on the Mac
+# (Metal GPU). LiteLLM stays remote at http://litellm.talos00.
 #
-# Prod / ops view: `tilt up -f Tiltfile.prod` (see Tiltfile.prod).
+# Prod / ops view lives in a parallel rail:
+#   cd ~/catalyst-devspace/tilt-ops && tilt up      # fleet hub
+#   cd ./tilt-ops && tilt up                        # this project only
 
 load('ext://uibutton', 'cmd_button')
 load('./tilt/common.tiltfile',
@@ -17,21 +20,13 @@ load('./tilt/common.tiltfile',
     'print_dev_quickstart',
 )
 
-# Restrict apply to the k3d dev cluster.
-allow_k8s_contexts('k3d-catalyst-llm')
+# ============================================
+# Shared dev cluster (catalyst-dev) — defines `k3d-cluster` resource
+# and calls allow_k8s_contexts('k3d-catalyst-dev').
+# ============================================
+include('../../infra/k3d/cluster.Tiltfile')
 
 print_dev_banner()
-
-# ============================================
-# k3d bootstrap — idempotent, runs before anything else.
-# ============================================
-local_resource(
-    name='k3d-cluster',
-    labels=['cluster'],
-    cmd='./scripts/k3d-up.sh',
-    auto_init=True,
-    allow_parallel=False,
-)
 
 # ============================================
 # Native Ollama (Metal GPU; stays out of the cluster on purpose).
@@ -114,7 +109,7 @@ add_open_browser_button('searxng', 'http://localhost:8888')
 
 k8s_resource(
     'tool-host',
-    labels=['tools', 'sdk'],
+    labels=['tools'],
     port_forwards=['7077:7077'],
     resource_deps=['k3d-cluster', 'searxng'],
     links=[
@@ -126,7 +121,7 @@ k8s_resource(
 
 k8s_resource(
     'catalyst-langgraph',
-    labels=['agent', 'sdk'],
+    labels=['agent'],
     port_forwards=['7078:7078'],
     resource_deps=['k3d-cluster', 'tool-host'],
     links=[
@@ -181,7 +176,7 @@ local_resource(
 
 local_resource(
     name='playground',
-    labels=['ui', 'sdk'],
+    labels=['ui'],
     serve_cmd=(
         'VITE_LITELLM_URL=' + LITELLM_URL + ' ' +
         'VITE_LITELLM_KEY=' + LITELLM_KEY + ' ' +

@@ -53,7 +53,7 @@ cmd_button(
 # ─── Playground vite dev server ──────────────────────────────────────
 local_resource(
     name='playground',
-    labels=['ui', 'sdk'],
+    labels=['ui'],
     serve_cmd='yarn --cwd ' + PLAYGROUND_DIR + ' dev --port 5174 --host',
     deps=[os.path.join(PLAYGROUND_DIR, 'src')],
     resource_deps=['sdk-build'],

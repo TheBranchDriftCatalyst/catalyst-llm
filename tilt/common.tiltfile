@@ -129,40 +129,9 @@ def add_open_browser_button(resource_name, url):
     )
 
 
-def add_k8s_restart_button(resource_name, deployment, namespace='catalyst-llm'):
-    """Restart a k8s Deployment (used in Tiltfile.prod)."""
-    cmd_button(
-        name='btn-restart-' + resource_name,
-        resource=resource_name,
-        argv=['kubectl', '-n', namespace, 'rollout', 'restart', 'deploy/' + deployment],
-        text='Rollout Restart',
-        icon_name='refresh',
-        requires_confirmation=True,
-    )
-
-
-def add_k8s_logs_button(resource_name, deployment, namespace='catalyst-llm'):
-    """Tail logs from a k8s Deployment."""
-    cmd_button(
-        name='btn-logs-' + resource_name,
-        resource=resource_name,
-        argv=['sh', '-c',
-              'kubectl -n %s logs -f --tail=200 deploy/%s' % (namespace, deployment)],
-        text='Tail Logs',
-        icon_name='subject',
-    )
-
-
-def add_k8s_shell_button(resource_name, deployment, namespace='catalyst-llm', shell='sh'):
-    """Open a shell inside a k8s pod."""
-    cmd_button(
-        name='btn-shell-' + resource_name,
-        resource=resource_name,
-        argv=['sh', '-c',
-              'kubectl -n %s exec -it deploy/%s -- %s' % (namespace, deployment, shell)],
-        text='Shell',
-        icon_name='terminal',
-    )
+# Prod k8s ops buttons (rollout-restart / logs / shell) moved to:
+#   ~/catalyst-devspace/tilt-ops/common.tiltfile
+# This file is dev-only and must not load any prod helpers.
 
 
 # ============================================
@@ -178,19 +147,6 @@ def print_dev_banner():
 ║  UIs:       deployed to k3d cluster (k8s/local overlay)       ║
 ║  LiteLLM:   remote @ http://litellm.talos00                   ║
 ║  Models:    edit packages/mac-node/models.yaml                ║
-╚═══════════════════════════════════════════════════════════════╝
-""")
-
-
-def print_prod_banner():
-    print("""
-╔═══════════════════════════════════════════════════════════════╗
-║  catalyst-llm — PROD (talos00, read/ops)                      ║
-╠═══════════════════════════════════════════════════════════════╣
-║  Context:   admin@catalyst-cluster                            ║
-║  Overlay:   k8s/talos00                                       ║
-║  Manifests are reconciled by Argo CD — do not k8s_yaml apply  ║
-║  Buttons:   rollout restart / logs / shell / argo sync        ║
 ╚═══════════════════════════════════════════════════════════════╝
 """)
 

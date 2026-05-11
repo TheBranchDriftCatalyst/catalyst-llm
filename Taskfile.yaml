@@ -81,9 +81,9 @@ tasks:
       - tilt up
 
   up:prod:
-    desc: Bring up the prod ops view against talos00
+    desc: Bring up the prod ops view (parallel rail at devspace tilt-ops/)
     cmds:
-      - tilt up -f Tiltfile.prod
+      - tilt up -f tilt-ops/Tiltfile
 
   down:
     desc: Stop Tilt resources (does NOT delete the k3d cluster)
@@ -91,30 +91,27 @@ tasks:
       - tilt down
 
   parse:
-    desc: Validate that both Tiltfiles parse (skips the cluster-context check)
+    desc: Validate that both Tiltfiles parse
     cmds:
-      # `tilt alpha tiltfile-result` post-parses against the active kubectl
-      # context, so we run each Tiltfile only when its allowed context is
-      # active. Filter to syntax/load errors.
-      - tilt alpha tiltfile-result 2>&1                  | grep -E "^Error|Traceback" && exit 1 || echo "Tiltfile (dev) OK"
-      - tilt alpha tiltfile-result -f Tiltfile.prod 2>&1 | grep -E "^Error|Traceback" && exit 1 || echo "Tiltfile.prod OK"
+      - tilt alpha tiltfile-result                          2>&1 | grep -E "^Error|Traceback" && exit 1 || echo "Tiltfile (dev) OK"
+      - tilt alpha tiltfile-result -f tilt-ops/Tiltfile     2>&1 | grep -E "^Error|Traceback" && exit 1 || echo "tilt-ops/Tiltfile (prod) OK"
 
-  # ─── k3d cluster ─────────────────────────────────────────────────────
+  # ─── k3d cluster (shared at ../../infra/k3d/) ───────────────────────
   k3d:up:
-    desc: Create the catalyst-llm k3d cluster (idempotent)
+    desc: Create the shared catalyst-dev k3d cluster (idempotent)
     cmds:
-      - ./scripts/k3d-up.sh
+      - ../../infra/k3d/k3d-up.sh
 
   k3d:down:
-    desc: Delete the catalyst-llm k3d cluster
+    desc: Delete the shared catalyst-dev k3d cluster
     cmds:
-      - ./scripts/k3d-down.sh
+      - ../../infra/k3d/k3d-down.sh
 
   k3d:reset:
-    desc: Tear down and recreate the cluster from scratch
+    desc: Tear down and recreate the shared cluster from scratch
     cmds:
-      - ./scripts/k3d-down.sh
-      - ./scripts/k3d-up.sh
+      - ../../infra/k3d/k3d-down.sh
+      - ../../infra/k3d/k3d-up.sh
 
   # ─── Kustomize validation ────────────────────────────────────────────
   k8s:build:local:

@@ -3,7 +3,7 @@
 #
 # Hostnames: *.local.lan (resolve via /etc/hosts on the dev machine
 # to 127.0.0.1 — k3d's loadbalancer listens on 80/443 there)
-# Cluster context: k3d-catalyst-llm
+# Cluster context: k3d-catalyst-dev (shared via ../../infra/k3d/)
 #
 # Notes:
 #   - Ollama is NOT in the cluster — it runs natively on the Mac so

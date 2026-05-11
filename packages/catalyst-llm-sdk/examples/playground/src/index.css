@@ -1,8 +1,8 @@
+/* Fonts — must precede any @import that inlines other CSS rules (Tailwind v4, catalyst.css). */
+@import url("https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap");
+
 /* Tailwind CSS v4 */
 @import "tailwindcss";
-
-/* Fonts — must come before any @import that bundles other rules. */
-@import url("https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap");
 
 /* Catalyst-UI theme (CSS variables only — applied via .theme-catalyst.dark on <html>) */
 @import "../node_modules/@thebranchdriftcatalyst/catalyst-ui/dist/themes/catalyst.css";
