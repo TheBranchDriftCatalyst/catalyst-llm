@@ -9,6 +9,14 @@ export interface ContextMeterProps {
   chat: Chat | undefined;
   model: ModelWithRouting | undefined;
   className?: string;
+  /**
+   * "chip" (default) — compact inline gauge with a 24px-wide bar,
+   *   meant to sit next to other stats chips.
+   * "bar" — full-width thin progress bar with a minimal label,
+   *   meant to span the chat window under the stats chip row so
+   *   the operator sees fill-level at a glance.
+   */
+  variant?: "chip" | "bar";
 }
 
 /**
@@ -18,7 +26,12 @@ export interface ContextMeterProps {
  * `max_input_tokens` provides the denominator. Local models without declared
  * limits render as a flat "tokens used" pill instead of a progress bar.
  */
-export function ContextMeter({ chat, model, className }: ContextMeterProps) {
+export function ContextMeter({
+  chat,
+  model,
+  className,
+  variant = "chip",
+}: ContextMeterProps) {
   const lastAssistant = [...(chat?.messages ?? [])]
     .reverse()
     .find((m) => m.role === "assistant" && m.meta?.usage?.prompt_tokens);
@@ -45,6 +58,32 @@ export function ContextMeter({ chat, model, className }: ContextMeterProps) {
   if (!chat) return null;
 
   if (!max) {
+    if (variant === "bar") {
+      // No declared max — render a thin "unknown" rail with just the
+      // raw token count. Keeps the bar slot occupied so the chat
+      // header doesn't jitter when the operator switches models.
+      return (
+        <div
+          className={cn("w-full px-4 py-1.5", className)}
+          title="Model didn't declare a context window — showing raw tokens used on the last send."
+        >
+          <div className="mb-1 flex items-center justify-between text-[10px] uppercase tracking-wider text-muted-foreground">
+            <span className="inline-flex items-center gap-1">
+              <Cpu className="h-3 w-3 text-primary opacity-80" />
+              context
+            </span>
+            <span className="font-mono normal-case tracking-normal tabular-nums text-foreground/80">
+              {display ? formatTokens(display) : "0"}
+              {usedIsEstimate && (
+                <span className="ml-1 text-[9px] opacity-60">est</span>
+              )}
+              <span className="ml-1.5 opacity-50">/ unknown</span>
+            </span>
+          </div>
+          <div className="h-1 w-full rounded-full bg-muted/30" />
+        </div>
+      );
+    }
     return (
       <div
         className={cn(
@@ -74,6 +113,43 @@ export function ContextMeter({ chat, model, className }: ContextMeterProps) {
       : pct >= 70
         ? "bg-yellow-500"
         : "bg-primary";
+
+  if (variant === "bar") {
+    return (
+      <div
+        className={cn("w-full px-4 py-1.5", className)}
+        title={`Last send used ${display.toLocaleString()} / ${max.toLocaleString()} input tokens (${pct}%). Updates after each turn.`}
+      >
+        <div className="mb-1 flex items-center justify-between text-[10px] uppercase tracking-wider text-muted-foreground">
+          <span className="inline-flex items-center gap-1">
+            <Cpu className="h-3 w-3 text-primary opacity-80" />
+            context
+          </span>
+          <span className="font-mono normal-case tracking-normal tabular-nums text-foreground/80">
+            {formatTokens(display)}
+            <span className="opacity-50">/{formatTokens(max)}</span>
+            <span className="ml-1.5 opacity-60">{pct}%</span>
+            {usedIsEstimate && (
+              <span className="ml-1 text-[9px] opacity-60">est</span>
+            )}
+          </span>
+        </div>
+        <div
+          className="relative h-1 w-full overflow-hidden rounded-full bg-muted/50"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={max}
+          aria-valuenow={display}
+          aria-label="Context window usage"
+        >
+          <div
+            className={cn("h-full transition-all duration-300", tone)}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

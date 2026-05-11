@@ -47,6 +47,7 @@
   "dependencies": {
     "@duckdb/duckdb-wasm": "^1.33.1-dev45.0",
     "diff": "^9.0.0",
+    "eventsource-parser": "^3.0.8",
     "katex": "^0.16.11",
     "mermaid": "^11.4.1",
     "nanoid": "^5.0.9",

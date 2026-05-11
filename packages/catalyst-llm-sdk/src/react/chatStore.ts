@@ -54,6 +54,15 @@ export interface ChatTurn {
    * accumulate across the multi-iteration tool loop.
    */
   tool_calls?: ChatToolCallRecord[];
+  /**
+   * Error from the backend that aborted this assistant turn (the
+   * SSE `error` event, or a fetch failure). Rendered inline inside
+   * the assistant bubble so the failed turn carries its own context
+   * instead of pointing at a separate banner. Mutually exclusive
+   * with a successful `content` — though we keep both so partial
+   * text that streamed before the error stays visible.
+   */
+  error?: string;
 }
 
 export interface Chat {
@@ -139,6 +148,13 @@ interface ChatStore {
   appendToken: (chatId: string, token: string, meta?: StreamMeta) => void;
   setFirstTokenTime: (chatId: string) => void;
   setError: (chatId: string, error: string | undefined) => void;
+  /**
+   * Attach an error message to the last assistant turn in the chat
+   * (the one the current stream is filling). Used by the SSE `error`
+   * event so failures appear inline in the conversation instead of
+   * only on a chat-level banner.
+   */
+  setTurnError: (chatId: string, error: string) => void;
   finishStreaming: (chatId: string, meta?: StreamMeta) => void;
 }
 
@@ -455,8 +471,12 @@ export const useChatStore = create<ChatStore>()(
             return;
           }
           case "error": {
-            get().setError(chatId, ev.message);
-            get().finishStreaming(chatId);
+            // Attach the error to the assistant turn so the failed
+            // bubble carries its own context. The chat-level banner
+            // was easy to miss — and missing the failure mode is
+            // exactly what made the SSE bug feel like "empty replies".
+            get().setTurnError(chatId, ev.message);
+            get().finishStreaming(chatId, { finish_reason: "error" });
             return;
           }
         }
@@ -469,6 +489,8 @@ export const useChatStore = create<ChatStore>()(
       if (err.name === "AbortError") {
         get().finishStreaming(chatId, { finish_reason: "abort" });
       } else {
+        // Network / fetch failure — no assistant turn body to attach
+        // to. Fall back to the chat-level banner so it still surfaces.
         get().setError(chatId, err.message);
         get().finishStreaming(chatId);
       }
@@ -534,6 +556,18 @@ export const useChatStore = create<ChatStore>()(
   setError: (chatId, error) =>
     set((state) => ({
       chats: state.chats.map((c) => (c.id === chatId ? { ...c, error } : c)),
+    })),
+
+  setTurnError: (chatId, error) =>
+    set((state) => ({
+      chats: state.chats.map((c) => {
+        if (c.id !== chatId) return c;
+        const messages = [...c.messages];
+        const last = messages[messages.length - 1];
+        if (last?.role !== "assistant") return c;
+        messages[messages.length - 1] = { ...last, error };
+        return { ...c, messages };
+      }),
     })),
 
   finishStreaming: (chatId, meta) =>

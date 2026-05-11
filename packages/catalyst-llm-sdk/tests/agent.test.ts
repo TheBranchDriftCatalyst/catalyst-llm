@@ -75,6 +75,24 @@ describe("parseAgentSSE", () => {
     expect(events.map((e) => e.type)).toEqual(["token", "message_done"]);
   });
 
+  it("decodes \\r\\n line endings emitted by sse-starlette", async () => {
+    // Regression: the in-house parser split on `\n\n` and silently
+    // yielded zero events when the backend emitted `\r\n\r\n` boundaries.
+    // EventSourceParserStream handles every line-terminator combination.
+    const body = sseStream([
+      'event: run_started\r\ndata: {"type":"run_started","run_id":"r","model":"m"}\r\n\r\n',
+      'event: token\r\ndata: {"type":"token","content":"crlf"}\r\n\r\n',
+      'event: message_done\r\ndata: {"type":"message_done"}\r\n\r\n',
+    ]);
+    const events = await collect(parseAgentSSE(body));
+    expect(events.map((e) => e.type)).toEqual([
+      "run_started",
+      "token",
+      "message_done",
+    ]);
+    expect((events[1] as any).content).toBe("crlf");
+  });
+
   it("ignores comments and malformed JSON without aborting the stream", async () => {
     const body = sseStream([
       ": keepalive ping\n\n",

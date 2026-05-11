@@ -1,4 +1,4 @@
-import { User, Bot } from "lucide-react";
+import { User, Bot, AlertTriangle } from "lucide-react";
 import type { ChatTurn } from "../react/chatStore.js";
 import { RenderedContent } from "./RenderedContent.js";
 import { ReasoningBlock, splitReasoning } from "./ReasoningBlock.js";
@@ -56,7 +56,7 @@ export function ChatMessage({ message, isStreaming }: ChatMessageProps) {
                   record={rec}
                 />
               ))}
-              {isStreaming && !message.content && !message.tool_calls?.length ? (
+              {isStreaming && !message.content && !message.tool_calls?.length && !message.error ? (
                 <span className="text-muted-foreground">Thinking...</span>
               ) : (
                 /*
@@ -82,6 +82,24 @@ export function ChatMessage({ message, isStreaming }: ChatMessageProps) {
                     />
                   ),
                 )
+              )}
+              {/* Per-turn error from the SSE `error` event (e.g. the
+                  upstream model rejected the request). Rendered after
+                  any partial text so the user sees what survived
+                  before the failure plus the reason it stopped. */}
+              {message.error && (
+                <div
+                  role="alert"
+                  className="mt-2 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+                >
+                  <AlertTriangle
+                    className="mt-0.5 h-4 w-4 shrink-0"
+                    aria-hidden="true"
+                  />
+                  <span className="whitespace-pre-wrap break-words">
+                    {message.error}
+                  </span>
+                </div>
               )}
             </>
           ) : (

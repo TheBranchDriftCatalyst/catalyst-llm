@@ -1,11 +1,17 @@
 import { describe, it, expect } from "vitest";
 import { parseSSEChunks } from "../src/client/streaming.js";
 
-function sseResponse(lines: string[]): Response {
+// SSE wire format reminder: each event ends with a blank line (\n\n).
+// The first-pass tests used single-LF terminators, which our hand-rolled
+// parser tolerated but EventSourceParserStream — spec-compliant — does
+// not. The OpenAI / LiteLLM proxies we actually talk to emit \n\n
+// (and CRLF in the case of sse-starlette), so these tests now mirror
+// real traffic.
+function sseResponse(events: string[]): Response {
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
       const encoder = new TextEncoder();
-      for (const line of lines) controller.enqueue(encoder.encode(line));
+      for (const ev of events) controller.enqueue(encoder.encode(ev));
       controller.close();
     },
   });
@@ -15,10 +21,10 @@ function sseResponse(lines: string[]): Response {
 describe("parseSSEChunks", () => {
   it("parses delta tokens and reaches done", async () => {
     const resp = sseResponse([
-      'data: {"id":"1","model":"m","choices":[{"delta":{"content":"Hel"}}]}\n',
-      'data: {"id":"1","model":"m","choices":[{"delta":{"content":"lo"}}]}\n',
-      'data: {"id":"1","model":"m","choices":[{"finish_reason":"stop","delta":{}}]}\n',
-      "data: [DONE]\n",
+      'data: {"id":"1","model":"m","choices":[{"delta":{"content":"Hel"}}]}\n\n',
+      'data: {"id":"1","model":"m","choices":[{"delta":{"content":"lo"}}]}\n\n',
+      'data: {"id":"1","model":"m","choices":[{"finish_reason":"stop","delta":{}}]}\n\n',
+      "data: [DONE]\n\n",
     ]);
     const tokens: string[] = [];
     let saw_done = false;
@@ -40,8 +46,8 @@ describe("parseSSEChunks", () => {
 
   it("captures usage when present", async () => {
     const resp = sseResponse([
-      'data: {"choices":[{"delta":{"content":"x"}}],"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}\n',
-      "data: [DONE]\n",
+      'data: {"choices":[{"delta":{"content":"x"}}],"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}\n\n',
+      "data: [DONE]\n\n",
     ]);
     let usage: any;
     for await (const chunk of parseSSEChunks(resp)) {
@@ -55,9 +61,9 @@ describe("parseSSEChunks", () => {
 
   it("ignores malformed JSON lines", async () => {
     const resp = sseResponse([
-      "data: not-json\n",
-      'data: {"choices":[{"delta":{"content":"ok"}}]}\n',
-      "data: [DONE]\n",
+      "data: not-json\n\n",
+      'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n',
+      "data: [DONE]\n\n",
     ]);
     const tokens: string[] = [];
     for await (const chunk of parseSSEChunks(resp)) {
@@ -65,5 +71,21 @@ describe("parseSSEChunks", () => {
       tokens.push(chunk.delta);
     }
     expect(tokens.join("")).toBe("ok");
+  });
+
+  it("handles \\r\\n line endings emitted by sse-starlette-style backends", async () => {
+    // Regression coverage shared with parseAgentSSE: the wire format
+    // helper handles every line terminator, so the OpenAI-protocol
+    // parser inherits the same robustness.
+    const resp = sseResponse([
+      'data: {"choices":[{"delta":{"content":"crlf"}}]}\r\n\r\n',
+      "data: [DONE]\r\n\r\n",
+    ]);
+    const tokens: string[] = [];
+    for await (const chunk of parseSSEChunks(resp)) {
+      if (chunk.done) break;
+      tokens.push(chunk.delta);
+    }
+    expect(tokens.join("")).toBe("crlf");
   });
 });

@@ -7,10 +7,17 @@
  * iteration markers, and the final message_done event without ever
  * caring that the wire format is SSE.
  *
- * Why we don't use EventSource: it's GET-only and gives no way to
- * carry a JSON body. We do a plain fetch + manual SSE parsing — the
- * code is small and gets us POST + Authorization headers + abort.
+ * Wire-format parsing lives in `../sse.ts` (shared with the OpenAI
+ * chat-completion stream parser). This module only owns the typed
+ * decoding step: JSON.parse the `data` payload, validate the `type`
+ * discriminator, log + skip anything unrecognised.
+ *
+ * Why we don't use the built-in EventSource: it's GET-only and gives
+ * no way to carry a JSON body. fetch() + the parser library lets us
+ * POST + send Authorization headers + abort, which EventSource can't.
  */
+
+import { sseMessages, type EventSourceMessage } from "../sse.js";
 
 import {
   AGENT_EVENT_TYPES,
@@ -51,10 +58,10 @@ export interface StreamOptions {
   signal?: AbortSignal;
 }
 
-const TYPE_SET = new Set<string>(AGENT_EVENT_TYPES);
+const AGENT_EVENT_TYPE_SET = new Set<string>(AGENT_EVENT_TYPES);
 
 function isAgentEventType(s: string): s is AgentEventType {
-  return TYPE_SET.has(s);
+  return AGENT_EVENT_TYPE_SET.has(s);
 }
 
 export class CatalystAgentClient {
@@ -98,8 +105,8 @@ export class CatalystAgentClient {
 
   /**
    * Stream agent events. Returns an AsyncIterable; consumers should
-   * `for await (const ev of streamAgent(...))`. The generator always
-   * either runs to completion (terminating message_done or error) or
+   * `for await (const ev of streamAgent(...))`. The generator either
+   * runs to completion (terminating message_done or error event) or
    * exits cleanly on AbortSignal.
    */
   streamAgent(
@@ -133,75 +140,57 @@ export class CatalystAgentClient {
 }
 
 /**
- * Parse a Server-Sent Events stream into AgentEvents.
+ * Decode an SSE response body into typed AgentEvents.
  *
- * SSE wire format reminder: messages are separated by blank lines.
- * Within a message, lines like `event: foo` and `data: {...}` accumulate.
- * Our backend (sse-starlette) emits one named event per logical message
- * with a single JSON `data` line. We trust the JSON payload's `type`
- * field over the event-name header — the data is the source of truth
- * — but we use the event name as a fast-path filter when present.
+ * The wire-format reader lives in ../sse.ts; this generator just
+ * walks its output and validates each message against the AgentEvent
+ * union. Unknown / malformed frames are logged and skipped so a
+ * single bad event can't kill the stream.
  */
 export async function* parseAgentSSE(
   body: ReadableStream<Uint8Array>,
 ): AsyncGenerator<AgentEvent, void, unknown> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      // Split on the SSE message boundary (\n\n). Anything before the
-      // last boundary is a complete message; the tail is partial and
-      // stays in the buffer.
-      while (true) {
-        const idx = buffer.indexOf("\n\n");
-        if (idx === -1) break;
-        const raw = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + 2);
-        const ev = parseSSEMessage(raw);
-        if (ev) yield ev;
-      }
-    }
-    // Tail after stream close — emit if it's a complete message.
-    if (buffer.trim()) {
-      const ev = parseSSEMessage(buffer);
-      if (ev) yield ev;
-    }
-  } finally {
-    reader.releaseLock();
+  for await (const msg of sseMessages(body)) {
+    const ev = toAgentEvent(msg);
+    if (ev) yield ev;
   }
 }
 
-function parseSSEMessage(raw: string): AgentEvent | null {
-  let eventName: string | null = null;
-  const dataLines: string[] = [];
-  for (const line of raw.split("\n")) {
-    if (!line || line.startsWith(":")) continue; // comment/empty
-    const colon = line.indexOf(":");
-    if (colon === -1) continue;
-    const field = line.slice(0, colon);
-    // The spec allows an optional space after the colon; strip exactly one.
-    let value = line.slice(colon + 1);
-    if (value.startsWith(" ")) value = value.slice(1);
-    if (field === "event") eventName = value;
-    else if (field === "data") dataLines.push(value);
-  }
-  if (dataLines.length === 0) return null;
-  let json: unknown;
+/**
+ * Map a raw SSE message to a typed AgentEvent.
+ *
+ * The JSON payload's `type` is authoritative; the SSE event-name
+ * field is a fallback when the payload omits it. Anything that
+ * doesn't match the AgentEvent union is logged + dropped — silent
+ * drops have bitten us before, so be loud.
+ */
+function toAgentEvent(msg: EventSourceMessage): AgentEvent | null {
+  if (!msg.data) return null;
+  let payload: unknown;
   try {
-    json = JSON.parse(dataLines.join("\n"));
-  } catch {
+    payload = JSON.parse(msg.data);
+  } catch (err) {
+    console.warn("[catalyst-llm-sdk] dropped malformed SSE data", {
+      event: msg.event,
+      data: msg.data.slice(0, 200),
+      err,
+    });
     return null;
   }
-  if (!json || typeof json !== "object") return null;
-  // Trust payload.type over event name; fall back to event name when absent.
-  const obj = json as Record<string, unknown>;
-  const t = typeof obj.type === "string" ? obj.type : eventName;
-  if (!t || !isAgentEventType(t)) return null;
-  return { ...obj, type: t } as AgentEvent;
+  if (!payload || typeof payload !== "object") return null;
+
+  const obj = payload as Record<string, unknown>;
+  const type = typeof obj.type === "string" ? obj.type : msg.event;
+  if (!type) {
+    console.warn("[catalyst-llm-sdk] dropped SSE message with no type", obj);
+    return null;
+  }
+  if (!isAgentEventType(type)) {
+    console.warn(
+      `[catalyst-llm-sdk] dropped unknown agent event type "${type}"`,
+      obj,
+    );
+    return null;
+  }
+  return { ...obj, type } as AgentEvent;
 }
