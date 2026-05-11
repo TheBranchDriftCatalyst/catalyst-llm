@@ -4,36 +4,22 @@ import { nanoid } from "nanoid";
 import type {
   CatalystLLMClient,
   ChatParams,
-  Message,
   StreamMeta,
-  ToolCall,
-  ToolDefinition,
-  ToolRegistryLike,
 } from "../client/index.js";
 import type { CatalystAgentClient } from "../agent/index.js";
 
 /**
- * Return a ToolRegistryLike adapter that wraps `source` but only
- * exposes tools whose name is in `allowed`. Used per-request to
- * narrow the shared registry to a chat's `enabledTools` opt-in
- * without mutating the source registry.
+ * OpenAI-shape tool_calls[] entry. We carry it on ChatToolCallRecord
+ * so the existing ToolCallCard UI keeps working unchanged. The agent
+ * backend doesn't emit this shape directly anymore — chatStore
+ * synthesises one from tool_call_start events for UI consumption.
  */
-function toolRegistryFiltered(
-  source: ToolRegistryLike,
-  allowed: readonly string[],
-): ToolRegistryLike {
-  const allow = new Set(allowed);
-  return {
-    has: (name) => allow.has(name) && source.has(name),
-    list: () => source.list().filter((t: ToolDefinition) => allow.has(t.name)),
-    toOpenAI: () =>
-      source.toOpenAI().filter((t) => allow.has(t.function.name)),
-    invoke: async (name, args, ctx) => {
-      if (!allow.has(name)) {
-        throw new Error(`tool ${name} not enabled for this chat`);
-      }
-      return source.invoke(name, args, ctx);
-    },
+export interface ToolCall {
+  id: string;
+  type: "function";
+  function: {
+    name: string;
+    arguments: string;
   };
 }
 
@@ -109,12 +95,6 @@ interface ChatStore {
    * agent loop runs server-side and emits typed AgentEvents.
    */
   agentClient: CatalystAgentClient | null;
-  /**
-   * Optional tool registry shared across chats. When set, individual
-   * chats can opt into tool calls via `enabledTools`. The store calls
-   * the registry's `invoke` method during sendMessage's onToolCall.
-   */
-  tools: ToolRegistryLike | null;
   defaultModel: string;
   defaultParams: ChatParams;
   defaultSystemPrompt: string;
@@ -126,7 +106,6 @@ interface ChatStore {
   // Setup (called by LLMProvider on mount)
   setClient: (client: CatalystLLMClient) => void;
   setAgentClient: (client: CatalystAgentClient | null) => void;
-  setTools: (tools: ToolRegistryLike | null) => void;
   setEnabledTools: (chatId: string, names: string[]) => void;
   setDefaults: (init: {
     model?: string;
@@ -194,7 +173,6 @@ export const useChatStore = create<ChatStore>()(
   defaultModel: "",
   defaultParams: INITIAL_PARAMS,
   defaultSystemPrompt: INITIAL_SYSTEM_PROMPT,
-  tools: null,
 
   chats: [
     createDefaultChat({
@@ -209,8 +187,6 @@ export const useChatStore = create<ChatStore>()(
   setClient: (client) => set({ client }),
 
   setAgentClient: (agentClient) => set({ agentClient }),
-
-  setTools: (tools) => set({ tools }),
 
   setEnabledTools: (chatId, names) =>
     set((state) => ({

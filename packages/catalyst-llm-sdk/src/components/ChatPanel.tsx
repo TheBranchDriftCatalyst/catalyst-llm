@@ -28,7 +28,7 @@ import {
   SystemPromptPresets,
   getPresetsForModel,
 } from "./PromptPresets.js";
-import { useModels } from "../react/hooks.js";
+import { useModels, useAvailableTools, type AvailableTool } from "../react/hooks.js";
 import { useFocusTrap } from "./useFocusTrap.js";
 import { cn } from "./utils.js";
 
@@ -51,7 +51,7 @@ export function ChatPanel({ chat }: ChatPanelProps) {
     resumeChat,
     setEnabledTools,
   } = useChatStore();
-  const tools = useChatStore((s) => s.tools);
+  const { tools: availableTools } = useAvailableTools();
   const { models } = useModels();
   const selectedModel = models.find((m) => m.id === chat.model);
   const [showVisionStub, setShowVisionStub] = useState(false);
@@ -153,9 +153,9 @@ export function ChatPanel({ chat }: ChatPanelProps) {
         <div className="flex items-center justify-between gap-3 border-b border-border bg-card/30 px-4 py-2">
           <CostPins chat={chat} />
           <div className="flex items-center gap-3">
-            {tools && tools.list().length > 0 && (
+            {availableTools.length > 0 && (
               <ToolsToggle
-                tools={tools}
+                tools={availableTools}
                 enabled={chat.enabledTools ?? []}
                 onChange={(names) => setEnabledTools(chat.id, names)}
               />
@@ -377,18 +377,18 @@ export function ChatPanel({ chat }: ChatPanelProps) {
 
 /**
  * Compact popover that lets the user toggle which tools the model is
- * allowed to invoke on this chat. Reads the registered tool list from
- * the LLMProvider's shared registry; writes the per-chat enabled set
- * via `chatStore.setEnabledTools(chatId, names)`. The button face
- * shows the active count so the user can see at a glance that tools
- * are armed without opening the popover.
+ * allowed to invoke on this chat. Reads the catalog from the agent
+ * backend (`useAvailableTools()` → /api/tools); writes the per-chat
+ * enabled set via `chatStore.setEnabledTools(chatId, names)`. The
+ * button face shows the active count so the user can see at a glance
+ * that tools are armed without opening the popover.
  */
 function ToolsToggle({
   tools,
   enabled,
   onChange,
 }: {
-  tools: NonNullable<ReturnType<typeof useChatStore.getState>["tools"]>;
+  tools: AvailableTool[];
   enabled: string[];
   onChange: (names: string[]) => void;
 }) {
@@ -397,9 +397,7 @@ function ToolsToggle({
   const popoverRef = useRef<HTMLDivElement>(null);
   useFocusTrap(popoverRef, open);
 
-  // List() allocates each call — but we only call it on render, so
-  // the rebuild is cheap and trivially memoizable if it ever isn't.
-  const list = tools.list();
+  const list = tools;
   const enabledSet = new Set(enabled);
 
   function toggle(name: string) {
@@ -490,8 +488,8 @@ function ToolsToggle({
           <ul className="max-h-72 overflow-y-auto p-1">
             {list.length === 0 && (
               <li className="px-3 py-3 text-center text-[10px] text-muted-foreground">
-                No tools registered. Pass a `tools` prop to{" "}
-                <code>&lt;LLMProvider&gt;</code>.
+                No tools available. Verify the agent backend is reachable
+                at <code>/api/tools</code>.
               </li>
             )}
             {list.map((t) => {
@@ -523,11 +521,6 @@ function ToolsToggle({
                     <span className="min-w-0 flex-1">
                       <span className="block font-mono font-medium">
                         {t.name}
-                        {t.transport && (
-                          <span className="ml-1.5 inline-block rounded-sm bg-muted/60 px-1 text-[8px] font-bold uppercase text-muted-foreground align-middle">
-                            {t.transport}
-                          </span>
-                        )}
                       </span>
                       {t.description && (
                         <span className="block text-[10px] leading-snug text-muted-foreground">

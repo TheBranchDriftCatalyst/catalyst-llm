@@ -16,6 +16,58 @@ export function useLLM() {
   return client;
 }
 
+export interface AvailableTool {
+  name: string;
+  description: string;
+}
+
+export interface UseAvailableToolsResult {
+  tools: AvailableTool[];
+  loading: boolean;
+  error: string | null;
+  refresh: () => Promise<void>;
+}
+
+/**
+ * Fetch the list of tools the agent backend will dispatch. Used by
+ * the chat surface's tool-toggle popover. Returns [] when no
+ * agentClient is configured (chat is then effectively tool-less,
+ * matching the no-LLMProvider-tools state we used to support).
+ */
+export function useAvailableTools(): UseAvailableToolsResult {
+  const { agentClient } = useLLMContext();
+  const [tools, setTools] = useState<AvailableTool[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    if (!agentClient) {
+      setTools([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await agentClient.listTools();
+      setTools(
+        data.tools.map((t) => ({ name: t.name, description: t.description })),
+      );
+    } catch (e) {
+      setError((e as Error).message);
+      setTools([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [agentClient]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  return { tools, loading, error, refresh };
+}
+
 export interface GroupedModels {
   mac: ModelWithRouting[];
   cluster: ModelWithRouting[];

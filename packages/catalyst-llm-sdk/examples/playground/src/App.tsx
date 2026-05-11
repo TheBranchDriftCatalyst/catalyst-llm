@@ -16,8 +16,6 @@ import {
   LLMProvider,
   ModelMicroSwitcher,
   PromptEditor,
-  ToolRegistry,
-  webSearchTool,
   useChatStore,
   useCompareStore,
 } from "@catalyst/llm-sdk";
@@ -52,24 +50,9 @@ const agentBaseUrl =
   "http://localhost:7078";
 const agentClient = new CatalystAgentClient({ baseUrl: agentBaseUrl });
 
-// Tool host base URL — defaults to the docker-compose mapping
-// (127.0.0.1:7077). Override with VITE_TOOL_HOST_URL when the host
-// isn't running on the same machine as the playground (e.g. dev
-// pointing at the talos cluster's tool-host).
-const toolHostUrl =
-  (import.meta.env.VITE_TOOL_HOST_URL as string | undefined) ??
-  "http://localhost:7077";
-
-// Single shared registry across all chats / compare tabs. Each chat
-// opts in to specific tool names via `chatStore.setEnabledTools`.
-// Built-ins land here; user-registered tools could be added later
-// from the (future) /tools page.
-const toolRegistry = new ToolRegistry();
-toolRegistry.register(webSearchTool({ baseUrl: toolHostUrl }));
-// browse_page lands when the Playwright Pass 2 of tool-host ships;
-// registering it now would surface a 501 to the model, which is
-// worse UX than the tool not existing.
-// toolRegistry.register(browsePageTool({ baseUrl: toolHostUrl }));
+// Tool dispatch lives entirely server-side now (catalyst-langgraph +
+// tool-host). The available tool catalog is fetched at runtime via
+// `useAvailableTools()` (→ /api/tools); nothing to construct here.
 
 type Page = "chat" | "compare" | "prompts" | "stats";
 
@@ -297,7 +280,7 @@ function ChatWorkspace({ goCompare }: { goCompare: () => void }) {
 function App() {
   const [page, setPage] = useRoute();
   return (
-    <LLMProvider client={client} agentClient={agentClient} tools={toolRegistry}>
+    <LLMProvider client={client} agentClient={agentClient}>
       <div className="h-screen flex flex-col bg-background text-foreground">
         {/* Skip-to-main affordance — visually hidden but reachable by tab. */}
         <a

@@ -5,12 +5,15 @@ export {
   useChat,
   useStreamingChat,
   useEmbed,
+  useAvailableTools,
   useChatStore,
   type GroupedModels,
   type UseModelsResult,
   type UseChatResult,
   type UseStreamingChatResult,
   type UseEmbedResult,
+  type AvailableTool,
+  type UseAvailableToolsResult,
 } from "./hooks.js";
 export type {
   Chat,

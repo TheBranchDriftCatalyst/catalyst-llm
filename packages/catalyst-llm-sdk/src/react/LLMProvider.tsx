@@ -11,7 +11,6 @@ import {
   LLMConfig,
   type ChatParams,
   type LLMConfigInit,
-  type ToolRegistryLike,
 } from "../client/index.js";
 import { CatalystAgentClient } from "../agent/index.js";
 import { useChatStore } from "./chatStore.js";
@@ -21,18 +20,12 @@ interface LLMContextValue {
   client: CatalystLLMClient;
   /**
    * Agent backend (catalyst-langgraph). chatStore.sendMessage routes
-   * through this when set; the legacy direct-LiteLLM streamChat path
-   * is retained on `client` only for non-chat methods (model listing,
-   * embeddings) that haven't been migrated yet. See follow-up llm-*
-   * for collapsing these into one client.
+   * through this; the legacy direct-LiteLLM `client` is retained
+   * for non-chat methods (model listing, embeddings) that haven't
+   * been migrated yet. Followup llm-61f tracks dropping `client`
+   * from the React layer entirely.
    */
   agentClient: CatalystAgentClient | null;
-  /**
-   * Optional tool registry shared with the chat store. Hosts that
-   * pass it can let chats opt into individual tools via
-   * `chatStore.setEnabledTools(chatId, [...])` without prop drilling.
-   */
-  tools: ToolRegistryLike | null;
 }
 
 const LLMContext = createContext<LLMContextValue | null>(null);
@@ -56,14 +49,6 @@ export interface LLMProviderProps {
   defaultParams?: ChatParams;
   /** Default system prompt for new chats. */
   defaultSystemPrompt?: string;
-  /**
-   * Optional ToolRegistry the chat store can dispatch tool calls into.
-   * When set, individual chats opt into specific tool names via
-   * `chatStore.setEnabledTools(chatId, [...])`. When unset, the chat
-   * surface stays on the no-tools wire shape that pre-dates this
-   * feature — backward-compatible.
-   */
-  tools?: ToolRegistryLike | null;
 }
 
 export function LLMProvider({
@@ -74,7 +59,6 @@ export function LLMProvider({
   defaultModel,
   defaultParams,
   defaultSystemPrompt,
-  tools,
 }: LLMProviderProps) {
   const clientRef = useRef<CatalystLLMClient | null>(null);
 
@@ -93,10 +77,6 @@ export function LLMProvider({
   useEffect(() => {
     useChatStore.getState().setAgentClient(agentClient ?? null);
   }, [agentClient]);
-
-  useEffect(() => {
-    useChatStore.getState().setTools(tools ?? null);
-  }, [tools]);
 
   useEffect(() => {
     useChatStore.getState().setDefaults({
@@ -127,9 +107,8 @@ export function LLMProvider({
     () => ({
       client: resolvedClient,
       agentClient: agentClient ?? null,
-      tools: tools ?? null,
     }),
-    [resolvedClient, agentClient, tools],
+    [resolvedClient, agentClient],
   );
 
   return <LLMContext.Provider value={value}>{children}</LLMContext.Provider>;
