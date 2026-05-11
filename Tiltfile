@@ -21,6 +21,26 @@ load('./tilt/common.tiltfile',
 )
 
 # ============================================
+# Project-aware labels.
+#
+# When this Tiltfile is the entry point (`tilt up` from this dir), labels
+# are kept short (e.g. 'ui'). When it's include()d from the workspace
+# aggregator at ../, every label gets prefixed with the project name so
+# the Tilt UI groups read like 'catalyst-llm.ui', 'catalyst-llm.tools',
+# etc. — making the resource's project of origin obvious at a glance.
+# ============================================
+PROJECT_NAME = 'catalyst-llm'
+_running_standalone = config.main_dir.rstrip('/').endswith('/' + PROJECT_NAME)
+
+def _labels(*base):
+    if _running_standalone:
+        return list(base)
+    # Tilt validates labels with regex
+    # `(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?` — slashes are rejected,
+    # so we use dots to namespace into the project (e.g. 'catalyst-llm.ui').
+    return [PROJECT_NAME + '.' + b for b in base]
+
+# ============================================
 # Shared dev cluster (catalyst-dev) — defines `k3d-cluster` resource
 # and calls allow_k8s_contexts('k3d-catalyst-dev').
 # ============================================
@@ -35,7 +55,7 @@ print_dev_banner()
 # ============================================
 local_resource(
     name='ollama',
-    labels=['llm'],
+    labels=_labels('llm'),
     serve_cmd='./scripts/ollama-serve.sh',
     readiness_probe=probe(
         http_get=http_get_action(port=11434, path='/api/tags'),
@@ -73,7 +93,7 @@ k8s_yaml(kustomize('./k8s/local'))
 
 k8s_resource(
     'open-webui',
-    labels=['ui'],
+    labels=_labels('ui'),
     port_forwards=['3030:8080'],
     resource_deps=['k3d-cluster', 'ollama'],
     links=[
@@ -85,7 +105,7 @@ add_open_browser_button('open-webui', 'http://localhost:3030')
 
 k8s_resource(
     'lobe-chat',
-    labels=['ui'],
+    labels=_labels('ui'),
     port_forwards=['3210:3210'],
     resource_deps=['k3d-cluster', 'ollama'],
     links=[
@@ -97,7 +117,7 @@ add_open_browser_button('lobe-chat', 'http://localhost:3210')
 
 k8s_resource(
     'searxng',
-    labels=['tools'],
+    labels=_labels('tools'),
     port_forwards=['8888:8080'],
     resource_deps=['k3d-cluster'],
     links=[
@@ -109,7 +129,7 @@ add_open_browser_button('searxng', 'http://localhost:8888')
 
 k8s_resource(
     'tool-host',
-    labels=['tools'],
+    labels=_labels('tools'),
     port_forwards=['7077:7077'],
     resource_deps=['k3d-cluster', 'searxng'],
     links=[
@@ -121,7 +141,7 @@ k8s_resource(
 
 k8s_resource(
     'catalyst-langgraph',
-    labels=['agent'],
+    labels=_labels('agent'),
     port_forwards=['7078:7078'],
     resource_deps=['k3d-cluster', 'tool-host'],
     links=[
@@ -167,7 +187,7 @@ if not LITELLM_KEY:
 
 local_resource(
     name='sdk-build',
-    labels=['sdk'],
+    labels=_labels('sdk'),
     cmd='yarn --cwd ' + SDK_DIR + ' build',
     serve_cmd='yarn --cwd ' + SDK_DIR + ' build:watch',
     deps=[SDK_DIR + '/src'],
@@ -176,7 +196,7 @@ local_resource(
 
 local_resource(
     name='playground',
-    labels=['ui'],
+    labels=_labels('ui'),
     serve_cmd=(
         'VITE_LITELLM_URL=' + LITELLM_URL + ' ' +
         'VITE_LITELLM_KEY=' + LITELLM_KEY + ' ' +
