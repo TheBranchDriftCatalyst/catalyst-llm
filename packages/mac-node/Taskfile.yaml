@@ -147,10 +147,11 @@ tasks:
   # ─── Models ────────────────────────────────────────────────────
 
   generate:
-    desc: "Splice mac/* models into k8s/base/litellm/config.yaml + regenerate pull list"
+    desc: "Splice mac/* models into k8s/base/litellm/config.yaml + regenerate pull list + emit SDK model hints"
     cmds:
       - python3 scripts/gen-litellm.py
       - python3 scripts/gen-pull-models.py
+      - python3 scripts/gen-sdk-hints.py
 
   models:
     desc: Show all models (Ollama + vLLM) with live status

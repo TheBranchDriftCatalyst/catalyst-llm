@@ -1,6 +1,5 @@
 import type { Model } from "./types.js";
-
-const EMBEDDING_RX = /(embed|embedding)/i;
+import { inferModelHints, isEmbeddingModelHint } from "./modelHints.js";
 
 export interface ModelCapabilities {
   reasoning: boolean;
@@ -8,51 +7,27 @@ export interface ModelCapabilities {
 }
 
 /**
- * Best-effort model capability detection by ID pattern. The proxy is the
- * source of truth — these heuristics let UIs gate optional controls (e.g.
- * a "thinking" toggle) without a round-trip. False is the safe default;
- * worst case is a hidden toggle that would otherwise toggle harmlessly.
+ * Best-effort model capability detection. Delegates to inferModelHints, which
+ * checks the generated registry (packages/mac-node/models.yaml → JSON) first
+ * and the hand-written regex rules in modelHints.ts as a fallback. The proxy
+ * is still the source of truth for runtime calls — this is just a UI-side
+ * shortcut for gating optional controls.
  *
- * Heuristic table updated: 2026-05.
+ * Note: legacy callers that strip a backend prefix before passing the id
+ * (e.g. "litellm:gpt-5-pro" → "gpt-5-pro") still work because the regex
+ * fallback matches against the full string.
  */
 export function modelSupportsReasoning(
   modelId: string | undefined | null,
 ): boolean {
   if (!modelId) return false;
   const id = modelId.toLowerCase();
-  // Strip backend prefixes like "litellm:" / "ollama:"
   const bare = id.includes(":") ? id.split(":").slice(1).join(":") : id;
-
-  // OpenAI o-series + GPT-5 reasoning families
-  if (bare.startsWith("o1") || bare.startsWith("o3") || bare.startsWith("o4"))
-    return true;
-  if (bare.startsWith("gpt-5-thinking") || bare.startsWith("gpt-5-pro"))
-    return true;
-
-  // Anthropic Claude 3.7+ extended thinking
-  if (bare.startsWith("claude-3-7")) return true;
-  if (
-    bare.startsWith("claude-opus-4") ||
-    bare.startsWith("claude-sonnet-4") ||
-    bare.startsWith("claude-haiku-4")
-  )
-    return true;
-
-  // DeepSeek r-series
-  if (bare.includes("deepseek-r1") || bare.includes("deepseek-r2")) return true;
-
-  // Qwen reasoning families
-  if (bare.includes("qwq")) return true;
-  if (bare.includes("qwen3") && bare.includes("thinking")) return true;
-
-  // Reflective / agent-tuned community models
-  if (bare.includes("reflect") || bare.includes("reasoner")) return true;
-
-  return false;
+  return Boolean(inferModelHints(bare).supportsReasoning);
 }
 
 export function isEmbeddingModel(modelId: string | undefined | null): boolean {
-  return Boolean(modelId && EMBEDDING_RX.test(modelId));
+  return isEmbeddingModelHint(modelId);
 }
 
 export function getModelCapabilities(modelId: string): ModelCapabilities {

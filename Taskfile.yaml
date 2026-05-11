@@ -1,0 +1,106 @@
+# Root Taskfile — thin DX wrapper around Tilt / k3d / Argo CD / model gen.
+#
+# Run: task --list
+version: '3'
+
+vars:
+  K8S_LOCAL: k8s/local
+  K8S_TALOS00: k8s/talos00
+  ARGO_APP: catalyst-llm
+
+tasks:
+  default:
+    desc: Show all available tasks
+    cmds:
+      - task --list
+
+  # ─── Tilt ────────────────────────────────────────────────────────────
+  up:
+    desc: Bring up the dev stack (k3d + native Ollama + UIs)
+    cmds:
+      - tilt up
+
+  up:prod:
+    desc: Bring up the prod ops view against talos00
+    cmds:
+      - tilt up -f Tiltfile.prod
+
+  down:
+    desc: Stop Tilt resources (does NOT delete the k3d cluster)
+    cmds:
+      - tilt down
+
+  parse:
+    desc: Validate that both Tiltfiles parse (skips the cluster-context check)
+    cmds:
+      # `tilt alpha tiltfile-result` post-parses against the active kubectl
+      # context, so we run each Tiltfile only when its allowed context is
+      # active. Filter to syntax/load errors.
+      - tilt alpha tiltfile-result 2>&1                  | grep -E "^Error|Traceback" && exit 1 || echo "Tiltfile (dev) OK"
+      - tilt alpha tiltfile-result -f Tiltfile.prod 2>&1 | grep -E "^Error|Traceback" && exit 1 || echo "Tiltfile.prod OK"
+
+  # ─── k3d cluster ─────────────────────────────────────────────────────
+  k3d:up:
+    desc: Create the catalyst-llm k3d cluster (idempotent)
+    cmds:
+      - ./scripts/k3d-up.sh
+
+  k3d:down:
+    desc: Delete the catalyst-llm k3d cluster
+    cmds:
+      - ./scripts/k3d-down.sh
+
+  k3d:reset:
+    desc: Tear down and recreate the cluster from scratch
+    cmds:
+      - ./scripts/k3d-down.sh
+      - ./scripts/k3d-up.sh
+
+  # ─── Kustomize validation ────────────────────────────────────────────
+  k8s:build:local:
+    desc: Render the local (k3d) overlay to stdout
+    cmds:
+      - kubectl kustomize {{.K8S_LOCAL}}
+
+  k8s:build:talos00:
+    desc: Render the talos00 overlay to stdout
+    cmds:
+      - kubectl kustomize {{.K8S_TALOS00}}
+
+  k8s:check:
+    desc: Validate both overlays render without errors
+    cmds:
+      - kubectl kustomize {{.K8S_LOCAL}}   >/dev/null && echo "k8s/local OK"
+      - kubectl kustomize {{.K8S_TALOS00}} >/dev/null && echo "k8s/talos00 OK"
+
+  # ─── Argo CD (prod, talos00) ─────────────────────────────────────────
+  argo:sync:
+    desc: Sync the catalyst-llm Argo CD application
+    cmds:
+      - argocd app sync {{.ARGO_APP}}
+
+  argo:diff:
+    desc: Show drift between cluster state and the k8s/talos00 overlay
+    cmds:
+      - argocd app diff {{.ARGO_APP}}
+
+  argo:status:
+    desc: Show Argo CD app health + sync status
+    cmds:
+      - argocd app get {{.ARGO_APP}}
+
+  # ─── Model registry (delegates into packages/mac-node) ───────────────
+  models:
+    desc: Regenerate everything that derives from models.yaml (litellm config, pull scripts)
+    cmds:
+      - task -d packages/mac-node generate
+
+  models:download:
+    desc: Pull all mac-targeted models from models.yaml (CONCURRENCY=N, ONLY=alias,..., SKIP=alias,...)
+    cmds:
+      - task -d packages/mac-node models:download {{.CLI_ARGS}}
+
+  models:plan:
+    desc: Dry-run of models:download
+    cmds:
+      - task -d packages/mac-node models:download:plan

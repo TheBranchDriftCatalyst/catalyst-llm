@@ -1,14 +1,45 @@
 import type { ModelMetadata, ModelWithRouting } from "./types.js";
+import generatedHints from "./generated/modelHints.json" with { type: "json" };
 
 /**
  * Heuristics that fill in the gaps when LiteLLM's `/model/info` doesn't ship
  * full metadata — typical for local Ollama / vLLM-MLX models, where the
  * model database isn't seeded.
  *
+ * Two-tier lookup:
+ *   1. Generated table from packages/mac-node/models.yaml (every mac/* model).
+ *      Adds entries are automatic — run `task models` to regen.
+ *   2. Hand-written regex RULES below, used when the generated table has no
+ *      key for this model (hosted providers, models not in the mac-node
+ *      registry, ad-hoc community quants).
+ *
  * The patterns are intentionally pessimistic: we'd rather hide a control on
- * a borderline model than show one that breaks. Add new entries as the
- * registry grows; the order matters (first match wins).
+ * a borderline model than show one that breaks. Order matters in RULES
+ * (first match wins).
  */
+
+interface GeneratedEntry {
+  name: string;
+  aliases: string[];
+  tags: string[];
+  category?: string | null;
+  keys: string[];
+  supportsReasoning: boolean;
+  supportsVision: boolean;
+  supportsFunctionCalling: boolean;
+  isEmbedding: boolean;
+}
+
+// Index the generated table by every key (Ollama tag + every mac/* alias)
+// so a single lookup serves both `mac/qwen3-coder` and the raw Ollama
+// `qwen3-coder:30b-a3b-q8_0`.
+const GENERATED_BY_KEY: Map<string, GeneratedEntry> = (() => {
+  const map = new Map<string, GeneratedEntry>();
+  for (const entry of (generatedHints as { models: GeneratedEntry[] }).models) {
+    for (const key of entry.keys) map.set(key.toLowerCase(), entry);
+  }
+  return map;
+})();
 
 interface HintRule {
   /** Lowercased substring(s) — any match wins. Use the most specific token. */
@@ -34,6 +65,10 @@ const RULES: HintRule[] = [
   { match: /qwen3-?coder/i, supportsReasoning: true, maxInputTokens: 262144 },
   { match: /qwen3\.6/i, supportsReasoning: true, maxInputTokens: 262144 },
   { match: /qwen3-?(?:32b|30b)/i, supportsReasoning: true, maxInputTokens: 131072 },
+  // Any Qwen3 variant with explicit "thinking" tag
+  { match: /qwen3.*thinking/i, supportsReasoning: true, maxInputTokens: 131072 },
+  // Reflective / agent-tuned community models (reflection-*, *-reasoner, etc.)
+  { match: /\b(reflect(?:ion)?|reasoner)\b/i, supportsReasoning: true },
   // OpenAI o-series + gpt-5 (always reasoning)
   { match: /\bo[134](?:-mini)?\b/i, supportsReasoning: true, maxInputTokens: 200000 },
   { match: /gpt-5/i, supportsReasoning: true, maxInputTokens: 400000 },
@@ -81,18 +116,56 @@ const RULES: HintRule[] = [
 ];
 
 /**
- * Look up heuristic hints for a model. Returns an empty object if no rules
- * match — callers should still prefer real `metadata` over hints.
+ * Look up heuristic hints for a model.
+ *
+ *   1. Generated registry first — checks both `modelId` and `underlyingModel`
+ *      against the keys produced from models.yaml by gen-sdk-hints.py.
+ *   2. Regex RULES below as a fallback.
+ *
+ * Returns an empty object if neither tier matches — callers should still
+ * prefer real `metadata` over hints.
  */
 export function inferModelHints(
   modelId: string,
   underlyingModel?: string,
 ): HintRule {
+  // Tier 1: generated registry — exact key lookup on either id.
+  const id1 = modelId?.toLowerCase();
+  const id2 = underlyingModel?.toLowerCase();
+  const hit =
+    (id1 && GENERATED_BY_KEY.get(id1)) ||
+    (id2 && GENERATED_BY_KEY.get(id2));
+  if (hit) {
+    return {
+      match: /(?:)/,
+      supportsReasoning: hit.supportsReasoning,
+      supportsVision: hit.supportsVision,
+      supportsFunctionCalling: hit.supportsFunctionCalling,
+      // maxInputTokens left undefined — LiteLLM's probed context_length
+      // (in /model/info) is more accurate than anything we'd hardcode.
+    };
+  }
+
+  // Tier 2: regex fallback for hosted / non-mac-node models.
   const haystack = `${modelId} ${underlyingModel ?? ""}`;
   for (const rule of RULES) {
     if (rule.match.test(haystack)) return rule;
   }
   return { match: /(?:)/ };
+}
+
+/**
+ * Quick check: is this an embedding model? Uses the generated registry
+ * first, then falls back to the embed/embedding regex.
+ */
+export function isEmbeddingModelHint(
+  modelId: string | undefined | null,
+): boolean {
+  if (!modelId) return false;
+  const id = modelId.toLowerCase();
+  const hit = GENERATED_BY_KEY.get(id);
+  if (hit) return hit.isEmbedding;
+  return /(embed|embedding)/i.test(modelId);
 }
 
 /**
