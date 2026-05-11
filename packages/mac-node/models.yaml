@@ -21,6 +21,42 @@
 # legacy entries — that's how we ended up with 30 mac-side models last
 # pass, half of which weren't even pulled. See AGENTS.md for the
 # capability-by-capability shortlist + drop log.
+#
+# ── Quant policy (M5 Max, 128GB unified memory) ───────────────────────
+# Ollama defaults to Q4_K_M, which is conservative for our box. We
+# size up per architecture class:
+#
+#   MoE (qwen3-coder, gemma4-26b, qwen3-moe-uncensored)  → Q8_0 / Q6_K
+#       Only the active path runs per token (3-4B), so Q8 is ~5-10%
+#       slower than Q4. Trivial cost for measurable quality.
+#
+#   Dense reasoning (deepseek-r1, qwen3-coder-opus)      → Q8_0
+#       Quant noise compounds across CoT chains. Pays a real speed
+#       tax (~30-40%) but the quality win on multi-step reasoning
+#       is worth it. Expect ~7-9 tok/s instead of ~12.
+#
+#   Dense small (phi4 14B, cydonia 24B)                  → Q8_0
+#       Small enough that Q8 is essentially free. Use it.
+#
+#   Dense 70B class (hermes-4)                            → Q5_K_M
+#       Sweet spot once you account for KV cache headroom on long
+#       sessions. Q6 is viable, Q4 leaves quality on the table.
+#
+#   Dense 72B finetune (magnum-v4)                        → Q5_K_M
+#       Same logic as 70B class.
+#
+#   Dense 123B (behemoth-x)                               → Q4_K_M
+#       Stays at Q4. ~73GB already; Q5 (~85GB) crowds the KV cache
+#       budget on long-form sessions.
+#
+#   Specialty (embeddings, fast dailies, vision routers)  → default
+#       gemma4:e4b stays Q4 because speed is the whole point.
+#       qwen3-embedding stays default — quant doesn't matter for
+#       embeddings the way it does for generation.
+#
+# imatrix (i1) repos from mradermacher top out at Q6_K. At Q8 the
+# imatrix calibration gains are marginal anyway, so prefer i1-Q6_K
+# over the static-quant Q8_0 sibling for those models.
 
 node:
   ip: "192.168.1.33"
@@ -80,39 +116,100 @@ ollama:
     #    subsumes both.
 
     # ── Coding + Tool calling ────────────────────────────────────
-    - name: qwen3-coder:30b
+    # Quant policy on a 128GB M5 Max: prefer Q8_0 for MoE-A3B (3B
+    # active path → ~5-10% slowdown vs Q4, marginal in practice).
+    # Q4_K_M is the Ollama default but leaves quality on the table
+    # we have memory for. See AGENTS.md for the full quant matrix.
+    - name: qwen3-coder:30b-a3b-q8_0
       alias: qwen3-coder
-      description: "Qwen3-Coder 30B-A3B MoE — 256K ctx, ~Sonnet 4.5-class agentic coding, BFCL v3 top tier (function calling). Replaces qwen2.5-coder + devstral."
+      description: "Qwen3-Coder 30B-A3B MoE @ Q8_0 (~33GB) — 256K ctx, ~Sonnet 4.5-class agentic coding, BFCL v3 top tier. Q8 over Q4 because MoE active path is small and we have the memory."
       tags: [coding, moe, function-calling]
       category: serving
 
+    # ── Coding (Opus-distilled variants) ─────────────────────────
+    # Two siblings to qwen3-coder above — same Qwen3-Coder-Next base,
+    # SFT'd on Opus-4.6 / Claude-4.5-Opus high-reasoning traces. They
+    # trade some BFCL/agentic edge for noticeably more deliberate
+    # multi-step planning ("thinks like Opus"). Both are sharded /
+    # community-mirror GGUFs that Ollama can't pull directly
+    # (ollama/ollama#5245), so we use the merge-gguf strategy that
+    # download-models.py already implements for behemoth-x +
+    # qwen3-moe-uncensored — `hf download` shards, optional
+    # `llama-gguf-split --merge`, then `ollama create`.
+    #
+    # Picks rationale (May 2026):
+    #   - samuelcardillo's repo is the community-blessed clean SFT
+    #     pick (37 likes, full-finetune, three reasoning datasets).
+    #   - mradermacher's Huihui-abliterated + imatrix variant is the
+    #     uncensored sibling — same recipe, fewer refusals, slightly
+    #     higher-quality quants at the same bit width.
+    # ChatML; temp 0.6 / min_p 0.05 / rep_pen 1.02 (prefer the lower
+    # temp than RP defaults — these are reasoning models).
+    # IMPORTANT: Qwen3-Coder-Next is ~80B class (NOT 30B). Verified
+    # against HF file sizes: Q4_K_M=48GB, Q5_K_M=57GB, Q6_K=65GB,
+    # Q8_0=85GB, BF16=159GB. We keep these as the heaviest mac-side
+    # coding models — Q8 for the clean SFT (max quality available),
+    # Q6_K for the abliterated (mradermacher i1 caps at Q6_K, and at
+    # Q8 the imatrix calibration gains are marginal anyway).
+    #
+    # On 128GB the 85GB Q8 fits comfortably as a single-loaded model
+    # (we already accept 73GB for behemoth-x). Don't load it
+    # simultaneously with hermes-4-70b @ Q5 (50GB) — Ollama's default
+    # OLLAMA_MAX_LOADED_MODELS=1 handles this for you.
+    - name: qwen3-coder-opus:Q8_0
+      alias: qwen3-coder-opus
+      description: "Qwen3-Coder-Next (~80B base) + Opus-4.6 reasoning distill (samuelcardillo, full SFT) @ Q8_0 (~85GB) — Opus-style multi-step planning at max available quality. Reasoning distills benefit from higher quants (CoT noise compounds). ChatML; temp 0.6."
+      tags: [coding, reasoning, distillation, claude-opus]
+      category: serving
+      target: [mac]
+      pull:
+        strategy: merge-gguf
+        hf_repo: "samuelcardillo/Qwen3-Coder-Next-Opus-4.6-Reasoning-Distilled-GGUF"
+        hf_pattern: "*Q8_0*.gguf"
+
+    - name: qwen3-coder-opus-uncensored:i1-Q6_K
+      alias: qwen3-coder-opus-uncensored
+      description: "Huihui-Qwen3-Coder-Next-Opus-4.6 abliterated (mradermacher i1) @ Q6_K (~65GB) — uncensored sibling of qwen3-coder-opus. Same Opus-distilled reasoning, fewer refusals, imatrix-calibrated. ChatML; temp 0.6."
+      tags: [coding, reasoning, distillation, claude-opus, uncensored]
+      category: serving
+      target: [mac]
+      pull:
+        strategy: merge-gguf
+        hf_repo: "mradermacher/Huihui-Qwen3-Coder-Next-Opus-4.6-Reasoning-Distilled-abliterated-i1-GGUF"
+        hf_pattern: "*i1-Q6_K.gguf"
+
     # ── Reasoning ────────────────────────────────────────────────
-    - name: deepseek-r1:32b
+    # Dense 32B — Q8 pays a real speed tax (~30-40% vs Q4) but
+    # reasoning chains amplify quant noise across many tokens, so the
+    # quality win is worth it. Expect ~7-9 tok/s at Q8 vs ~11-14 at Q4.
+    - name: deepseek-r1:32b-qwen-distill-q8_0
       alias: deepseek-r1
-      description: "DeepSeek R1 Distill Qwen 32B — beats o1-mini on math/code reasoning, ~18-20GB Q4_K_M, 11-14 tok/s on M5 Max. The reasoning local sweet spot."
+      description: "DeepSeek R1 Distill Qwen 32B @ Q8_0 (~34GB) — beats o1-mini on math/code reasoning. ~7-9 tok/s on M5 Max. Q8 over Q4 because CoT amplifies quant noise."
       tags: [reasoning]
       category: serving
 
     # ── Vision (multimodal) ──────────────────────────────────────
     # Gemma4 vision via Ollama until qwen3-vl is pulled and verified.
     # When you pull qwen3-vl, demote gemma4-26b's extra_aliases below.
-    - name: gemma4:26b
+    - name: gemma4:26b-a4b-it-q8_0
       alias: gemma4-26b
       extra_aliases: [gemma4-vision]
-      description: "Gemma 4 26B-A4B MoE (multimodal + thinking, Q4_K_M). Vision routing alias for the playground until qwen3-vl is pulled and verified."
+      description: "Gemma 4 26B-A4B MoE @ Q8_0 (~28GB, multimodal + thinking). Vision routing alias for the playground until qwen3-vl is pulled and verified. MoE → Q8 cost is small."
       tags: [chat, vision, moe]
       category: serving
 
+    # gemma4 E4B stays at default (Q4_K_M) — its whole job is fast
+    # vision-capable daily; bumping it would defeat the purpose.
     - name: gemma4:e4b
       alias: gemma4
-      description: "Gemma 4 E4B MoE (multimodal + thinking) — fast vision-capable daily."
+      description: "Gemma 4 E4B MoE (multimodal + thinking) — fast vision-capable daily. Kept at Ollama default (Q4_K_M) because speed is the whole point."
       tags: [chat, vision, moe]
       category: serving
 
     # ── Daily chat (general purpose, fast on M5 Max) ───────────
-    - name: phi4:14b
+    - name: phi4:14b-q8_0
       alias: phi4
-      description: "Phi-4 14B — punches above its weight, default daily driver under 14B."
+      description: "Phi-4 14B @ Q8_0 (~16GB) — punches above its weight, default daily driver under 14B. Q8 because at this size it costs nothing."
       tags: [chat, reasoning]
       category: serving
 
@@ -156,16 +253,24 @@ ollama:
         hf_repo: "TheDrummer/Behemoth-X-123B-v2-GGUF"
         hf_pattern: "*Q4_K_M*.gguf"
 
-    - name: "hf.co/unsloth/Hermes-4-70B-GGUF:Q4_K_M"
+    # Hermes-4 70B — bumped to Q5_K_M (~50GB) from Q4 (~42GB).
+    # Dense 70B; Q6_K (~58GB) is also viable but Q5_K_M is the
+    # sweet spot once you account for KV cache headroom on long
+    # creative-writing sessions.
+    - name: "hf.co/unsloth/Hermes-4-70B-GGUF:Q5_K_M"
       alias: hermes-4-70b
-      description: "Hermes-4 70B (Llama 3.1 70B base) — top RefusalBench score, hybrid <think> toggle, lowest AI-tells baseline. Toggle reasoning OFF for prose. ChatML."
+      description: "Hermes-4 70B (Llama 3.1 70B base) @ Q5_K_M (~50GB) — top RefusalBench, hybrid <think> toggle, lowest AI-tells baseline. Toggle reasoning OFF for prose. ChatML."
       tags: [chat, uncensored, rp, creative, reasoning]
       category: rp
       target: [mac]
 
-    - name: "hf.co/TheDrummer/Cydonia-24B-v4.3-GGUF:Q5_K_M"
+    # Cydonia 24B — bumped to Q8_0 (~26GB) from Q5_K_M (~16GB).
+    # At this size Q8 is essentially free; the model is already
+    # advertised as a "fast daily" so we want it punching at its
+    # actual quality ceiling.
+    - name: "hf.co/TheDrummer/Cydonia-24B-v4.3-GGUF:Q8_0"
       alias: cydonia-24b
-      description: "Cydonia 24B v4.3 (Mistral Small 3.2 base, Dec 2025) — Drummer's most-improved-prose release; fast 24B daily for RP. Mistral v7 Tekken template; temp 1.0 / min_p 0.05 / rep_pen 1.03."
+      description: "Cydonia 24B v4.3 (Mistral Small 3.2 base, Dec 2025) @ Q8_0 (~26GB) — Drummer's most-improved-prose release; fast 24B daily for RP. Mistral v7 Tekken template; temp 1.0 / min_p 0.05 / rep_pen 1.03."
       tags: [chat, uncensored, rp, creative]
       category: rp
       target: [mac]
@@ -176,29 +281,29 @@ ollama:
     # at the same bit width). Single-file at this size (17.3 GB), so
     # the merge-gguf path skips llama-gguf-split and just feeds the
     # file straight into `ollama create`.
-    - name: qwen3-moe-uncensored:Q4_K_M
+    - name: qwen3-moe-uncensored:i1-Q6_K
       alias: qwen3-moe-uncensored
-      description: "Qwen3-30B-A3B MoE (3B active) — heretic-abliterated reasoning distill. MoE wildcard — small-model speeds with 30B breadth. Reddit-hot but bench-thin; experimental A/B candidate. ChatML; temp 0.7."
+      description: "Qwen3-30B-A3B MoE @ i1-Q6_K (~25GB, 3B active) — heretic-abliterated Claude-4.5-Opus reasoning distill. MoE wildcard — small-model speeds with 30B breadth. Reasoning distill → Q6 over Q4 to preserve CoT fidelity. ChatML; temp 0.7."
       tags: [chat, uncensored, rp, creative, moe]
       category: rp
       target: [mac]
       pull:
         strategy: merge-gguf
         hf_repo: "mradermacher/Qwen3-30B-A3B-Claude-4.5-Opus-High-Reasoning-2507-ABLITERATED-UNCENSORED-V2-i1-GGUF"
-        hf_pattern: "*i1-Q4_K_M.gguf"
+        hf_pattern: "*i1-Q6_K.gguf"
 
-    # Q4_K_M is ~41GB — borderline single-file; HF chose to shard.
-    # Same merge-gguf workaround as Behemoth.
-    - name: magnum-v4:Q4_K_M
+    # Magnum v4 72B — bumped to Q5_K_M (~52GB) from Q4_K_M (~41GB).
+    # Sharded either way; merge-gguf flow handles both.
+    - name: magnum-v4:Q5_K_M
       alias: magnum-v4
-      description: "Magnum v4 72B (Qwen2.5 72B finetune) — gold standard for explicit + literary craft prose voice. ChatML; 16k context (shorter); temp 1.0 / min_p 0.1."
+      description: "Magnum v4 72B (Qwen2.5 72B finetune) @ Q5_K_M (~52GB) — gold standard for explicit + literary craft prose voice. ChatML; 16k context (shorter); temp 1.0 / min_p 0.1."
       tags: [chat, uncensored, rp, creative, explicit]
       category: rp
       target: [mac]
       pull:
         strategy: merge-gguf
         hf_repo: "anthracite-org/magnum-v4-72b-gguf"
-        hf_pattern: "*Q4_K_M*.gguf"
+        hf_pattern: "*Q5_K_M*.gguf"
 
     # ── Structured extraction (specialist family) ────────────────
     # nuextract2 is the generalist; we also keep nuextract1.5 and
@@ -244,11 +349,31 @@ ollama:
       category: embedding
 
     # ── Vision SOTA ──────────────────────────────────────────────
+    # Two tiers, pick by latency budget:
+    #   - qwen3-vl       (2B latest)    → fast OCR / quick "what's in
+    #                                      this screenshot" — ~6GB,
+    #                                      sub-second on M5 Max.
+    #   - qwen3-vl-think (30B-A3B Q8)   → heavyweight vision reasoning
+    #                                      with <think> traces — ~33GB,
+    #                                      MoE so 3B active path keeps
+    #                                      it usable. Use for charts,
+    #                                      multi-step doc analysis,
+    #                                      visual planning.
+    # The playground's vision routing alias (gemma4-vision) lives on
+    # gemma4-26b for now; once qwen3-vl-think is verified, move
+    # extra_aliases: [vision] over here.
     - name: qwen3-vl:latest
       alias: qwen3-vl
-      description: "Qwen3-VL — beats InternVL3 on DocVQA / OS-World, 32-language OCR, robust to blur/tilt. May 2026 vision SOTA for local."
+      description: "Qwen3-VL 2B (latest) — fast OCR + visual QA, beats InternVL3 on DocVQA / OS-World at this size. Sub-second on M5 Max for screenshot-class tasks."
       tags: [vision, ocr, chat]
       category: serving
+
+    - name: qwen3-vl:30b-a3b-thinking-q8_0
+      alias: qwen3-vl-think
+      description: "Qwen3-VL 30B-A3B Thinking @ Q8_0 (~33GB, 3B active) — heavyweight vision reasoning with <think> traces. For charts, multi-step doc analysis, visual planning. MoE keeps it usable on M5 Max."
+      tags: [vision, ocr, chat, reasoning, moe]
+      category: serving
+      target: [mac]
 
     # ── Heavyweight: 70B+ (RunPod only — proxy entries skipped on mac) ───
     # These don't register in the LiteLLM proxy (gen-litellm.py filters
