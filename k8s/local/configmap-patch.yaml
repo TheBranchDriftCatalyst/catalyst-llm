@@ -1,0 +1,13 @@
+---
+# Patch base catalyst-llm-config for the local (k3d) environment.
+#
+# OLLAMA_BASE_URL keeps the in-cluster Service name; the ExternalName
+# Service in ollama-externalname.yaml redirects it to host.k3d.internal,
+# so UIs reach the Mac's native Ollama process at :11434 transparently.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: catalyst-llm-config
+data:
+  OLLAMA_BASE_URL: "http://ollama:11434"
+  SEARXNG_BASE_URL: "http://searxng.local.lan/"

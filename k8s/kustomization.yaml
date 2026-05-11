@@ -1,8 +1,15 @@
 ---
+# This file is kept for back-compat with anything that runs
+#   kustomize build k8s/
+# at the repo root. New callers should target an explicit env overlay:
+#
+#   kustomize build k8s/local       # k3d dev cluster
+#   kustomize build k8s/talos00     # production homelab
+#
+# Argo CD now points at k8s/talos00 directly — see
+# talos-homelab/infrastructure/base/argocd/applications/catalyst-llm.yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# Default deployment uses base configuration
-# Override with overlays for different environments (dev, prod)
 resources:
-  - base
+  - talos00

@@ -11,28 +11,23 @@ metadata:
 namespace: catalyst-llm
 
 resources:
-  # Core infrastructure
+  # Core infrastructure (host-agnostic; ingress + heavy infra live in overlays)
   - namespace.yaml
   - pvc.yaml
   - service.yaml
   - configmap.yaml
-  - ingressroute.yaml
 
-  # LLM Inference
-  # - ollama/  # DISABLED: was on talos06, using external inference now
-  - litellm/
-
-  # UI Applications
+  # UI Applications (cheap, run in every env)
   - open-webui-deployment.yaml
   # - sillytavern-deployment.yaml  # TODO: reimplement from scratch
   - lobe-chat-deployment.yaml
   - searxng-deployment.yaml
 
-  # AI Assistants & Tools
-  # Disabled 2026-05-09 — composio-api-key not yet provisioned in 1Password, re-enable when ready
-  # - openclaw/
-  # Poisonarr has its own namespace - deploy separately or include here
-  # - poisonarr/
+  # NOT in base — opt-in per env:
+  #   - litellm/  → talos00 only (dev uses the deployed proxy)
+  #   - openclaw/ → talos00 only (composio key not provisioned yet)
+  #   - ollama/   → disabled across envs (external inference)
+  #   - poisonarr/ → has its own namespace
 
 commonLabels:
   app.kubernetes.io/managed-by: argocd

@@ -1,0 +1,29 @@
+---
+# Overlay: local (k3d dev cluster)
+#
+# Hostnames: *.local.lan (resolve via /etc/hosts on the dev machine
+# to 127.0.0.1 — k3d's loadbalancer listens on 80/443 there)
+# Cluster context: k3d-catalyst-llm
+#
+# Notes:
+#   - Ollama is NOT in the cluster — it runs natively on the Mac so
+#     we get Metal GPU. ollama-externalname.yaml maps the in-cluster
+#     'ollama' Service name to host.k3d.internal:11434 (k3d's host DNS).
+#   - LiteLLM remote at litellm.talos00 — same proxy as prod. No local
+#     LiteLLM in dev.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: catalyst-llm
+
+resources:
+  - ../base
+  - ingressroute.yaml
+  - ollama-externalname.yaml
+  - tool-host.yaml
+
+patches:
+  - path: configmap-patch.yaml
+    target:
+      kind: ConfigMap
+      name: catalyst-llm-config

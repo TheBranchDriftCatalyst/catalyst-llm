@@ -1,0 +1,76 @@
+# tilt/models.tiltfile — hierarchical model registry loader
+#
+# Reads packages/mac-node/models.yaml (the source of truth used by
+# gen-litellm.py, download-models.py, the test parametrizer, etc.) and
+# exposes Starlark helpers so Tiltfiles can build UI choice lists and
+# download loops without hardcoding model tags.
+#
+# Add a model: edit packages/mac-node/models.yaml. Nothing else.
+
+# read_yaml is a Tilt built-in; the path is resolved relative to the
+# directory containing *this* tiltfile (tilt/), so we hop up one level
+# to reach the repo root.
+_REGISTRY = read_yaml('../packages/mac-node/models.yaml')
+
+
+def _mac_targeted(model):
+    """A model is mac-targeted if target is unset (default: both) or contains 'mac'."""
+    target = model.get('target')
+    if target == None:
+        return True
+    return 'mac' in target
+
+
+def load_models():
+    """Return the full parsed registry (escape hatch)."""
+    return _REGISTRY
+
+
+def all_models():
+    """All ollama models that should be available on the mac node."""
+    return [m for m in _REGISTRY['ollama']['models'] if _mac_targeted(m)]
+
+
+def model_choices(category=None):
+    """List of ollama tags (model.name) for choice_input.
+
+    category: optional category filter ('serving', 'rp', 'embedding', etc.)
+    """
+    items = all_models()
+    if category:
+        items = [m for m in items if m.get('category') == category]
+    return [m['name'] for m in items]
+
+
+def models_by_tag(tag):
+    """Return ollama tags for models whose `tags:` list contains `tag`."""
+    return [m['name'] for m in all_models() if tag in m.get('tags', [])]
+
+
+def models_by_category(cat):
+    """Return ollama tags for models in the given `category:`."""
+    return [m['name'] for m in all_models() if m.get('category') == cat]
+
+
+def categories():
+    """All distinct categories defined on mac-targeted models."""
+    seen = {}
+    for m in all_models():
+        c = m.get('category')
+        if c:
+            seen[c] = True
+    return sorted(seen.keys())
+
+
+def aliases_for(model_name):
+    """Return [alias] + extra_aliases for a given model.name."""
+    for m in all_models():
+        if m['name'] == model_name:
+            return [m['alias']] + m.get('extra_aliases', [])
+    return []
+
+
+def aliases_by_category(cat):
+    """Return primary aliases for models in `category:`. Used to build
+    --only filter args for download-models.py."""
+    return [m['alias'] for m in all_models() if m.get('category') == cat]

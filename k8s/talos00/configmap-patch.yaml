@@ -1,0 +1,8 @@
+---
+# Patch base catalyst-llm-config for the talos00 environment.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: catalyst-llm-config
+data:
+  SEARXNG_BASE_URL: "http://searxng.talos00/"

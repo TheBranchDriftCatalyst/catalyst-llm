@@ -1,0 +1,22 @@
+---
+# In-cluster `ollama` Service for the talos00 environment.
+#
+# Routes to the AWS Nebula-mesh Ollama via the `ollama-remote` Service +
+# Endpoints defined in ../base/service.yaml. This file preserves the
+# pre-overlay behavior: UIs that hit http://ollama:11434 land on AWS.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama
+  namespace: catalyst-llm
+  labels:
+    app.kubernetes.io/name: catalyst-llm
+    app.kubernetes.io/component: ollama
+  annotations:
+    description: 'Main Ollama service - routes to AWS worker'
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 11434
+      targetPort: 11434

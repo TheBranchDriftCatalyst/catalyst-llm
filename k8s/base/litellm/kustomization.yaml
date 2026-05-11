@@ -6,7 +6,7 @@ resources:
   - postgresql.yaml
   - deployment.yaml
   - service.yaml
-  - ingressroute.yaml
+  # ingressroute.yaml lives in env overlays (k8s/talos00, k8s/local)
 
 # configMapGenerator appends a content hash suffix to the ConfigMap name.
 # Kustomize auto-updates all volume refs in deployment.yaml.

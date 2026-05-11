@@ -1,15 +1,14 @@
 ---
-# Traefik IngressRoutes for catalyst-llm services
-# Access via: http://<service>.talos00
+# Traefik IngressRoutes — local (k3d) overlay
+# Access via: http://<service>.local.lan
 #
-# Requires /etc/hosts entry:
-#   192.168.1.54  openwebui.talos00 lobechat.talos00 sillytavern.talos00 searxng.talos00
+# Add to /etc/hosts on the dev workstation:
+#   127.0.0.1  openwebui.local.lan lobechat.local.lan sillytavern.local.lan searxng.local.lan litellm.local.lan
 
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
   name: open-webui
-  namespace: catalyst-llm
   labels:
     app.kubernetes.io/name: open-webui
     app.kubernetes.io/part-of: catalyst-llm
@@ -17,7 +16,7 @@ spec:
   entryPoints:
     - web
   routes:
-    - match: Host(`openwebui.talos00`)
+    - match: Host(`openwebui.local.lan`)
       kind: Rule
       services:
         - name: open-webui
@@ -27,7 +26,6 @@ apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
   name: lobe-chat
-  namespace: catalyst-llm
   labels:
     app.kubernetes.io/name: lobe-chat
     app.kubernetes.io/part-of: catalyst-llm
@@ -35,7 +33,7 @@ spec:
   entryPoints:
     - web
   routes:
-    - match: Host(`lobechat.talos00`)
+    - match: Host(`lobechat.local.lan`)
       kind: Rule
       services:
         - name: lobe-chat
@@ -44,26 +42,7 @@ spec:
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
-  name: sillytavern
-  namespace: catalyst-llm
-  labels:
-    app.kubernetes.io/name: sillytavern
-    app.kubernetes.io/part-of: catalyst-llm
-spec:
-  entryPoints:
-    - web
-  routes:
-    - match: Host(`sillytavern.talos00`)
-      kind: Rule
-      services:
-        - name: sillytavern
-          port: 8000
----
-apiVersion: traefik.io/v1alpha1
-kind: IngressRoute
-metadata:
   name: searxng
-  namespace: catalyst-llm
   labels:
     app.kubernetes.io/name: searxng
     app.kubernetes.io/part-of: catalyst-llm
@@ -71,7 +50,7 @@ spec:
   entryPoints:
     - web
   routes:
-    - match: Host(`searxng.talos00`)
+    - match: Host(`searxng.local.lan`)
       kind: Rule
       services:
         - name: searxng

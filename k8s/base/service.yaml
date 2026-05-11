@@ -35,21 +35,8 @@ subsets:
       - name: http
         port: 11434
         protocol: TCP
----
-# ExternalName service for easier access
-apiVersion: v1
-kind: Service
-metadata:
-  name: ollama
-  namespace: catalyst-llm
-  labels:
-    app.kubernetes.io/name: catalyst-llm
-    app.kubernetes.io/component: ollama
-  annotations:
-    description: 'Main Ollama service - routes to AWS worker'
-spec:
-  type: ClusterIP
-  ports:
-    - name: http
-      port: 11434
-      targetPort: 11434
+
+# NOTE: the in-cluster `ollama` Service (the alias name that UIs hit via
+# OLLAMA_BASE_URL=http://ollama:11434) is env-specific:
+#   - k8s/talos00/ollama-service.yaml  → routes to ollama-remote (AWS)
+#   - k8s/local/ollama-externalname.yaml → ExternalName to host.k3d.internal

@@ -1,0 +1,26 @@
+---
+# Overlay: talos00 (production homelab cluster)
+#
+# Hostnames: *.talos00 with talos00-wildcard-tls
+# Cluster context: admin@catalyst-cluster
+#
+# Reconciled by Argo CD via:
+#   talos-homelab/infrastructure/base/argocd/applications/catalyst-llm.yaml
+#   (spec.source.path: k8s/talos00)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: catalyst-llm
+
+resources:
+  - ../base
+  - ../base/litellm           # talos00 only
+  - ingressroute.yaml
+  - litellm-ingressroute.yaml
+  - ollama-service.yaml
+
+patches:
+  - path: configmap-patch.yaml
+    target:
+      kind: ConfigMap
+      name: catalyst-llm-config

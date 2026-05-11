@@ -1,9 +1,10 @@
 ---
 # Main configuration for catalyst-llm services
-# OLLAMA_BASE_URL should point to your Ollama instance:
-#   - For local Mac: http://host.docker.internal:11434 (via port-forward or nodeport)
-#   - For cluster Ollama: http://ollama.catalyst-llm.svc.cluster.local:11434
-#   - For external Ollama: http://<external-ip>:11434
+#
+# Host-agnostic defaults. Env-specific URLs (.talos00 vs .local.lan) are
+# patched in via overlays:
+#   k8s/talos00/configmap-patch.yaml
+#   k8s/local/configmap-patch.yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -13,14 +14,14 @@ metadata:
     app.kubernetes.io/name: catalyst-llm-config
     app.kubernetes.io/part-of: catalyst-llm
 data:
-  # Ollama API URL - adjust based on your deployment
-  # Options:
-  #   - External (your Mac): Use ExternalName service or direct IP
-  #   - In-cluster: http://ollama:11434
+  # In-cluster default — UIs resolve `ollama` Service in the catalyst-llm
+  # namespace. The k8s/local overlay swaps this for an ExternalName Service
+  # pointing at host.k3d.internal so the cluster reaches the Mac's native
+  # Ollama. talos00 keeps the in-cluster default (or patches as needed).
   OLLAMA_BASE_URL: "http://ollama:11434"
 
-  # SearXNG base URL for external access (via Traefik)
-  SEARXNG_BASE_URL: "http://searxng.talos00/"
+  # External SearXNG URL — overlays patch this per environment.
+  SEARXNG_BASE_URL: "http://searxng/"
 ---
 # SearXNG configuration
 apiVersion: v1

@@ -1,56 +1,32 @@
-# Common Tiltfile - Shared resources and UI buttons for both dev and live modes
+# tilt/common.tiltfile — shared button factories + banners
 #
-# Usage: Loaded by main Tiltfile via load()
+# Model tags / choices / download bundles come from tilt/models.tiltfile
+# (which reads packages/mac-node/models.yaml — the only source of truth).
 
 load('ext://uibutton', 'cmd_button', 'location', 'text_input', 'choice_input')
+load('./models.tiltfile',
+    'model_choices',
+    'models_by_category',
+    'aliases_by_category',
+    'categories',
+)
+
 
 # ============================================
-# Model Lists (shared across modes)
-# ============================================
-
-MODELS_CREATIVE = [
-    'davidau/llama-3.2-8x3b-moe-dark-champion',
-    'dolphin-mixtral:8x7b',
-    'huihui_ai/gemma3-abliterated:27b',
-    'nous-hermes2:34b',
-    'dolphin-mistral:7b',
-    'wizardlm-uncensored:13b',
-]
-
-MODELS_DARKRP = [
-    'davidau/llama-3.2-8x3b-moe-dark-champion',
-    'theazazel/l3.2-moe-dark-champion-inst-18.4b-uncen-ablit',
-    'huihui_ai/gemma3-abliterated:27b',
-    'mythomax-l2:13b',
-]
-
-# ============================================
-# Model Management Buttons (for ollama resource)
+# Ollama UI Buttons (dev only — ollama runs natively on the mac)
 # ============================================
 
 def setup_ollama_buttons():
-    """Add model management buttons to ollama resource."""
+    """Attach ollama ops buttons to the 'ollama' resource."""
 
+    # Single-model pull — choices populated from models.yaml
     cmd_button(
         name='btn-pull-model',
         resource='ollama',
-        argv=['sh', '-c', 'ollama pull $MODEL'],
+        argv=['sh', '-c', 'ollama pull "$MODEL"'],
         text='Pull Model',
         icon_name='download',
-        inputs=[
-            choice_input('MODEL', 'Model', [
-                'davidau/llama-3.2-8x3b-moe-dark-champion',
-                'theazazel/l3.2-moe-dark-champion-inst-18.4b-uncen-ablit',
-                'dolphin-mixtral:8x7b',
-                'huihui_ai/gemma3-abliterated:27b',
-                'nous-hermes2:34b',
-                'mythomax-l2:13b',
-                'dolphin-mistral:7b',
-                'wizardlm-uncensored:13b',
-                'llama2-uncensored:7b',
-                'codellama:34b',
-            ])
-        ]
+        inputs=[choice_input('MODEL', 'Model', model_choices())],
     )
 
     cmd_button(
@@ -58,7 +34,7 @@ def setup_ollama_buttons():
         resource='ollama',
         argv=['ollama', 'list'],
         text='List Models',
-        icon_name='list'
+        icon_name='list',
     )
 
     cmd_button(
@@ -66,94 +42,60 @@ def setup_ollama_buttons():
         resource='ollama',
         argv=['ollama', 'ps'],
         text='Running Models',
-        icon_name='play_circle'
+        icon_name='play_circle',
     )
 
     cmd_button(
         name='btn-delete-model',
         resource='ollama',
-        argv=['sh', '-c', 'ollama rm $MODEL'],
+        argv=['sh', '-c', 'ollama rm "$MODEL"'],
         text='Delete Model',
         icon_name='delete',
-        inputs=[
-            text_input('MODEL', 'Model name', placeholder='model:tag')
-        ],
-        requires_confirmation=True
+        inputs=[choice_input('MODEL', 'Model', model_choices())],
+        requires_confirmation=True,
     )
 
     cmd_button(
         name='btn-model-info',
         resource='ollama',
-        argv=['sh', '-c', 'ollama show $MODEL'],
+        argv=['sh', '-c', 'ollama show "$MODEL"'],
         text='Model Info',
         icon_name='info',
-        inputs=[
-            text_input('MODEL', 'Model name', placeholder='dolphin-mistral:7b')
-        ]
+        inputs=[choice_input('MODEL', 'Model', model_choices())],
     )
 
-    cmd_button(
-        name='btn-ollama-cli',
-        resource='ollama',
-        argv=['sh', '-c', 'echo "To chat via CLI, run:" && echo "  ollama run $MODEL" && echo "" && echo "Available models:" && ollama list'],
-        text='CLI Instructions',
-        icon_name='terminal',
-        inputs=[
-            choice_input('MODEL', 'Model', [
-                'davidau/llama-3.2-8x3b-moe-dark-champion',
-                'dolphin-mixtral:8x7b',
-                'dolphin-mistral:7b',
-                'wizardlm-uncensored:13b',
-            ])
-        ]
-    )
-
-    # Download all recommended creative writing models
-    cmd_button(
-        name='btn-download-all-creative',
-        resource='ollama',
-        argv=['sh', '-c', '''
-echo "Downloading creative writing models (~80GB)..."
+    # Bulk download per category. One button per category, generated
+    # from models.yaml — adding `category: foo` to a few entries
+    # immediately produces a "DL foo" button on next Tilt parse.
+    # Uses download-models.py --only to filter by alias.
+    for cat in categories():
+        aliases = aliases_by_category(cat)
+        if not aliases:
+            continue
+        only_arg = ','.join(aliases)
+        cmd_button(
+            name='btn-dl-' + cat,
+            resource='ollama',
+            argv=['sh', '-c', '''
+set -eu
+cd $(git rev-parse --show-toplevel)
+PY="$(test -x packages/mac-node/.venv/bin/python && echo packages/mac-node/.venv/bin/python || echo python3)"
+echo "==> DL category '%s' (%d models): %s"
+"$PY" packages/mac-node/scripts/download-models.py --only "%s"
 echo ""
-for model in davidau/llama-3.2-8x3b-moe-dark-champion dolphin-mixtral:8x7b huihui_ai/gemma3-abliterated:27b nous-hermes2:34b dolphin-mistral:7b wizardlm-uncensored:13b; do
-    echo "==> Pulling $model..."
-    ollama pull $model
-done
-echo ""
-echo "Done!"
 ollama list
-'''],
-        text='DL Creative',
-        icon_name='cloud_download',
-        requires_confirmation=True
-    )
-
-    # Download dark roleplay models
-    cmd_button(
-        name='btn-download-darkrp',
-        resource='ollama',
-        argv=['sh', '-c', '''
-echo "Downloading dark roleplay models (~50GB)..."
-echo ""
-for model in davidau/llama-3.2-8x3b-moe-dark-champion theazazel/l3.2-moe-dark-champion-inst-18.4b-uncen-ablit huihui_ai/gemma3-abliterated:27b mythomax-l2:13b; do
-    echo "==> Pulling $model..."
-    ollama pull $model
-done
-echo ""
-echo "Done!"
-ollama list
-'''],
-        text='DL Dark RP',
-        icon_name='whatshot',
-        requires_confirmation=True
-    )
+''' % (cat, len(aliases), only_arg, only_arg)],
+            text='DL ' + cat,
+            icon_name='cloud_download',
+            requires_confirmation=True,
+        )
 
     cmd_button(
         name='btn-test-api',
         resource='ollama',
         argv=['sh', '-c', '''curl -s http://localhost:11434/api/tags | jq '.models[].name' '''],
         text='Test API',
-        icon_name='science'
+        icon_name='science',
     )
 
     cmd_button(
@@ -161,7 +103,7 @@ ollama list
         resource='ollama',
         argv=['sh', '-c', 'echo "Model storage:" && du -sh ~/.ollama/models 2>/dev/null || echo "No models yet"'],
         text='Disk Usage',
-        icon_name='storage'
+        icon_name='storage',
     )
 
     cmd_button(
@@ -169,90 +111,112 @@ ollama list
         resource='ollama',
         argv=['sh', '-c', 'echo "GPU Info:" && system_profiler SPDisplaysDataType | grep -A5 "Chipset Model"'],
         text='GPU Info',
-        icon_name='memory'
+        icon_name='memory',
     )
 
+
 # ============================================
-# Service UI Buttons (generic helpers)
+# Generic resource button helpers
 # ============================================
 
-def add_open_browser_button(resource_name, url, port_label=''):
-    """Add an 'Open Browser' button to a resource."""
+def add_open_browser_button(resource_name, url):
     cmd_button(
         name='btn-open-' + resource_name,
         resource=resource_name,
         argv=['open', url],
         text='Open Browser',
-        icon_name='open_in_new'
+        icon_name='open_in_new',
     )
 
-def add_restart_button(resource_name, container_name=None):
-    """Add a 'Restart' button to a docker resource."""
-    container = container_name or resource_name
+
+def add_k8s_restart_button(resource_name, deployment, namespace='catalyst-llm'):
+    """Restart a k8s Deployment (used in Tiltfile.prod)."""
     cmd_button(
         name='btn-restart-' + resource_name,
         resource=resource_name,
-        argv=['docker', 'restart', container],
-        text='Restart',
-        icon_name='refresh'
+        argv=['kubectl', '-n', namespace, 'rollout', 'restart', 'deploy/' + deployment],
+        text='Rollout Restart',
+        icon_name='refresh',
+        requires_confirmation=True,
     )
 
+
+def add_k8s_logs_button(resource_name, deployment, namespace='catalyst-llm'):
+    """Tail logs from a k8s Deployment."""
+    cmd_button(
+        name='btn-logs-' + resource_name,
+        resource=resource_name,
+        argv=['sh', '-c',
+              'kubectl -n %s logs -f --tail=200 deploy/%s' % (namespace, deployment)],
+        text='Tail Logs',
+        icon_name='subject',
+    )
+
+
+def add_k8s_shell_button(resource_name, deployment, namespace='catalyst-llm', shell='sh'):
+    """Open a shell inside a k8s pod."""
+    cmd_button(
+        name='btn-shell-' + resource_name,
+        resource=resource_name,
+        argv=['sh', '-c',
+              'kubectl -n %s exec -it deploy/%s -- %s' % (namespace, deployment, shell)],
+        text='Shell',
+        icon_name='terminal',
+    )
+
+
 # ============================================
-# Print Helpers
+# Banner / quick start
 # ============================================
 
-def print_mode_banner(mode):
-    """Print mode-specific banner."""
-    if mode == 'live':
-        print("""
+def print_dev_banner():
+    print("""
 ╔═══════════════════════════════════════════════════════════════╗
-║  Catalyst LLM - LIVE/CLUSTER Mode                             ║
+║  catalyst-llm — DEV (k3d cluster + native Ollama)             ║
 ╠═══════════════════════════════════════════════════════════════╣
-║  Deploying to Kubernetes cluster (talos)                      ║
-║  Services: OpenClaw, Poisonarr, etc.                          ║
-╚═══════════════════════════════════════════════════════════════╝
-""")
-    else:
-        print("""
-╔═══════════════════════════════════════════════════════════════╗
-║  Catalyst LLM - DEV Mode (Local Development)                  ║
-╠═══════════════════════════════════════════════════════════════╣
-║  Ollama: Native (Metal GPU) - managed by Tilt                 ║
-║  Open WebUI, SillyTavern, LobeChat: Docker containers         ║
-║  NOT deploying to Kubernetes cluster                          ║
+║  Ollama:    native Metal GPU @ :11434                         ║
+║  UIs:       deployed to k3d cluster (k8s/local overlay)       ║
+║  LiteLLM:   remote @ http://litellm.talos00                   ║
+║  Models:    edit packages/mac-node/models.yaml                ║
 ╚═══════════════════════════════════════════════════════════════╝
 """)
 
-def print_quick_start():
-    """Print quick start guide."""
+
+def print_prod_banner():
+    print("""
+╔═══════════════════════════════════════════════════════════════╗
+║  catalyst-llm — PROD (talos00, read/ops)                      ║
+╠═══════════════════════════════════════════════════════════════╣
+║  Context:   admin@catalyst-cluster                            ║
+║  Overlay:   k8s/talos00                                       ║
+║  Manifests are reconciled by Argo CD — do not k8s_yaml apply  ║
+║  Buttons:   rollout restart / logs / shell / argo sync        ║
+╚═══════════════════════════════════════════════════════════════╝
+""")
+
+
+def print_dev_quickstart():
     print("""
 Quick Start:
-  1. Wait for all services to start (green checkmarks)
-  2. Click "DL Creative" or "DL Dark RP" to download models
-  3. Use Open WebUI for general chat, SillyTavern for roleplay
+  1. Wait for all services (green checkmarks).
+  2. Pull models: use "Pull Model" or "DL Category" buttons on the
+     'ollama' resource, OR run:
+       task -d packages/mac-node models:download
+  3. Open the playground:  http://localhost:5174
 
-Your System: M1 Max (32 GPU cores, 64GB RAM) - OPTIMAL FOR LLMs
+Service URLs (dev cluster ingress, k3d Traefik):
+  - Prompt Play:  http://localhost:5174    (dev playground + streaming)
+  - Open WebUI:   http://openwebui.local.lan
+  - LobeChat:     http://lobechat.local.lan
+  - SillyTavern:  http://sillytavern.local.lan
+  - SearXNG:      http://searxng.local.lan
+  - Ollama API:   http://localhost:11434   (native)
 
-Uncensored Models:
-  - Dark-Champion (18GB)      - MoE, exceptional prose/fiction
-  - Dark-Champion Abliterated - Abliterated variant
-  - gemma3-abliterated (16GB) - Modern, surgical uncensoring
-  - mythomax-l2 (7.4GB)       - Classic RP, rich stories
+LLM proxy (remote):  http://litellm.talos00
+  Override per service via the LITELLM_URL configmap key in
+  k8s/local/configmap-patch.yaml when targeting a different host.
 
-Web UIs:
-  - Prompt Play:  http://localhost:5174 (dev playground + streaming)
-  - Open WebUI:   http://localhost:3030 (chat + RAG + web search)
-  - LobeChat:     http://localhost:3210 (modern UI + plugins)
-  - SillyTavern:  http://localhost:8000 (roleplay, character cards)
-  - SearXNG:      http://localhost:8888 (web search engine)
-  - Tool host:    http://localhost:7077 (SDK tool-call sidecar)
-  - Ollama API:   http://localhost:11434
-
-LLM Proxy (out-of-cluster): http://litellm.talos00
-  Override via LITELLM_URL when targeting a different host.
-
-Web Search: Open WebUI can search the web via SearXNG.
-            Enable "Web Search" toggle in the chat interface.
-
-CLI: ollama run davidau/llama-3.2-8x3b-moe-dark-champion
+Models: packages/mac-node/models.yaml is the only list.
+        Tilt buttons, LiteLLM config, tests, and download scripts
+        all read it. Edit there → run `task -d packages/mac-node generate`.
 """)

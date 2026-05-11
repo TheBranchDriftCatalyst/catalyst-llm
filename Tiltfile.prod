@@ -1,0 +1,153 @@
+# Catalyst LLM — PROD (talos00 read/ops view)
+#
+# Run with:
+#   tilt up -f Tiltfile.prod
+#
+# Connects to the talos cluster (admin@catalyst-cluster) and binds
+# Tilt's UI to the deployed resources reconciled by Argo CD. This is an
+# ops console, not a deploy tool — manifests still live in
+# talos-homelab via the Argo CD Application.
+#
+# What you get:
+#   - Port-forwards to every service (read-only inspection)
+#   - Buttons for: rollout restart, tail logs, exec shell, argocd sync
+
+load('ext://uibutton', 'cmd_button')
+load('./tilt/common.tiltfile',
+    'add_k8s_restart_button',
+    'add_k8s_logs_button',
+    'add_k8s_shell_button',
+    'print_prod_banner',
+)
+
+allow_k8s_contexts('admin@catalyst-cluster')
+
+print_prod_banner()
+
+# We render the talos00 overlay so Tilt knows which Deployments / Services
+# exist, but Argo CD owns reconciliation. Manifests below set
+# trigger_mode=TRIGGER_MODE_MANUAL so Tilt won't push updates on its own;
+# clicking a button does the explicit op.
+k8s_yaml(kustomize('./k8s/talos00'))
+
+NAMESPACE = 'catalyst-llm'
+
+
+def prod_resource(name, deployment=None, port_forwards=None, links=None):
+    """Standard prod resource: manual trigger + ops buttons."""
+    deployment = deployment or name
+    k8s_resource(
+        name,
+        labels=['prod'],
+        port_forwards=port_forwards or [],
+        auto_init=False,
+        trigger_mode=TRIGGER_MODE_MANUAL,
+        links=links or [],
+    )
+    add_k8s_restart_button(name, deployment, namespace=NAMESPACE)
+    add_k8s_logs_button(name, deployment, namespace=NAMESPACE)
+    add_k8s_shell_button(name, deployment, namespace=NAMESPACE)
+
+
+prod_resource(
+    'open-webui',
+    port_forwards=['3030:8080'],
+    links=[
+        link('http://localhost:3030', 'Open WebUI (port-forward)'),
+        link('http://openwebui.talos00', 'Open WebUI (ingress)'),
+    ],
+)
+prod_resource(
+    'lobe-chat',
+    port_forwards=['3210:3210'],
+    links=[
+        link('http://localhost:3210', 'LobeChat (port-forward)'),
+        link('http://lobechat.talos00', 'LobeChat (ingress)'),
+    ],
+)
+prod_resource(
+    'searxng',
+    port_forwards=['8888:8080'],
+    links=[
+        link('http://localhost:8888', 'SearXNG (port-forward)'),
+        link('http://searxng.talos00', 'SearXNG (ingress)'),
+    ],
+)
+prod_resource(
+    'litellm',
+    port_forwards=['4000:4000'],
+    links=[
+        link('http://localhost:4000', 'LiteLLM API (port-forward)'),
+        link('http://localhost:4000/ui', 'LiteLLM UI'),
+        link('http://litellm.talos00', 'LiteLLM (ingress)'),
+    ],
+)
+prod_resource(
+    'litellm-postgresql',
+    deployment='litellm-postgresql',
+    port_forwards=['5432:5432'],
+)
+
+# ============================================
+# Cluster-wide ops (no k8s_resource binding)
+# ============================================
+local_resource(
+    'cluster-info',
+    labels=['cluster'],
+    cmd='kubectl cluster-info && echo && kubectl -n %s get pods -o wide' % NAMESPACE,
+    auto_init=True,
+)
+
+cmd_button(
+    name='btn-pods-wide',
+    resource='cluster-info',
+    argv=['kubectl', '-n', NAMESPACE, 'get', 'pods', '-o', 'wide'],
+    text='Pods (wide)',
+    icon_name='apps',
+)
+
+cmd_button(
+    name='btn-services',
+    resource='cluster-info',
+    argv=['kubectl', '-n', NAMESPACE, 'get', 'svc'],
+    text='Services',
+    icon_name='hub',
+)
+
+cmd_button(
+    name='btn-events',
+    resource='cluster-info',
+    argv=['sh', '-c',
+          'kubectl -n %s get events --sort-by=.lastTimestamp | tail -30' % NAMESPACE],
+    text='Recent Events',
+    icon_name='history',
+)
+
+cmd_button(
+    name='btn-argocd-sync',
+    resource='cluster-info',
+    argv=['sh', '-c',
+          'argocd app sync catalyst-llm 2>/dev/null || ' +
+          'echo "argocd CLI not configured — run: argocd login <server>"'],
+    text='Argo CD Sync',
+    icon_name='sync',
+    requires_confirmation=True,
+)
+
+cmd_button(
+    name='btn-argocd-diff',
+    resource='cluster-info',
+    argv=['sh', '-c', 'argocd app diff catalyst-llm 2>&1 | head -200'],
+    text='Argo CD Diff',
+    icon_name='compare',
+)
+
+cmd_button(
+    name='btn-litellm-reload',
+    resource='litellm',
+    argv=['sh', '-c',
+          'curl -sS -X POST http://localhost:4000/config/reload | jq'],
+    text='Reload Config',
+    icon_name='refresh',
+    requires_confirmation=True,
+)

@@ -7,4 +7,4 @@ resources:
   - deployment.yaml
   - service.yaml
   - pvc.yaml
-  - ingressroute.yaml
+  # ingressroute.yaml lives in env overlays (k8s/talos00, k8s/local)

@@ -1,0 +1,42 @@
+---
+# k3d cluster config for catalyst-llm dev.
+#
+# Create with:  k3d cluster create --config k3d-config.yaml
+# Or:           ./scripts/k3d-up.sh
+#
+# k3d ships with Traefik by default, which matches the IngressRoute CRDs
+# our manifests use (k8s/local/ingressroute.yaml).
+#
+# Ollama stays native on the Mac for Metal GPU access. UIs in the cluster
+# reach it through the ExternalName Service in k8s/local/ollama-externalname.yaml,
+# which resolves to host.k3d.internal (k3d's DNS alias for the host).
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: catalyst-llm
+servers: 1
+agents: 1
+image: rancher/k3s:v1.31.4-k3s1
+network: catalyst-llm-net
+
+ports:
+  - port: 80:80
+    nodeFilters:
+      - loadbalancer
+  - port: 443:443
+    nodeFilters:
+      - loadbalancer
+
+options:
+  k3d:
+    wait: true
+    timeout: 120s
+  kubeconfig:
+    updateDefaultKubeconfig: true
+    switchCurrentContext: true
+  k3s:
+    extraArgs:
+      # Traefik is included by default — keep IngressRoute CRDs available.
+      - arg: --disable=servicelb
+        nodeFilters:
+          - server:*
