@@ -7,6 +7,7 @@ import type {
   StreamMeta,
 } from "../client/index.js";
 import type { CatalystAgentClient } from "../agent/index.js";
+import { useEngineStore } from "./engineStore.js";
 
 /**
  * OpenAI-shape tool_calls[] entry. We carry it on ChatToolCallRecord
@@ -338,6 +339,14 @@ export const useChatStore = create<ChatStore>()(
     const recordIndex = new Map<string, number>();
     let iteration = 0;
 
+    // Pull the live Engine-tab config so any operator-edited Agent
+    // tunables (researcher model, recursion limit, system prompts,
+    // …) ride along with this request. The store returns undefined
+    // when nothing has been edited, keeping the wire payload
+    // byte-identical to today's traffic for users who never visit
+    // the Engine tab.
+    const agentConfig = useEngineStore.getState().asRequestPayload();
+
     try {
       const stream = agentClient.streamAgent(
         {
@@ -348,6 +357,7 @@ export const useChatStore = create<ChatStore>()(
             ? chat.enabledTools
             : undefined,
           params: chat.params as Record<string, unknown>,
+          agent_config: agentConfig,
         },
         { signal: ctrl.signal },
       );

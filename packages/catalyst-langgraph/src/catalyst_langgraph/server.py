@@ -18,7 +18,7 @@ import logging
 import os
 import time
 import uuid
-from typing import Any, AsyncIterator, Optional
+from typing import Any, AsyncIterator, Literal, Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,6 +29,7 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
+from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 import httpx
@@ -46,7 +47,7 @@ from .events import (
     ToolCallEnd,
     ToolCallStart,
 )
-from .agents import AGENTS
+from .agents import AGENTS, validate_overrides
 from .graph import build_graph
 from .tools import ALL_TOOLS
 from .tools.host import TOOL_HOST_API_KEY, TOOL_HOST_URL
@@ -59,9 +60,37 @@ logging.basicConfig(
 )
 
 
+OPENAPI_TAGS = [
+    {
+        "name": "chat",
+        "description": (
+            "The main entry point: stream a chat completion as typed "
+            "agent events (run_started, token, tool_call_start, "
+            "tool_call_end, message_done, error). See "
+            "[events.py](https://github.com/TheBranchDriftCatalyst/catalyst-llm) "
+            "for the AgentEvent union."
+        ),
+    },
+    {
+        "name": "discovery",
+        "description": (
+            "What the engine can do: which models, which tools, "
+            "which Agents (compiled LangGraph state machines). "
+            "Drives the playground's pickers, the tool toggle, and "
+            "the Engine tab's per-Agent config form."
+        ),
+    },
+    {
+        "name": "health",
+        "description": "Liveness probes for k8s.",
+    },
+]
+
+
 app = FastAPI(
     title="catalyst-langgraph",
     version=__version__,
+    openapi_tags=OPENAPI_TAGS,
     description=(
         "LangGraph agent service. Owns the agent/tool loop; UIs consume "
         "a typed SSE event stream."
@@ -139,8 +168,26 @@ async def _stream_agent_events(
     # legacy `params` channel. Precedence: agent_config["main"] ⊃
     # params ⊃ defaults. Both stay supported so older clients without
     # agent_config still work.
-    agent_config = request.agent_config or {}
-    main_overrides = dict(agent_config.get("main") or {})
+    #
+    # Per-agent values are validated through the Agent's Pydantic
+    # config_model (`MainAgentConfig`, `ResearchAgentConfig`, …) so
+    # bogus fields and wrong types are rejected here instead of
+    # bubbling into LangGraph as silent type errors. validate_overrides
+    # returns only the keys the operator explicitly set
+    # (model_dump(exclude_unset=True)) — we never pin defaults into the
+    # override dict.
+    agent_config_raw = request.agent_config or {}
+    try:
+        main_overrides = validate_overrides(
+            "main", agent_config_raw.get("main") or {}
+        )
+        validated_research = validate_overrides(
+            "research", agent_config_raw.get("research") or {}
+        )
+    except Exception as exc:
+        log.warning("agent_config validation failed: %s", exc)
+        yield ErrorEvent(message=f"agent_config validation failed: {exc}")
+        return
     params = {**(request.params or {}), **main_overrides}
 
     # System prompt comes from main_overrides if the Engine tab set it,
@@ -170,9 +217,7 @@ async def _stream_agent_events(
     # @tool function picks them up without changing its signature
     # (which would break the parent's tool-calling contract). The
     # ContextVar is reset in the finally block below.
-    research_overrides_token = research_overrides.set(
-        agent_config.get("research") or {}
-    )
+    research_overrides_token = research_overrides.set(validated_research)
 
     try:
         app_graph = build_graph(
@@ -289,13 +334,31 @@ def _to_sse(event: AgentEvent) -> dict[str, str]:
 # ───────────────────────────────────────────────────────────────────────
 
 
-@app.get("/healthz")
+@app.get(
+    "/healthz",
+    tags=["health"],
+    summary="Liveness probe",
+)
 def healthz() -> dict[str, str]:
     """Liveness probe — used by k8s readinessProbe and `tilt up`."""
     return {"status": "ok", "service": "catalyst-langgraph", "version": __version__}
 
 
-@app.post("/api/chat/stream")
+@app.post(
+    "/api/chat/stream",
+    tags=["chat"],
+    summary="Stream a chat completion as typed Agent events",
+    description=(
+        "Server-Sent Events stream of typed `AgentEvent`s (run_started, "
+        "token, reasoning, tool_call_start, tool_call_end, iteration, "
+        "message_done, error). The wire format is `text/event-stream`; "
+        "each `data:` line is one JSON-encoded event with a `type` "
+        "discriminator. Use Agent-level overrides via `agent_config` "
+        "to tune individual Agents in the graph (see GET /api/agents "
+        "for the schemas)."
+    ),
+    response_class=EventSourceResponse,
+)
 async def chat_stream(req: ChatStreamRequest) -> EventSourceResponse:
     """Stream a chat completion as typed agent events.
 
@@ -313,7 +376,17 @@ async def chat_stream(req: ChatStreamRequest) -> EventSourceResponse:
 # ───────────────────────────────────────────────────────────────────────
 
 
-@app.get("/api/models")
+@app.get(
+    "/api/models",
+    tags=["discovery"],
+    summary="List models known to the LiteLLM proxy",
+    description=(
+        "Returns the union of LiteLLM's `/v1/models` and `/model/info` "
+        "endpoints, one entry per known model. UIs use this to populate "
+        "the model dropdowns and the Engine tab's `widget=\"model\"` "
+        "fields."
+    ),
+)
 def list_models() -> dict[str, Any]:
     """Return the union of /v1/models + /model/info from LiteLLM.
 
@@ -343,7 +416,19 @@ def list_models() -> dict[str, Any]:
     return {"data": out}
 
 
-@app.get("/api/tools")
+@app.get(
+    "/api/tools",
+    tags=["discovery"],
+    summary="List dispatchable Tools",
+    description=(
+        "Returns the Tools the engine can dispatch (function-calling "
+        "targets bound to the parent LLM). Some Tools wrap Agents — "
+        "e.g. `research` is both a callable Tool here AND its own Agent "
+        "on GET /api/agents. The response also reflects tool-host's "
+        "own /v1/tools so operators can spot drift between what the "
+        "engine exposes and what the executor implements."
+    ),
+)
 async def list_tools() -> dict[str, Any]:
     """Return the tools the agent can dispatch.
 
@@ -386,57 +471,99 @@ async def list_tools() -> dict[str, Any]:
     return {"tools": local, "tool_host": host_status}
 
 
-@app.get("/api/agents")
-async def list_agents() -> dict[str, Any]:
-    """Return the Agents registered with the catalyst-langgraph engine.
+class AgentTopologyNodeOut(BaseModel):
+    """One node in an Agent's LangGraph topology — wire format."""
 
-    Each entry carries a static topology (nodes + edges of the
-    underlying LangGraph state machine) and a config_schema (the
-    tunables the Engine tab renders as a form). The playground's
-    Engine tab uses this to build a per-Agent settings page and a
-    topology visualiser; per-request overrides flow back via the
-    `agent_config` field on POST /api/chat/stream.
-    """
-    out = []
+    id: str = Field(description="Node identifier as LangGraph reports it.")
+    type: Literal["start", "end", "agent", "tools"] = Field(
+        description="Node kind. `agent` runs the LLM; `tools` dispatches tool calls; `start`/`end` are LangGraph terminals.",
+    )
+
+
+class AgentTopologyEdgeOut(BaseModel):
+    """One edge in an Agent's LangGraph topology — wire format."""
+
+    source: str
+    target: str
+    conditional: bool = Field(
+        default=False,
+        description="True when the edge is a conditional-router edge (LangGraph's add_conditional_edges).",
+    )
+
+
+class AgentTopologyOut(BaseModel):
+    nodes: list[AgentTopologyNodeOut]
+    edges: list[AgentTopologyEdgeOut]
+
+
+class AgentDescriptorOut(BaseModel):
+    """One Agent in the registry — Engine tab consumes a list of these."""
+
+    id: str = Field(description="Stable id used as the key in `agent_config` overrides.")
+    description: str
+    tools: list[str] = Field(
+        default_factory=list,
+        description="Tool names this Agent binds (cross-reference into /api/tools).",
+    )
+    topology: AgentTopologyOut
+    config_schema: dict[str, Any] = Field(
+        description=(
+            "JSON Schema for this Agent's tunables (output of "
+            "`config_model.model_json_schema()`). UI affordances ride "
+            'in `properties.<field>.ui` (e.g. `{"widget": "model"}` or '
+            '`{"step": 0.05}`).'
+        ),
+    )
+
+
+class ListAgentsResponse(BaseModel):
+    agents: list[AgentDescriptorOut]
+
+
+@app.get(
+    "/api/agents",
+    response_model=ListAgentsResponse,
+    tags=["discovery"],
+    summary="List registered Agents",
+    description=(
+        "Returns every Agent (compiled LangGraph state machine with its "
+        "own LLM + loop) registered with the engine. Each entry carries:\n"
+        "- `topology` — static node + edge snapshot for the Engine tab "
+        "to render.\n"
+        "- `config_schema` — JSON Schema of the Agent's tunables, "
+        "produced by the Agent's Pydantic config class. UI hints ride "
+        "in the `ui` extension key on each property.\n\n"
+        "Per-request overrides flow back via the `agent_config` field "
+        "on `POST /api/chat/stream`."
+    ),
+)
+async def list_agents() -> ListAgentsResponse:
+    """Return the Agents registered with the engine."""
+    out: list[AgentDescriptorOut] = []
     for desc in AGENTS.values():
         out.append(
-            {
-                "id": desc.id,
-                "description": desc.description,
-                "tools": list(desc.tools),
-                "topology": {
-                    "nodes": [
-                        {"id": n.id, "type": n.type}
+            AgentDescriptorOut(
+                id=desc.id,
+                description=desc.description,
+                tools=list(desc.tools),
+                topology=AgentTopologyOut(
+                    nodes=[
+                        AgentTopologyNodeOut(id=n.id, type=n.type)
                         for n in desc.topology.nodes
                     ],
-                    "edges": [
-                        {
-                            "source": e.source,
-                            "target": e.target,
-                            "conditional": e.conditional,
-                        }
+                    edges=[
+                        AgentTopologyEdgeOut(
+                            source=e.source,
+                            target=e.target,
+                            conditional=e.conditional,
+                        )
                         for e in desc.topology.edges
                     ],
-                },
-                "config_schema": [
-                    {
-                        "name": f.name,
-                        "type": f.type,
-                        "default": f.default,
-                        "label": f.label,
-                        "description": f.description,
-                        "min": f.min,
-                        "max": f.max,
-                        "step": f.step,
-                        "options": f.options,
-                        "multiline": f.multiline,
-                        "secret": f.secret,
-                    }
-                    for f in desc.config_schema
-                ],
-            }
+                ),
+                config_schema=desc.config_model.model_json_schema(),
+            )
         )
-    return {"agents": out}
+    return ListAgentsResponse(agents=out)
 
 
 def main() -> None:

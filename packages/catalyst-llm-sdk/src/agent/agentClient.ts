@@ -24,6 +24,7 @@ import {
   type AgentEvent,
   type AgentEventType,
   type ChatStreamRequest,
+  type ListAgentsResponse,
 } from "./events.js";
 
 export interface AgentClientConfig {
@@ -101,6 +102,23 @@ export class CatalystAgentClient {
       throw new Error(`listTools failed: ${resp.status} ${resp.statusText}`);
     }
     return (await resp.json()) as ListToolsResponse;
+  }
+
+  /**
+   * List the Agents (compiled LangGraph state machines with their own
+   * LLM + loop) registered with catalyst-langgraph. Each entry carries
+   * its topology snapshot and the schema of tunables the Engine tab
+   * renders as a form. Per-request overrides flow back via the
+   * `agent_config` field on `streamAgent`.
+   */
+  async listAgents(): Promise<ListAgentsResponse> {
+    const resp = await this.fetchImpl(`${this.baseUrl}/api/agents`, {
+      headers: this.headers,
+    });
+    if (!resp.ok) {
+      throw new Error(`listAgents failed: ${resp.status} ${resp.statusText}`);
+    }
+    return (await resp.json()) as ListAgentsResponse;
   }
 
   /**

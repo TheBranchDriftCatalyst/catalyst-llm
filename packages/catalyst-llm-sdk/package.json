@@ -45,6 +45,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@dagrejs/dagre": "^3.0.0",
     "@duckdb/duckdb-wasm": "^1.33.1-dev45.0",
     "diff": "^9.0.0",
     "eventsource-parser": "^3.0.8",

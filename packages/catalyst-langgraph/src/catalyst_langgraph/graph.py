@@ -19,9 +19,10 @@ from langchain_core.runnables import Runnable
 from langgraph.graph import START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
+from pydantic import BaseModel, Field
+
 from .agents import (
     AgentDescriptor,
-    AgentField,
     AgentTopology,
     AgentTopologyEdge,
     AgentTopologyNode,
@@ -127,20 +128,87 @@ def build_graph(
 # ───────────────────────────────────────────────────────────────────────
 # Agent registry entry — surfaced on the Engine tab.
 #
-# The descriptor advertises tunables for the schema-driven config form;
-# request-time graph construction still flows through build_graph()
-# above, parameterised by `agent_config` overrides in server.py.
-# Topology is hand-described rather than extracted from a compiled
-# graph — the shape is fixed (agent ↔ tools loop) and a static
-# descriptor avoids an HTTP roundtrip to LiteLLM on every /api/agents
-# call. If the graph shape changes, update the topology block here.
+# The Pydantic config class owns the schema, the validation, and the
+# defaults — /api/agents serialises it via model_json_schema() for the
+# frontend form, /api/chat/stream validates incoming `agent_config`
+# through it. Request-time graph construction still flows through
+# build_graph() above; this class describes WHAT can be overridden,
+# not HOW the graph is built.
+#
+# UI affordances ride in `json_schema_extra={"ui": {...}}`. The
+# `widget` hint picks a non-default renderer (e.g. ModelSelector for
+# string fields that should be a model dropdown, or a textarea for
+# multiline strings). Standard JSON Schema keys (`minimum`, `maximum`,
+# `default`, `description`, `title`) drive the rest.
+#
+# Topology is hand-described — graph shape is fixed (agent ↔ tools
+# loop) and a static descriptor avoids an HTTP roundtrip to LiteLLM
+# on every /api/agents call. Update this block if the graph shape
+# ever changes.
 # ───────────────────────────────────────────────────────────────────────
+
+
+class MainAgentConfig(BaseModel):
+    """Tunables for the main chat Agent.
+
+    Every field is optional with a baked-in default so the Engine tab
+    can send partial overrides — `{"recursion_limit": 5}` validates
+    just fine and the rest of the fields fall back to their defaults.
+    """
+
+    model_config = {"extra": "forbid", "json_schema_extra": {"agent_id": "main"}}
+
+    model: str = Field(
+        default="",
+        title="Model",
+        description="The chat model the operator picks per chat — this field reflects the live selection, not a global default.",
+        json_schema_extra={"ui": {"widget": "model"}},
+    )
+    temperature: float = Field(
+        default=0.7,
+        ge=0,
+        le=2,
+        title="Temperature",
+        description="Sampling temperature. 0 = deterministic, 2 = wild.",
+        json_schema_extra={"ui": {"step": 0.05}},
+    )
+    max_tokens: int = Field(
+        default=2048,
+        ge=64,
+        le=32768,
+        title="Max tokens",
+        description="Hard ceiling on the response length.",
+        json_schema_extra={"ui": {"step": 64}},
+    )
+    top_p: float = Field(
+        default=1.0,
+        ge=0,
+        le=1,
+        title="Top P",
+        description="Nucleus sampling. 1.0 = disabled (and stripped server-side to avoid provider rejections when combined with temperature).",
+        json_schema_extra={"ui": {"step": 0.05}},
+    )
+    recursion_limit: int = Field(
+        default=DEFAULT_MAIN_RECURSION_LIMIT,
+        ge=2,
+        le=100,
+        title="Recursion limit",
+        description="Hard cap on graph steps. Each tool-loop round-trip ≈ 2 steps. Drop this when local models thrash.",
+        json_schema_extra={"ui": {"step": 1}},
+    )
+    system_prompt: str = Field(
+        default="You are a helpful assistant.",
+        title="System prompt",
+        description="Prepended to every chat request from this agent.",
+        json_schema_extra={"ui": {"widget": "textarea"}},
+    )
 
 
 register_agent(
     AgentDescriptor(
         id="main",
         description="Top-level chat agent loop. Dispatches tools, threads results back, and continues until the model stops emitting tool_calls.",
+        config_model=MainAgentConfig,
         topology=AgentTopology(
             nodes=[
                 AgentTopologyNode(id="__start__", type="start"),
@@ -155,62 +223,5 @@ register_agent(
                 AgentTopologyEdge(source="tools", target="agent"),
             ],
         ),
-        config_schema=[
-            AgentField(
-                name="model",
-                type="model",
-                default="",
-                label="Model",
-                description="The chat model the operator picks per chat — this field reflects the live selection, not a global default.",
-            ),
-            AgentField(
-                name="temperature",
-                type="number",
-                default=0.7,
-                label="Temperature",
-                description="Sampling temperature. 0 = deterministic, 2 = wild.",
-                min=0,
-                max=2,
-                step=0.05,
-            ),
-            AgentField(
-                name="max_tokens",
-                type="number",
-                default=2048,
-                label="Max tokens",
-                description="Hard ceiling on the response length.",
-                min=64,
-                max=32768,
-                step=64,
-            ),
-            AgentField(
-                name="top_p",
-                type="number",
-                default=1.0,
-                label="Top P",
-                description="Nucleus sampling. 1.0 = disabled (no-op for some providers).",
-                min=0,
-                max=1,
-                step=0.05,
-            ),
-            AgentField(
-                name="recursion_limit",
-                type="number",
-                default=DEFAULT_MAIN_RECURSION_LIMIT,
-                label="Recursion limit",
-                description="Hard cap on graph steps. Each tool-loop round-trip ≈ 2 steps. Lower this when local models thrash.",
-                min=2,
-                max=100,
-                step=1,
-            ),
-            AgentField(
-                name="system_prompt",
-                type="string",
-                default="You are a helpful assistant.",
-                label="System prompt",
-                description="Prepended to every chat request from this agent.",
-                multiline=True,
-            ),
-        ],
     )
 )

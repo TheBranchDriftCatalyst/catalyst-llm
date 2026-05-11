@@ -86,27 +86,79 @@ AgentEvent = Union[
 
 
 class ChatStreamRequest(BaseModel):
-    """Body of POST /api/chat/stream."""
-    model: str
-    messages: list[dict[str, Any]] = Field(
-        ..., description="OpenAI-style message dicts: {role, content, ...}."
+    """Body of POST /api/chat/stream — a single chat dispatch.
+
+    The minimum viable request is `{model, messages}`; everything else
+    layers on top. For per-Agent config overrides (researcher model,
+    recursion limits, system prompts, …), use `agent_config` —
+    those values are validated against the matching Agent's Pydantic
+    config_model before they reach the graph.
+    """
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "model": "claude-haiku-4-5-20251001",
+                    "messages": [{"role": "user", "content": "Say hi."}],
+                },
+                {
+                    "model": "claude-haiku-4-5-20251001",
+                    "messages": [
+                        {"role": "user", "content": "Research the LiteLLM release notes."}
+                    ],
+                    "tools": ["research"],
+                    "agent_config": {
+                        "main": {"recursion_limit": 10},
+                        "research": {
+                            "model": "claude-haiku-4-5-20251001",
+                            "recursion_limit": 8,
+                        },
+                    },
+                },
+            ]
+        }
+    }
+
+    model: str = Field(
+        description="Model id known to the LiteLLM proxy (see GET /api/models).",
+        examples=["claude-haiku-4-5-20251001", "mac/qwen3-coder"],
     )
-    system_prompt: Optional[str] = None
+    messages: list[dict[str, Any]] = Field(
+        description="OpenAI-style message dicts: `{role, content, ...}`.",
+    )
+    system_prompt: Optional[str] = Field(
+        default=None,
+        description="Prepended to every chat-model invocation in the agent loop.",
+    )
     tools: Optional[list[str]] = Field(
         default=None,
-        description="Tool names from /api/tools. None or [] disables tools.",
+        description=(
+            "Tool names from GET /api/tools. `null` or `[]` disables tools "
+            "(graph degenerates to a single LLM call)."
+        ),
+        examples=[["web_search", "research"]],
     )
     params: Optional[dict[str, Any]] = Field(
         default=None,
-        description="Sampling params: temperature, max_tokens, top_p, reasoning_effort, …",
+        description=(
+            "Legacy main-Agent sampling params (temperature, max_tokens, "
+            "top_p, reasoning_effort, …). Prefer `agent_config[\"main\"]` "
+            "for new code; this stays supported for backward compat."
+        ),
     )
     agent_config: Optional[dict[str, dict[str, Any]]] = Field(
         default=None,
         description=(
-            "Per-Agent overrides for tunables advertised on GET /api/agents. "
-            'Shape: `{"main": {"model": "...", "recursion_limit": 30}, '
-            '"research": {"model": "...", "recursion_limit": 10}}`. '
-            "Backward compat: when absent, request behaves identically to "
-            "today (legacy `params` applies to the main Agent)."
+            "Per-Agent overrides for tunables advertised on `GET /api/agents`. "
+            "Each inner dict is validated through that Agent's Pydantic "
+            "config_model; bogus fields raise. Backward compat: when "
+            "absent, request behaves identically to today's behaviour."
         ),
+        examples=[
+            {
+                "main": {"recursion_limit": 10, "temperature": 0.4},
+                "research": {"model": "claude-haiku-4-5-20251001"},
+            }
+        ],
     )

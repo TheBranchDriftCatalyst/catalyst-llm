@@ -40,10 +40,10 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import tool
 from langgraph.graph import START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
+from pydantic import BaseModel, Field
 
 from ..agents import (
     AgentDescriptor,
-    AgentField,
     AgentTopology,
     AgentTopologyEdge,
     AgentTopologyNode,
@@ -204,10 +204,54 @@ def research(query: str, depth: str = "shallow") -> str:
 # Agent registry entry — surfaced on the Engine tab.
 # ───────────────────────────────────────────────────────────────────────
 
+
+class ResearchAgentConfig(BaseModel):
+    """Tunables for the `research` sub-agent.
+
+    Every field is optional with a baked-in default so the Engine tab
+    can send partial overrides. The /api/chat/stream path validates
+    `agent_config["research"]` through this class and stuffs the
+    validated values into `research_overrides` (the ContextVar the
+    @tool function reads at dispatch time).
+    """
+
+    model_config = {"extra": "forbid", "json_schema_extra": {"agent_id": "research"}}
+
+    model: str = Field(
+        default=DEFAULT_RESEARCH_MODEL,
+        title="Researcher model",
+        description="The LLM that runs inside the research loop. Defaults to a cheap, fast model since the researcher mostly needs to summarise.",
+        json_schema_extra={"ui": {"widget": "model"}},
+    )
+    temperature: float = Field(
+        default=DEFAULT_TEMPERATURE,
+        ge=0,
+        le=2,
+        title="Temperature",
+        description="Lower = more deterministic about when to stop searching. Synthesis quality > creativity here.",
+        json_schema_extra={"ui": {"step": 0.05}},
+    )
+    recursion_limit: int = Field(
+        default=DEFAULT_MAX_RECURSION,
+        ge=2,
+        le=100,
+        title="Recursion limit",
+        description="Hard cap on internal graph steps (≈2 per search round-trip). Drop this when local models thrash.",
+        json_schema_extra={"ui": {"step": 1}},
+    )
+    system_prompt: str = Field(
+        default=DEFAULT_RESEARCH_SYSTEM_PROMPT,
+        title="Researcher system prompt",
+        description="The instructions the researcher follows on every dispatch. Tweak to bias toward citations, depth, recency, etc.",
+        json_schema_extra={"ui": {"widget": "textarea"}},
+    )
+
+
 register_agent(
     AgentDescriptor(
         id="research",
         description="Web-research sub-agent. Loops over web_search until it has enough sources, then synthesises a cited markdown answer.",
+        config_model=ResearchAgentConfig,
         topology=AgentTopology(
             nodes=[
                 AgentTopologyNode(id="__start__", type="start"),
@@ -223,42 +267,5 @@ register_agent(
             ],
         ),
         tools=["web_search"],
-        config_schema=[
-            AgentField(
-                name="model",
-                type="model",
-                default=DEFAULT_RESEARCH_MODEL,
-                label="Researcher model",
-                description="The LLM that runs inside the research loop. Defaults to a cheap, fast model since the researcher mostly needs to summarise.",
-            ),
-            AgentField(
-                name="temperature",
-                type="number",
-                default=DEFAULT_TEMPERATURE,
-                label="Temperature",
-                description="Lower = more deterministic about when to stop searching. Synthesis quality > creativity here.",
-                min=0,
-                max=2,
-                step=0.05,
-            ),
-            AgentField(
-                name="recursion_limit",
-                type="number",
-                default=DEFAULT_MAX_RECURSION,
-                label="Recursion limit",
-                description="Hard cap on internal graph steps (≈2 per search round-trip). Drop this when local models thrash.",
-                min=2,
-                max=100,
-                step=1,
-            ),
-            AgentField(
-                name="system_prompt",
-                type="string",
-                default=DEFAULT_RESEARCH_SYSTEM_PROMPT,
-                label="Researcher system prompt",
-                description="The instructions the researcher follows on every dispatch. Tweak to bias toward citations, depth, recency, etc.",
-                multiline=True,
-            ),
-        ],
     )
 )

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { AgentDescriptor } from "../agent/events.js";
 import type {
   ChatParams,
   ChatRequest,
@@ -66,6 +67,51 @@ export function useAvailableTools(): UseAvailableToolsResult {
   }, [refresh]);
 
   return { tools, loading, error, refresh };
+}
+
+export interface UseAgentsResult {
+  agents: AgentDescriptor[];
+  loading: boolean;
+  error: string | null;
+  refresh: () => Promise<void>;
+}
+
+/**
+ * Fetch the registry of Agents from catalyst-langgraph's GET /api/agents.
+ * Used by the Engine tab to render a list of compiled graphs + their
+ * topology + their config schemas. Returns [] when no agentClient is
+ * configured.
+ */
+export function useAgents(): UseAgentsResult {
+  const { agentClient } = useLLMContext();
+  const [agents, setAgents] = useState<AgentDescriptor[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    if (!agentClient) {
+      setAgents([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await agentClient.listAgents();
+      setAgents(data.agents);
+    } catch (e) {
+      setError((e as Error).message);
+      setAgents([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [agentClient]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  return { agents, loading, error, refresh };
 }
 
 export interface GroupedModels {

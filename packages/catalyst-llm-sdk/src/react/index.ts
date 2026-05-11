@@ -6,6 +6,7 @@ export {
   useStreamingChat,
   useEmbed,
   useAvailableTools,
+  useAgents,
   useChatStore,
   type GroupedModels,
   type UseModelsResult,
@@ -14,7 +15,13 @@ export {
   type UseEmbedResult,
   type AvailableTool,
   type UseAvailableToolsResult,
+  type UseAgentsResult,
 } from "./hooks.js";
+export {
+  useEngineStore,
+  type EngineStore,
+  type EngineConfigs,
+} from "./engineStore.js";
 export type {
   Chat,
   ChatTurn,
