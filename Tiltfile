@@ -62,6 +62,16 @@ docker_build(
 )
 
 # ============================================
+# catalyst-langgraph — Python LangGraph agent service.
+# Owns the agent/tool loop the playground UI consumes via SSE.
+# ============================================
+docker_build(
+    'catalyst-llm/catalyst-langgraph',
+    context='./packages/catalyst-langgraph',
+    dockerfile='./packages/catalyst-langgraph/Dockerfile',
+)
+
+# ============================================
 # Cluster manifests (k8s/local overlay).
 # ============================================
 k8s_yaml(kustomize('./k8s/local'))
@@ -114,6 +124,19 @@ k8s_resource(
     ],
 )
 
+k8s_resource(
+    'catalyst-langgraph',
+    labels=['agent', 'sdk'],
+    port_forwards=['7078:7078'],
+    resource_deps=['k3d-cluster', 'tool-host'],
+    links=[
+        link('http://localhost:7078/healthz', 'Health'),
+        link('http://localhost:7078/api/models', 'Models'),
+        link('http://localhost:7078/api/tools', 'Tools'),
+        link('http://localhost:7078/docs', 'OpenAPI Docs'),
+    ],
+)
+
 # LiteLLM lives only in k8s/talos00 — dev UIs talk to the deployed
 # proxy at http://litellm.talos00, set via k8s/local/configmap-patch.yaml.
 
@@ -162,10 +185,11 @@ local_resource(
     serve_cmd=(
         'VITE_LITELLM_URL=' + LITELLM_URL + ' ' +
         'VITE_LITELLM_KEY=' + LITELLM_KEY + ' ' +
+        'VITE_AGENT_URL=http://localhost:7078 ' +
         'yarn --cwd ' + PLAYGROUND_DIR + ' dev --port 5174 --host'
     ),
     deps=[PLAYGROUND_DIR + '/src'],
-    resource_deps=['sdk-build', 'tool-host'],
+    resource_deps=['sdk-build', 'tool-host', 'catalyst-langgraph'],
     readiness_probe=probe(
         http_get=http_get_action(port=5174, path='/'),
         initial_delay_secs=3,

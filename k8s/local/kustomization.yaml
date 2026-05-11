@@ -21,6 +21,7 @@ resources:
   - ingressroute.yaml
   - ollama-externalname.yaml
   - tool-host.yaml
+  - catalyst-langgraph.yaml
 
 # The `litellm-secrets` Secret matches what the talos00 overlay gets
 # from External Secrets Operator (1Password). In dev we generate it
