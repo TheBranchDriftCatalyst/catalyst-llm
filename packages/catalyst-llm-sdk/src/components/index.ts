@@ -45,7 +45,23 @@ export {
   type SystemPromptPresetsProps,
   type PromptPreset,
 } from "./PromptPresets.js";
-export { PromptEditor, type PromptEditorProps } from "./PromptEditor.js";
+export {
+  PromptEditor,
+  PromptPickerList,
+  PromptEditForm,
+  EMPTY_PROMPT_DRAFT,
+  presetToDraft,
+  draftToPayload,
+  type PromptEditorProps,
+  type PromptPickerListProps,
+  type PromptPickerGroupAxis,
+  type PromptEditFormProps,
+  type PromptDraft,
+} from "./PromptEditor.js";
+export {
+  PromptExplorerSheet,
+  type PromptExplorerSheetProps,
+} from "./PromptExplorerSheet.js";
 export { CompareView, type CompareViewProps } from "./CompareView.js";
 export { CompareGraphs, type CompareGraphsProps } from "./CompareGraphs.js";
 export { lineDiff, wordDiff, type Change as DiffChange } from "./diff.js";

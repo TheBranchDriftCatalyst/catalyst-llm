@@ -32,6 +32,7 @@ import type {
   AgentConfigSchema,
   AgentFieldSchema,
 } from "../../agent/events.js";
+import { usePromptStore } from "../../react/promptStore.js";
 import { ModelMicroSwitcher } from "../ModelMicroSwitcher.js";
 import { cn } from "../utils.js";
 
@@ -91,6 +92,20 @@ export function NodeInlineConfig({
     );
   }
 
+  // The textarea (system_prompt) row's label depends on whether the
+  // node is bound to a saved preset via the hidden `system_prompt_ref`
+  // companion field. Resolve the preset name here so FieldRow gets a
+  // ready-to-render string and stays presentational.
+  const systemPromptRef =
+    typeof values.system_prompt_ref === "string"
+      ? values.system_prompt_ref
+      : undefined;
+  const boundPresetName = usePromptStore((s) =>
+    systemPromptRef
+      ? (s.presets.find((p) => p.id === systemPromptRef)?.name ?? null)
+      : null,
+  );
+
   return (
     <div className={cn("flex flex-col gap-1", className)}>
       {fields.map(({ name, field }) => (
@@ -103,6 +118,7 @@ export function NodeInlineConfig({
           onChange={(v) => onChange(name, v)}
           onReset={() => onChange(name, undefined)}
           onOpenPromptSheet={onOpenPromptSheet}
+          boundPresetName={boundPresetName}
         />
       ))}
     </div>
@@ -117,6 +133,7 @@ function FieldRow({
   onChange,
   onReset,
   onOpenPromptSheet,
+  boundPresetName,
 }: {
   fieldName: string;
   field: AgentFieldSchema;
@@ -125,14 +142,39 @@ function FieldRow({
   onChange: (v: unknown) => void;
   onReset: () => void;
   onOpenPromptSheet?: (fieldName: string) => void;
+  /** When the node has a `system_prompt_ref` bound to a saved preset
+   * that the prompt store can resolve, this is its display name.
+   * Otherwise null. The textarea row uses it to render a binding hint
+   * ("using: <name>") in place of the generic "default" / "edited"
+   * label. */
+  boundPresetName?: string | null;
 }) {
   const label = field.title ?? fieldName;
 
   // system_prompt-style textareas don't fit on a node card. Render as
-  // a button that opens the prompt explorer sheet (T8 fills the sheet
-  // body; today the button still opens the sheet with placeholder
-  // content so the wiring is verifiable end-to-end).
+  // a button that opens the prompt explorer sheet. The button label
+  // surfaces the current binding state so the operator can see at a
+  // glance whether the node is on a saved preset, a one-off inline
+  // override, or the schema default.
   if (field.ui?.widget === "textarea") {
+    let buttonLabel: string;
+    let titleHint: string;
+    if (boundPresetName) {
+      // Names get long — truncate at ~16 chars so the row stays one
+      // line on a typical card width.
+      const truncated =
+        boundPresetName.length > 16
+          ? `${boundPresetName.slice(0, 15)}…`
+          : boundPresetName;
+      buttonLabel = `using: ${truncated}`;
+      titleHint = `Bound to saved prompt "${boundPresetName}" — click to manage`;
+    } else if (isOverridden) {
+      buttonLabel = "(inline)";
+      titleHint = `Inline ${label} override — click to manage`;
+    } else {
+      buttonLabel = "default";
+      titleHint = `Edit ${label}`;
+    }
     return (
       <div className="flex items-center gap-1.5">
         <span className="w-[80px] shrink-0 truncate text-[10px] text-muted-foreground">
@@ -144,12 +186,10 @@ function FieldRow({
           size="sm"
           onClick={() => onOpenPromptSheet?.(fieldName)}
           className="h-6 flex-1 justify-start px-2 text-[11px]"
-          title={`Edit ${label}`}
+          title={titleHint}
         >
           <FileText className="mr-1 h-3 w-3" aria-hidden="true" />
-          <span className="truncate">
-            {isOverridden ? "edited" : "default"}
-          </span>
+          <span className="truncate">{buttonLabel}</span>
         </Button>
         {isOverridden && <ResetButton onReset={onReset} />}
       </div>

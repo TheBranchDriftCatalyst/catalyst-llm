@@ -35,6 +35,7 @@ import type { AgentDescriptor } from "../../agent/events.js";
 import { useAgents } from "../../react/hooks.js";
 import { useEngineStore } from "../../react/engineStore.js";
 import { cn } from "../utils.js";
+import { PromptExplorerSheet } from "../PromptExplorerSheet.js";
 import { ReactFlowAgentTopology } from "./ReactFlowAgentTopology.js";
 
 function countAgentOverrides(
@@ -166,19 +167,34 @@ export function EngineView({ className }: EngineViewProps) {
           if (!open) setSheetContext(null);
         }}
       >
-        <SheetContent side="right" className="w-[400px] sm:w-[500px]">
+        <SheetContent side="right" className="flex w-[400px] flex-col sm:w-[500px]">
           <SheetHeader>
             <SheetTitle>
-              {sheetContext?.kind === "prompt" ? "Prompts" : "Runs"}
+              {sheetContext?.kind === "prompt"
+                ? `Prompts for ${sheetContext.agentId}.${sheetContext.nodeId}`
+                : "Runs"}
             </SheetTitle>
             <SheetDescription>
-              {sheetContext
-                ? `${sheetContext.agentId}.${sheetContext.nodeId}`
-                : ""}
+              {sheetContext?.kind === "prompt"
+                ? "Bind a saved prompt, set an inline override, or edit the bound preset."
+                : sheetContext
+                  ? `${sheetContext.agentId}.${sheetContext.nodeId}`
+                  : ""}
             </SheetDescription>
           </SheetHeader>
-          <div className="mt-4 text-sm text-muted-foreground">
-            Sheet body lands in {sheetContext?.kind === "prompt" ? "llm-ta1" : "llm-jui"}.
+          <div className="mt-4 flex min-h-0 flex-1 flex-col">
+            {sheetContext?.kind === "prompt" && (
+              <PromptExplorerSheet
+                agentId={sheetContext.agentId}
+                nodeId={sheetContext.nodeId}
+                onClose={() => setSheetContext(null)}
+              />
+            )}
+            {sheetContext?.kind === "runs" && (
+              <div className="text-sm text-muted-foreground">
+                Sheet body lands in llm-jui.
+              </div>
+            )}
           </div>
         </SheetContent>
       </Sheet>
