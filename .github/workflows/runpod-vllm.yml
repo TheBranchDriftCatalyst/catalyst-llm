@@ -66,8 +66,8 @@ jobs:
       - name: Build & push (linux/amd64) with registry cache
         uses: docker/build-push-action@v5
         with:
-          context: ./docker/runpod-vllm
-          file: ./docker/runpod-vllm/Dockerfile
+          context: ./packages/docker/runpod-vllm
+          file: ./packages/docker/runpod-vllm/Dockerfile
           platforms: linux/amd64
           push: true
           tags: ${{ steps.tags.outputs.tags }}
