@@ -51,7 +51,7 @@ from .agents import AGENTS, validate_overrides
 from .graph import build_graph
 from .tools import ALL_TOOLS
 from .tools.host import TOOL_HOST_API_KEY, TOOL_HOST_URL
-from .tools.research import research_overrides
+from .tools.research import caller_context, research_overrides
 
 log = logging.getLogger("catalyst-langgraph")
 logging.basicConfig(
@@ -140,6 +140,51 @@ def _coerce_messages(raw: list[dict[str, Any]]) -> list[BaseMessage]:
     return out
 
 
+def _summarise_caller_context(
+    raw_messages: list[dict[str, Any]],
+    system_prompt: Optional[str],
+) -> str:
+    """Compress the parent chat's recent history into a short brief.
+
+    The research sub-agent receives this via the `caller_context`
+    ContextVar so each council member knows what the chat is *about*,
+    not just the immediate `query` arg. We keep it short and only
+    include the last few user turns + the parent's system prompt —
+    members don't need every token of history, just enough trajectory
+    to avoid generic searches.
+
+    Returns "" when there's nothing useful to share (chat just
+    started, no system prompt) so the tool can detect "no context".
+    """
+    PER_MSG_CAP = 400      # chars; trims monster pastes
+    MAX_USER_MSGS = 3
+    parts: list[str] = []
+
+    if system_prompt and system_prompt.strip():
+        sp = system_prompt.strip()
+        if len(sp) > PER_MSG_CAP:
+            sp = sp[: PER_MSG_CAP - 1].rstrip() + "…"
+        parts.append(f"Parent assistant's system prompt:\n{sp}")
+
+    user_turns: list[str] = []
+    for m in raw_messages:
+        if (m.get("role") or "") != "user":
+            continue
+        content = (m.get("content") or "").strip()
+        if not content:
+            continue
+        if len(content) > PER_MSG_CAP:
+            content = content[: PER_MSG_CAP - 1].rstrip() + "…"
+        user_turns.append(content)
+
+    recent_user = user_turns[-MAX_USER_MSGS:]
+    if recent_user:
+        formatted = "\n".join(f"- {u}" for u in recent_user)
+        parts.append(f"Recent user messages in the parent chat:\n{formatted}")
+
+    return "\n\n".join(parts).strip()
+
+
 # ───────────────────────────────────────────────────────────────────────
 # Event translation — LangGraph astream_events(v2) → typed AgentEvents
 # ───────────────────────────────────────────────────────────────────────
@@ -219,6 +264,18 @@ async def _stream_agent_events(
     # ContextVar is reset in the finally block below.
     research_overrides_token = research_overrides.set(validated_research)
 
+    # Caller context: pass the parent chat's recent user-side
+    # conversation into the research tool's ContextVar so each
+    # council member sees the trajectory of the chat, not just the
+    # `query` arg. The parent model can still override with an
+    # explicit `context=...` tool arg if it wants to be deliberate.
+    # Cap at the last 3 user turns + truncate each to ~400 chars —
+    # enough to capture the topic, not enough to dominate the
+    # research prompt.
+    caller_context_token = caller_context.set(
+        _summarise_caller_context(request.messages, request.system_prompt)
+    )
+
     try:
         app_graph = build_graph(
             model=request.model,
@@ -232,6 +289,7 @@ async def _stream_agent_events(
         log.exception("graph build failed")
         yield ErrorEvent(message=f"graph build failed: {exc}")
         research_overrides.reset(research_overrides_token)
+        caller_context.reset(caller_context_token)
         return
 
     state = {"messages": _coerce_messages(request.messages)}
@@ -309,10 +367,11 @@ async def _stream_agent_events(
         yield ErrorEvent(message=str(exc))
         return
     finally:
-        # Always reset the research overrides — leaving them set would
-        # leak the previous request's config into the next one running
-        # in this worker.
+        # Always reset the ContextVars — leaving them set would leak
+        # the previous request's config / context into the next one
+        # running in this worker.
         research_overrides.reset(research_overrides_token)
+        caller_context.reset(caller_context_token)
 
     yield MessageDone(finish_reason=last_finish, usage=last_usage)
 

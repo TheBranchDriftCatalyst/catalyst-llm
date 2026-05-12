@@ -1,42 +1,61 @@
-"""`research` sub-agent tool.
+"""`research` sub-agent — cognitive council with adaptive critic + fusion.
 
-A LangChain tool that wraps a small LangGraph sub-agent. The main
-chat agent calls `research(query)` and gets back a synthesised answer;
-the sub-agent runs its own web_search → read → summarise loop
-internally. This lets the user write "research X" without manually
-orchestrating multi-step search across the parent conversation.
+A LangChain tool that wraps a small but rich LangGraph sub-agent.
+Conceptually:
 
-Architecture:
-    parent agent  ─call─►  research(query)
-                            │
-                            ▼  (internal sub-graph)
-                          agent ─tool_call─► web_search
-                            ▲                  │
-                            └──── result ──────┘
-                            │
-                            ▼  (final synthesised text)
-    parent agent  ◄─return─
+    parent agent → research(query)
+                    │
+                    ▼  spawn N council members in parallel
+        ┌─ member_1 ─ web_search loop ─┐
+        ├─ member_2 ─ web_search loop ─┤
+        └─ member_N ─ web_search loop ─┘
+                    │
+                    ▼
+                  critic
+                    ├─ "needs revision" → feed feedback back to members (next round)
+                    └─ "approved" or max-rounds → fusion → return
 
-The parent only sees `research` as a single tool call. The sub-agent's
-internal iterations are hidden from the chat UI — they're an
-implementation detail of the tool. If we want sub-agent transparency
-later, the tool can stream events upward (Phase 2).
+Three personalities at work:
 
-Per-request overrides (model, recursion limit, system prompt, …) flow
-in via a ContextVar set by `server.py` from the incoming
-`agent_config["research"]` payload. ContextVar is the right primitive
-here — it survives `await` boundaries, doesn't couple us to any
-LangGraph internals, and lets the @tool function read overrides
-without changing its signature (which would break the parent's
-tool-calling contract).
+  - **Member** — a researcher running web_search internally. N copies
+    run in parallel (asyncio.gather) so we get diverse-by-sampling
+    drafts even at identical model + prompt.
+  - **Critic** — reviews the council's drafts and either approves
+    them or hands back structured feedback for the next round. The
+    critic is what makes the loop *adaptive*: it can decide we've
+    searched enough or push for another pass with more focus.
+  - **Fusion** — synthesises the approved drafts into a single cited
+    answer. Skipped when council_size == 1 (no fusion needed).
+
+Base cases:
+  - council_size=1, critic_enabled=False → single researcher, no
+    fusion. Identical wire behaviour to the pre-council implementation,
+    one ainvoke. The "1 is base case" the user asked for.
+  - council_size=1, critic_enabled=True → single researcher in a
+    critic-feedback loop. No fusion (nothing to fuse).
+  - council_size>1, critic_enabled=False → N parallel drafts → fusion.
+    Fastest broad-coverage path.
+  - council_size>1, critic_enabled=True → N parallel drafts → critic →
+    revise loop → fusion. The full ensemble.
+
+Per-request overrides flow in via the `research_overrides` ContextVar
+that server.py sets from agent_config["research"]; the @tool function
+reads them when it dispatches.
 """
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 from contextvars import ContextVar
 from typing import Any, Optional
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import (
+    AIMessage,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+)
 from langchain_core.tools import tool
 from langgraph.graph import START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -52,67 +71,282 @@ from ..agents import (
 from ..client import CatalystLiteLLMClient
 from .host import web_search
 
-# Cheap + fast model by default — researcher mostly needs to call a
-# tool and summarise. Operators can override via env, or per-request
-# from the Engine tab via `agent_config["research"]["model"]`.
+log = logging.getLogger(__name__)
+
+
+# ───────────────────────────────────────────────────────────────────────
+# Defaults & system prompts
+# ───────────────────────────────────────────────────────────────────────
+
+# Cheap + fast model for everything by default — researcher mostly
+# needs to call a tool and summarise, and the critic + fusion are both
+# small. Operators can override per-role via the Engine tab.
 DEFAULT_RESEARCH_MODEL = "claude-haiku-4-5-20251001"
 
-# Hard cap on the sub-agent's tool-call loop. LangGraph's
-# `recursion_limit` counts ALL graph steps (agent + tools), so each
-# round-trip is two steps. 20 leaves room for ~10 search/read cycles
-# before we bail — generous for shallow research, short enough that a
-# stuck model can't burn a quota.
 DEFAULT_MAX_RECURSION = 20
-
 DEFAULT_TEMPERATURE = 0.3
 
 DEFAULT_RESEARCH_SYSTEM_PROMPT = (
-    "You are a research assistant. Your job is to answer the user's "
-    "question by calling web_search one or more times to gather sources, "
-    "then synthesising a short, well-cited answer.\n\n"
+    "You are one of several research assistants on a council. You will "
+    "see your member number in the brief. Your job is to answer the "
+    "user's question by calling web_search one or more times to gather "
+    "sources, then synthesising a short, well-cited draft.\n\n"
     "Guidelines:\n"
     "- Use web_search at least once; reformulate the query if the first "
     "result set is unhelpful.\n"
     "- Prefer recent sources for time-sensitive topics; pass "
     'time_range="month" or "year" to web_search when appropriate.\n'
     "- Cite each claim with the source URL inline, e.g. `(source: https://...)`.\n"
-    "- Keep the final answer under 6 short paragraphs unless the user "
-    "asked for depth.\n"
-    "- Once you have enough information, stop calling tools and write the "
-    "answer. Do not loop indefinitely."
+    "- Keep your draft under 6 short paragraphs unless the user asks for depth.\n"
+    "- Once you have enough information, stop calling tools and write the answer. "
+    "Do not loop indefinitely.\n"
+    "- If you see reviewer feedback from a previous round, address it directly "
+    "in this round's draft."
+)
+
+DEFAULT_CRITIC_SYSTEM_PROMPT = (
+    "You are the editorial critic for a research council. You will be "
+    "shown the user's original question and the drafts from N council "
+    "members. Decide whether the council has answered the question "
+    "well enough, or whether they should revise.\n\n"
+    "Reply STRICTLY as JSON with two keys:\n"
+    '  {"approved": true|false, "feedback": "..."}\n\n'
+    "Set `approved` to true when:\n"
+    "- The drafts collectively cover the user's question.\n"
+    "- Sources are cited inline and look credible.\n"
+    "- Disagreements between members are minor or already noted.\n\n"
+    "Set `approved` to false and provide concrete feedback when:\n"
+    "- The drafts dodge or only partly answer the question.\n"
+    "- Sources are missing, sparse, or stale.\n"
+    "- Members are confidently wrong / contradicting authoritative info.\n\n"
+    "Keep `feedback` under 3 sentences and specific — the council will "
+    "re-search with it as guidance."
+)
+
+DEFAULT_FUSION_SYSTEM_PROMPT = (
+    "You are the research fusion agent. You will see the user's "
+    "original question and the approved drafts from N council members. "
+    "Your job is to:\n"
+    "- Identify the strongest, most-cited claims that multiple members agree on.\n"
+    "- Surface useful disagreements (when members reach different conclusions, "
+    "flag them rather than picking one).\n"
+    "- Discard restatement / boilerplate / hedging.\n"
+    "- Preserve source URLs inline.\n"
+    "- Produce a single consolidated markdown answer the user can act on."
 )
 
 
-# Per-request overrides. `server.py:_stream_agent_events` sets this
-# from `request.agent_config["research"]` before invoking the parent
-# graph; the `@tool research` function reads it when dispatched.
-# Keep the shape `dict[str, Any]` — it mirrors the AgentField names
-# (`model`, `recursion_limit`, `temperature`, `system_prompt`).
+# ───────────────────────────────────────────────────────────────────────
+# Pydantic config — schema + validation + defaults for /api/agents.
+# ───────────────────────────────────────────────────────────────────────
+
+
+class Critique(BaseModel):
+    """Structured critic output, produced by the JSON-mode critic call."""
+
+    approved: bool = Field(
+        description="True if the council answers are good enough to fuse."
+    )
+    feedback: str = Field(
+        default="",
+        description="Specific guidance for the next round (ignored when approved).",
+    )
+
+
+class ResearchAgentConfig(BaseModel):
+    """Tunables for the research council.
+
+    Existing member-level field names (`model`, `temperature`,
+    `recursion_limit`, `system_prompt`) are preserved so engineStore
+    entries from the pre-council schema keep working. Extra fields are
+    ignored on load (not forbidden) — that keeps stale keys from a
+    schema-drift roll-back from rejecting the whole config.
+    """
+
+    model_config = {"extra": "ignore", "json_schema_extra": {"agent_id": "research"}}
+
+    # Council ensemble. N=1 is the base case — single researcher, no
+    # fusion. Cap at 8 because cloud rate limits + we rarely need more
+    # diverse drafts than that for research questions.
+    council_size: int = Field(
+        default=1,
+        ge=1,
+        le=8,
+        title="Council size",
+        description=(
+            "Number of parallel research members. 1 = single researcher "
+            "(base case, no fusion). N > 1 fans out and uses the fusion "
+            "agent to consolidate."
+        ),
+        json_schema_extra={"ui": {"step": 1}},
+    )
+
+    # Member fields (per-researcher).
+    model: str = Field(
+        default=DEFAULT_RESEARCH_MODEL,
+        title="Member model",
+        description="LLM each council member uses. Cheap+fast is usually right.",
+        json_schema_extra={"ui": {"widget": "model"}},
+    )
+    temperature: float = Field(
+        default=DEFAULT_TEMPERATURE,
+        ge=0,
+        le=2,
+        title="Member temperature",
+        description="Council members run with this temperature — slight diversity helps.",
+        json_schema_extra={"ui": {"step": 0.05}},
+    )
+    recursion_limit: int = Field(
+        default=DEFAULT_MAX_RECURSION,
+        ge=2,
+        le=100,
+        title="Member recursion limit",
+        description="Hard cap on each member's internal graph steps (≈2 per search round-trip).",
+        json_schema_extra={"ui": {"step": 1}},
+    )
+    system_prompt: str = Field(
+        default=DEFAULT_RESEARCH_SYSTEM_PROMPT,
+        title="Member system prompt",
+        description="Instructions every council member follows.",
+        json_schema_extra={"ui": {"widget": "textarea"}},
+    )
+
+    # Critic loop. Disabled by default — opt-in for adaptive refinement.
+    critic_enabled: bool = Field(
+        default=False,
+        title="Critic enabled",
+        description=(
+            "When on, an editorial critic reviews the council's drafts and "
+            "can request another round with concrete feedback. Adds rounds "
+            "until approved or max_critique_rounds."
+        ),
+    )
+    critic_model: str = Field(
+        default="",
+        title="Critic model",
+        description="LLM the critic uses. Empty = falls back to the member model.",
+        json_schema_extra={"ui": {"widget": "model"}},
+    )
+    critic_temperature: float = Field(
+        default=0.2,
+        ge=0,
+        le=2,
+        title="Critic temperature",
+        description="Lower = more deterministic approval decisions.",
+        json_schema_extra={"ui": {"step": 0.05}},
+    )
+    critic_system_prompt: str = Field(
+        default=DEFAULT_CRITIC_SYSTEM_PROMPT,
+        title="Critic system prompt",
+        description="What the critic looks for. Adjust to weight different quality signals.",
+        json_schema_extra={"ui": {"widget": "textarea"}},
+    )
+    max_critique_rounds: int = Field(
+        default=2,
+        ge=1,
+        le=5,
+        title="Max critique rounds",
+        description="Hard cap on critic iterations. After this many rounds we fuse whatever we have.",
+        json_schema_extra={"ui": {"step": 1}},
+    )
+
+    # Fusion (only used when council_size > 1).
+    fusion_model: str = Field(
+        default="",
+        title="Fusion model",
+        description="LLM the fusion agent uses. Empty = falls back to the member model.",
+        json_schema_extra={"ui": {"widget": "model"}},
+    )
+    fusion_temperature: float = Field(
+        default=0.2,
+        ge=0,
+        le=2,
+        title="Fusion temperature",
+        description="Lower = more conservative synthesis.",
+        json_schema_extra={"ui": {"step": 0.05}},
+    )
+    fusion_system_prompt: str = Field(
+        default=DEFAULT_FUSION_SYSTEM_PROMPT,
+        title="Fusion system prompt",
+        description="Instructions the fusion agent follows when consolidating drafts.",
+        json_schema_extra={"ui": {"widget": "textarea"}},
+    )
+
+
+# ───────────────────────────────────────────────────────────────────────
+# ContextVar override channels.
+#
+# `research_overrides` — per-request tunables (model, temperature, …)
+#     set from agent_config["research"]. Read by `_load_config()`.
+#
+# `caller_context` — conversational context from the parent agent that
+#     called us. The parent sees `research` as a single tool call and
+#     usually only passes the immediate `query`. Without broader
+#     context, the council can drift toward generic results ("research
+#     latest WWDC" with no prior context might miss that the chat was
+#     about Swift). The server populates this with the parent's last
+#     few user messages on each chat dispatch; the tool prepends it
+#     to every member brief so each council member knows the chat's
+#     trajectory. The @tool function also accepts an explicit
+#     `context` arg which takes precedence when the parent model chose
+#     to be deliberate about it.
+# Both ContextVars are reset by server.py in its `finally` block so
+# state can't leak between requests on the same worker.
+# ───────────────────────────────────────────────────────────────────────
+
 research_overrides: ContextVar[dict[str, Any]] = ContextVar(
     "research_overrides", default={}
 )
 
-
-def _resolve(field_name: str, env_var: Optional[str], fallback: Any) -> Any:
-    """Resolve a config value with precedence: ContextVar > env > default."""
-    overrides = research_overrides.get()
-    if field_name in overrides and overrides[field_name] is not None:
-        return overrides[field_name]
-    if env_var:
-        env_value = os.environ.get(env_var)
-        if env_value is not None:
-            return env_value
-    return fallback
+caller_context: ContextVar[str] = ContextVar(
+    "caller_context", default=""
+)
 
 
-def _build_research_graph(model: str, temperature: float, system_prompt: str):
-    """Compile the research sub-agent graph.
+def _load_config() -> ResearchAgentConfig:
+    """Merge overrides + defaults into a fully-validated config."""
+    overrides = dict(research_overrides.get() or {})
+    # Env-var fallbacks for the two oldest knobs (kept for ops parity).
+    if "model" not in overrides:
+        env_model = os.environ.get("CATALYST_RESEARCH_MODEL")
+        if env_model:
+            overrides["model"] = env_model
+    if "recursion_limit" not in overrides:
+        env_limit = os.environ.get("CATALYST_RESEARCH_MAX_RECURSION")
+        if env_limit:
+            try:
+                overrides["recursion_limit"] = int(env_limit)
+            except ValueError:
+                pass
+    return ResearchAgentConfig.model_validate(overrides)
 
-    Identical in shape to the main agent graph (agent ↔ tools loop)
-    but bound to a single tool — web_search — and a fixed researcher
-    system prompt. Built fresh per dispatch so per-request overrides
-    take effect without graph caching staleness; the cost is one
-    ChatOpenAI construction per research call (cheap).
+
+# ───────────────────────────────────────────────────────────────────────
+# Helpers
+# ───────────────────────────────────────────────────────────────────────
+
+
+def _flatten_content(content: Any) -> str:
+    """LangChain messages sometimes carry list-of-parts content (Anthropic).
+    Flatten to a plain string so the consumer (parent agent or fusion)
+    sees a single text blob."""
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            p.get("text", "") if isinstance(p, dict) else str(p) for p in content
+        )
+    return str(content)
+
+
+def _build_member_graph(model: str, temperature: float, system_prompt: str):
+    """Compile the per-member researcher graph: agent ↔ web_search loop.
+
+    Built per-dispatch (one compile per chat request) so per-request
+    config overrides take effect without graph caching staleness.
+    Compilation is cheap; the round-trip to LiteLLM dominates.
     """
     client = CatalystLiteLLMClient()
     llm = client.get_chat_model(model=model, temperature=temperature)
@@ -133,137 +367,229 @@ def _build_research_graph(model: str, temperature: float, system_prompt: str):
     return g.compile()
 
 
+async def _run_member(
+    member_id: int,
+    brief: str,
+    cfg: ResearchAgentConfig,
+) -> str:
+    """Dispatch one council member. Each member sees its 1-based id in
+    the brief so the model can stamp the draft (useful for the critic
+    to reference "member #2 said X")."""
+    annotated = f"You are council member #{member_id + 1}.\n\n{brief}"
+    compiled = _build_member_graph(cfg.model, cfg.temperature, cfg.system_prompt)
+    try:
+        result = await compiled.ainvoke(
+            {"messages": [HumanMessage(content=annotated)]},
+            config={"recursion_limit": cfg.recursion_limit},
+        )
+    except Exception as exc:
+        log.warning("research member #%d failed: %s", member_id + 1, exc)
+        return f"[member #{member_id + 1} failed: {exc}]"
+    msgs = result.get("messages") or []
+    if not msgs:
+        return f"[member #{member_id + 1} returned no messages]"
+    return _flatten_content(getattr(msgs[-1], "content", ""))
+
+
+async def _run_critic(
+    query: str,
+    drafts: list[str],
+    cfg: ResearchAgentConfig,
+) -> Critique:
+    """One critic pass over the council's current drafts. Returns a
+    structured Critique. Falls back to "approved + no feedback" on any
+    failure rather than blocking the run forever."""
+    model = cfg.critic_model or cfg.model
+    client = CatalystLiteLLMClient()
+    llm = client.get_chat_model(model=model, temperature=cfg.critic_temperature)
+    # Structured-output binding — LangChain coerces the JSON into a
+    # Critique instance for us.
+    structured = llm.with_structured_output(Critique)
+
+    drafts_block = "\n\n".join(
+        f"### Member #{i + 1} draft\n{d}" for i, d in enumerate(drafts)
+    )
+    body = (
+        f"User question:\n{query}\n\n"
+        f"Council drafts:\n{drafts_block}\n\n"
+        "Reply with the JSON object as specified."
+    )
+    try:
+        critique = await structured.ainvoke(
+            [
+                SystemMessage(content=cfg.critic_system_prompt),
+                HumanMessage(content=body),
+            ]
+        )
+        # `with_structured_output` should return a Critique instance,
+        # but some providers return a dict — coerce defensively.
+        if isinstance(critique, Critique):
+            return critique
+        if isinstance(critique, dict):
+            return Critique.model_validate(critique)
+        log.warning("critic returned unexpected shape: %r", type(critique))
+        return Critique(approved=True, feedback="")
+    except Exception as exc:
+        log.warning("critic failed (%s) — auto-approving to unblock", exc)
+        return Critique(approved=True, feedback="")
+
+
+async def _run_fusion(
+    query: str,
+    drafts: list[str],
+    cfg: ResearchAgentConfig,
+) -> str:
+    """Single LLM call that synthesises the council's approved drafts
+    into one final markdown answer."""
+    model = cfg.fusion_model or cfg.model
+    client = CatalystLiteLLMClient()
+    llm = client.get_chat_model(model=model, temperature=cfg.fusion_temperature)
+    drafts_block = "\n\n".join(
+        f"### Member #{i + 1} draft\n{d}" for i, d in enumerate(drafts)
+    )
+    body = (
+        f"User question:\n{query}\n\n"
+        f"Approved council drafts:\n{drafts_block}\n\n"
+        "Produce the consolidated answer."
+    )
+    try:
+        response = await llm.ainvoke(
+            [
+                SystemMessage(content=cfg.fusion_system_prompt),
+                HumanMessage(content=body),
+            ]
+        )
+        return _flatten_content(getattr(response, "content", ""))
+    except Exception as exc:
+        log.warning("fusion failed (%s) — returning the longest draft as fallback", exc)
+        return max(drafts, key=len) if drafts else f"fusion failed: {exc}"
+
+
+# ───────────────────────────────────────────────────────────────────────
+# The tool itself.
+# ───────────────────────────────────────────────────────────────────────
+
+
 @tool
-def research(query: str, depth: str = "shallow") -> str:
+async def research(
+    query: str,
+    depth: str = "shallow",
+    context: str = "",
+) -> str:
     """Run a multi-step web research pass and return a synthesised answer.
 
     Use this for questions that need up-to-date information from the
     web (current events, recent releases, prices, etc.). The research
-    sub-agent calls web_search internally as many times as it needs
-    and returns a cited summary — you don't need to call web_search
-    yourself once you've delegated to this tool.
+    sub-agent fans out across N parallel council members, optionally
+    runs an editorial critic to drive another round, then fuses the
+    approved drafts into a single cited markdown answer.
 
     Args:
         query: The research question, phrased naturally.
         depth: "shallow" (default, ~3-5 paragraphs) or "deep"
             (more sources, longer answer).
+        context: Optional background from this conversation that should
+            inform the search. Use this when the user's question only
+            makes sense given prior context — e.g. "they're asking about
+            recent WWDC; the chat is about Swift performance." When
+            omitted, the council automatically inherits the last few
+            messages from the parent chat as implicit context.
 
     Returns:
         Markdown-formatted answer with inline source citations.
     """
-    model = _resolve("model", "CATALYST_RESEARCH_MODEL", DEFAULT_RESEARCH_MODEL)
-    temperature = float(
-        _resolve("temperature", None, DEFAULT_TEMPERATURE)
-    )
-    system_prompt = _resolve(
-        "system_prompt", None, DEFAULT_RESEARCH_SYSTEM_PROMPT
-    )
-    recursion_limit = int(
-        _resolve(
-            "recursion_limit",
-            "CATALYST_RESEARCH_MAX_RECURSION",
-            DEFAULT_MAX_RECURSION,
-        )
-    )
+    cfg = _load_config()
 
-    instruction = query.strip()
+    # Caller context: prefer the explicit `context` arg (parent model
+    # chose to be deliberate); fall back to the ContextVar the server
+    # populates from the parent chat's recent history. Members see
+    # whichever is present — they don't need to know which channel
+    # delivered it.
+    implicit_context = caller_context.get() or ""
+    effective_context = (context or "").strip() or implicit_context
+
+    brief = query.strip()
     if depth == "deep":
-        instruction += (
-            "\n\nProvide a detailed answer drawing on multiple sources."
+        brief += "\n\nProvide a detailed answer drawing on multiple sources."
+    if effective_context:
+        brief = (
+            f"## Context from the parent conversation\n{effective_context}\n\n"
+            f"## Research question\n{brief}"
         )
 
-    try:
-        compiled = _build_research_graph(model, temperature, system_prompt)
-        result = compiled.invoke(
-            {"messages": [HumanMessage(content=instruction)]},
-            config={"recursion_limit": recursion_limit},
-        )
-    except Exception as exc:
-        # Surface failures back to the parent agent rather than
-        # raising — the parent should be able to decide whether to
-        # retry, reformulate, or tell the user.
-        return f"research failed: {exc}"
+    feedback = ""
+    drafts: list[str] = []
+    critique: Optional[Critique] = None
 
-    msgs = result.get("messages") or []
-    if not msgs:
-        return "research: no output produced."
-    last = msgs[-1]
-    content = getattr(last, "content", None)
-    if not content:
-        return "research: empty response."
-    if isinstance(content, list):
-        # Anthropic-style content parts; flatten to text.
-        content = "".join(
-            p.get("text", "") if isinstance(p, dict) else str(p)
-            for p in content
-        )
-    return str(content)
+    rounds = cfg.max_critique_rounds if cfg.critic_enabled else 1
+    for round_n in range(rounds):
+        round_brief = brief
+        if feedback:
+            round_brief = (
+                f"{brief}\n\n"
+                f"## Reviewer feedback from previous round (address this):\n{feedback}"
+            )
+
+        # Fan-out: N members in parallel.
+        tasks = [_run_member(i, round_brief, cfg) for i in range(cfg.council_size)]
+        drafts = await asyncio.gather(*tasks)
+
+        if not cfg.critic_enabled:
+            break
+
+        critique = await _run_critic(brief, drafts, cfg)
+        if critique.approved:
+            break
+        feedback = critique.feedback or ""
+        # If the critic refuses to provide feedback, no point looping.
+        if not feedback:
+            break
+
+    # N = 1 base case: nothing to fuse — return the lone draft.
+    if cfg.council_size == 1:
+        return drafts[0] if drafts else "[research produced no draft]"
+
+    # N > 1: fusion pass.
+    return await _run_fusion(brief, drafts, cfg)
 
 
 # ───────────────────────────────────────────────────────────────────────
 # Agent registry entry — surfaced on the Engine tab.
 # ───────────────────────────────────────────────────────────────────────
 
-
-class ResearchAgentConfig(BaseModel):
-    """Tunables for the `research` sub-agent.
-
-    Every field is optional with a baked-in default so the Engine tab
-    can send partial overrides. The /api/chat/stream path validates
-    `agent_config["research"]` through this class and stuffs the
-    validated values into `research_overrides` (the ContextVar the
-    @tool function reads at dispatch time).
-    """
-
-    model_config = {"extra": "forbid", "json_schema_extra": {"agent_id": "research"}}
-
-    model: str = Field(
-        default=DEFAULT_RESEARCH_MODEL,
-        title="Researcher model",
-        description="The LLM that runs inside the research loop. Defaults to a cheap, fast model since the researcher mostly needs to summarise.",
-        json_schema_extra={"ui": {"widget": "model"}},
-    )
-    temperature: float = Field(
-        default=DEFAULT_TEMPERATURE,
-        ge=0,
-        le=2,
-        title="Temperature",
-        description="Lower = more deterministic about when to stop searching. Synthesis quality > creativity here.",
-        json_schema_extra={"ui": {"step": 0.05}},
-    )
-    recursion_limit: int = Field(
-        default=DEFAULT_MAX_RECURSION,
-        ge=2,
-        le=100,
-        title="Recursion limit",
-        description="Hard cap on internal graph steps (≈2 per search round-trip). Drop this when local models thrash.",
-        json_schema_extra={"ui": {"step": 1}},
-    )
-    system_prompt: str = Field(
-        default=DEFAULT_RESEARCH_SYSTEM_PROMPT,
-        title="Researcher system prompt",
-        description="The instructions the researcher follows on every dispatch. Tweak to bias toward citations, depth, recency, etc.",
-        json_schema_extra={"ui": {"widget": "textarea"}},
-    )
-
-
 register_agent(
     AgentDescriptor(
         id="research",
-        description="Web-research sub-agent. Loops over web_search until it has enough sources, then synthesises a cited markdown answer.",
+        description=(
+            "Web-research council: N parallel members loop over web_search; "
+            "an optional adaptive critic drives revision rounds; a fusion agent "
+            "consolidates the approved drafts into one cited markdown answer. "
+            "Set council_size=1 + critic_enabled=False for the simplest base case."
+        ),
         config_model=ResearchAgentConfig,
         topology=AgentTopology(
             nodes=[
                 AgentTopologyNode(id="__start__", type="start"),
-                AgentTopologyNode(id="agent", type="agent"),
-                AgentTopologyNode(id="tools", type="tools"),
+                AgentTopologyNode(id="members", type="agent"),
+                AgentTopologyNode(id="web_search", type="tools"),
+                AgentTopologyNode(id="critic", type="agent"),
+                AgentTopologyNode(id="fusion", type="agent"),
                 AgentTopologyNode(id="__end__", type="end"),
             ],
             edges=[
-                AgentTopologyEdge(source="__start__", target="agent"),
-                AgentTopologyEdge(source="agent", target="tools", conditional=True),
-                AgentTopologyEdge(source="agent", target="__end__", conditional=True),
-                AgentTopologyEdge(source="tools", target="agent"),
+                AgentTopologyEdge(source="__start__", target="members"),
+                # Each member's inner tool loop.
+                AgentTopologyEdge(
+                    source="members", target="web_search", conditional=True
+                ),
+                AgentTopologyEdge(source="web_search", target="members"),
+                # Members → critic when drafts are ready.
+                AgentTopologyEdge(source="members", target="critic"),
+                # Critic feedback loop (conditional) ← adaptive part.
+                AgentTopologyEdge(source="critic", target="members", conditional=True),
+                # Approved → fusion → end.
+                AgentTopologyEdge(source="critic", target="fusion", conditional=True),
+                AgentTopologyEdge(source="fusion", target="__end__"),
             ],
         ),
         tools=["web_search"],
