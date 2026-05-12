@@ -58,9 +58,10 @@ tasks:
       - yarn typecheck
 
   test:unit:
-    desc: "vitest run — pure unit tests, no live LiteLLM"
+    desc: "vitest run — pure unit tests, no live LiteLLM (junit XML written to .reports/)"
     cmds:
-      - yarn test
+      - mkdir -p .reports
+      - yarn test:junit
 
   test:smoke:
     desc: "tsx tests/smoke.ts — live LiteLLM hits (requires proxy running)"

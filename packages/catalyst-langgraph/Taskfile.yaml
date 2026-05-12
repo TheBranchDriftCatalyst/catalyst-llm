@@ -17,7 +17,19 @@ tasks:
   test:unit:
     desc: "pytest -m unit — no network, no services"
     cmds:
-      - uv run --with 'pytest>=7.0' --with 'pytest-cov>=4.0' pytest tests/ -m unit
+      - mkdir -p .reports
+      - uv run --with 'pytest>=7.0' --with 'pytest-cov>=4.0' pytest tests/ -m unit --junitxml=.reports/junit.xml -o junit_suite_name=catalyst-langgraph
+
+  # Full suite with junit XML for the unified report — drops the `-m unit`
+  # filter so integration tests are collected and either run or skipif
+  # themselves depending on LITELLM_BASE_URL / TOOL_HOST_URL presence in
+  # the shell env. Skipped tests show as orange in xunit-viewer (visible,
+  # not hidden) so it's obvious which tier needs env wiring.
+  test:junit:
+    desc: "All tests with junit XML; integration tier auto-runs when LITELLM/TOOL_HOST env vars are set"
+    cmds:
+      - mkdir -p .reports
+      - uv run --with 'pytest>=7.0' --with 'pytest-cov>=4.0' pytest tests/ --junitxml=.reports/junit.xml -o junit_suite_name=catalyst-langgraph
 
   test:smoke:
     desc: "No integration tests yet — same as test:unit. Add tests/test_integration.py to expand."

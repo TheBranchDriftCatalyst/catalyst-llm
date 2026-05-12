@@ -74,6 +74,34 @@ tasks:
       - task: mac-node:test:full
       - task: sdk:test:full
 
+  # Unified HTML report across every package's junit XML. Powers the
+  # `test:run` / `test:render` / `test:serve` resources in Tiltfile.
+  #
+  # Each package's `test:junit` runs the full suite (no -m unit filter).
+  # Integration tests self-skip via pytest.mark.skipif when env vars are
+  # missing — showing as orange "skipped" rows in the report (visible,
+  # not hidden).
+  #
+  # Env comes from your shell (load via direnv + .envrc, or `source .envrc`).
+  test:report:
+    desc: "Run all tests (unit + integration when env set) and render reports/index.html"
+    cmds:
+      - rm -rf reports/junit && mkdir -p reports/junit
+      - |
+        if [ -n "${LITELLM_API_KEY:-}" ]; then
+          echo "✓ LITELLM_API_KEY set — integration tier will run against ${LITELLM_BASE_URL:-<unset>}"
+        else
+          echo "ℹ LITELLM_API_KEY not set — integration tests will skip (source .envrc or direnv allow)"
+        fi
+      - task: langgraph:test:junit
+      - task: tool-host:test:junit
+      - task: sdk:test:unit
+      - cp packages/catalyst-langgraph/.reports/junit.xml reports/junit/catalyst-langgraph.xml || true
+      - cp packages/tool-host/.reports/junit.xml          reports/junit/tool-host.xml          || true
+      - cp packages/catalyst-llm-sdk/.reports/junit.xml   reports/junit/catalyst-llm-sdk.xml   || true
+      - npx --yes xunit-viewer -r reports/junit -o reports/index.html -t "Catalyst LLM — Test Report"
+      - echo "Report -> $(pwd)/reports/index.html"
+
   # ─── Repo bootstrap ──────────────────────────────────────────────────
   hooks:install:
     desc: "Activate the repo's git hooks (run once after cloning)"
