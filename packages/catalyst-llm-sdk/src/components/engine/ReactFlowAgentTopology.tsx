@@ -52,6 +52,10 @@ export interface ReactFlowAgentTopologyProps {
   topology: AgentTopology;
   /** Used by node cards to read live overrides from useEngineStore. */
   agentId: string;
+  /** Tools registered with the Agent (from AgentDescriptor.tools).
+   * Rendered as chips inside tools nodes whose id matches one of these,
+   * or in the generic "tools" dispatcher when there's no match. */
+  agentTools?: string[];
   /** Node id to render selected; `undefined` = nothing selected. */
   selectedNodeId?: string;
   /** Fires on node click (with node id) AND on pane click (with `undefined`). */
@@ -61,16 +65,19 @@ export interface ReactFlowAgentTopologyProps {
 
 // Per-type sizing fed into dagre so the layout respects each card's
 // actual footprint. Card components below use matching style widths.
+// Sizes are deliberately generous — embedded selectors + tool chip
+// rows need room to breathe; cramped cards force ellipsis on model
+// ids and make the popover positioning ugly.
 const NODE_SIZES: Record<AgentTopologyNode["type"], { w: number; h: number }> =
   {
-    start: { w: 110, h: 36 },
-    end: { w: 110, h: 36 },
-    tools: { w: 160, h: 56 },
-    agent: { w: 220, h: 96 },
+    start: { w: 140, h: 44 },
+    end: { w: 140, h: 44 },
+    tools: { w: 220, h: 96 },
+    agent: { w: 280, h: 140 },
   };
 
-const RANK_SEP = 60;
-const NODE_SEP = 70;
+const RANK_SEP = 80;
+const NODE_SEP = 90;
 
 // Per-type icon + visual tone. Tones colour the card border + a faint
 // background tint; the existing dagre view used the same palette so
@@ -112,6 +119,8 @@ interface CommonNodeData extends Record<string, unknown> {
   schema: AgentConfigSchema | null;
   defaults: Record<string, unknown> | null;
   selectedNodeId: string | undefined;
+  /** Tools to render on `tools` nodes. Other node types ignore. */
+  toolList: string[];
 }
 
 function layoutWithDagre(
@@ -156,7 +165,7 @@ function StartEndChip({ data }: NodeProps) {
   return (
     <div
       className={cn(
-        "flex h-[36px] w-[110px] items-center gap-1.5 rounded-full border px-3 text-xs font-mono shadow-sm transition-all",
+        "flex h-[44px] w-[140px] items-center gap-2 rounded-full border-2 px-4 text-sm font-mono shadow-sm transition-all",
         visual.tone,
         selected && "ring-2 ring-primary/60 ring-offset-1 ring-offset-background",
       )}
@@ -166,7 +175,7 @@ function StartEndChip({ data }: NodeProps) {
        * visual at the handle position by default; they're just edge
        * anchors. */}
       {d.type !== "start" && <Handle type="target" position={Position.Top} />}
-      <Icon className="h-3 w-3 shrink-0" aria-hidden="true" />
+      <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
       <span className="truncate">{d.nodeId}</span>
       {d.type !== "end" && <Handle type="source" position={Position.Bottom} />}
     </div>
@@ -178,10 +187,16 @@ function ToolsNodeCard({ data }: NodeProps) {
   const visual = NODE_VISUAL.tools;
   const Icon = visual.icon;
   const selected = d.selectedNodeId === d.nodeId;
+  // If the node's id matches one of the agent's registered tools, this
+  // node IS that specific tool (e.g. research.web_search) — show just
+  // that one chip. Otherwise it's the generic dispatcher (main.tools)
+  // and we list every tool the agent advertises.
+  const matchedTool = d.toolList.includes(d.nodeId) ? [d.nodeId] : null;
+  const chips = matchedTool ?? d.toolList;
   return (
     <div
       className={cn(
-        "flex h-[56px] w-[160px] flex-col items-start justify-center gap-0.5 rounded-md border px-3 shadow-sm transition-all",
+        "flex h-[96px] w-[220px] flex-col gap-1.5 rounded-md border-2 p-2 shadow-sm transition-all",
         visual.tone,
         selected && "ring-2 ring-primary/60 ring-offset-1 ring-offset-background",
       )}
@@ -192,9 +207,27 @@ function ToolsNodeCard({ data }: NodeProps) {
         <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
         <span className="font-mono truncate">{d.nodeId}</span>
       </div>
-      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-        tool dispatcher
-      </span>
+      {chips.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-1 overflow-hidden text-[10px]">
+          {chips.slice(0, 4).map((t) => (
+            <span
+              key={t}
+              className="rounded-sm border border-amber-500/40 bg-amber-500/10 px-1 py-0.5 font-mono text-amber-200"
+            >
+              {t}
+            </span>
+          ))}
+          {chips.length > 4 && (
+            <span className="text-[10px] text-muted-foreground">
+              +{chips.length - 4}
+            </span>
+          )}
+        </div>
+      ) : (
+        <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          no tools bound
+        </span>
+      )}
       <Handle type="source" position={Position.Bottom} />
     </div>
   );
@@ -236,25 +269,25 @@ function AgentNodeCard({ data }: NodeProps) {
   return (
     <div
       className={cn(
-        "flex h-[96px] w-[220px] flex-col gap-1.5 rounded-md border p-2 shadow-sm transition-all",
+        "flex h-[140px] w-[280px] flex-col gap-2 rounded-md border-2 p-3 shadow-sm transition-all",
         visual.tone,
         selected && "ring-2 ring-primary/60 ring-offset-1 ring-offset-background",
       )}
       title={`agent node: ${d.nodeId}`}
     >
       <Handle type="target" position={Position.Top} />
-      <div className="flex items-center gap-1.5 text-sm font-medium">
-        <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+      <div className="flex items-center gap-2 text-sm font-medium">
+        <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
         <span className="font-mono truncate">{d.nodeId}</span>
       </div>
 
-      {/* Model switcher — reactflow gives us .nodrag .nopan .nowheel
-       * class hooks to stop pan/zoom/drag from eating clicks on
-       * interactive children. The micro-switcher's popover is portalled
-       * outside reactflow's tree so those don't matter for the popover
-       * itself, only for the trigger button row. */}
+      {/* Model switcher — the .nodrag/.nopan/.nowheel hooks stop
+       * reactflow's pan handler from eating clicks on the trigger
+       * button. The popover itself is portalled to document.body
+       * (ModelMicroSwitcher uses createPortal) so it escapes
+       * reactflow's per-node stacking context. */}
       {hasModel && (
-        <div className="nodrag nopan">
+        <div className="nodrag nopan nowheel">
           <ModelMicroSwitcher
             value={effectiveModel}
             onChange={(v) => setField(d.agentId, d.nodeId, "model", v)}
@@ -264,14 +297,14 @@ function AgentNodeCard({ data }: NodeProps) {
       )}
 
       {(hasTemp || hasMaxTokens) && (
-        <div className="flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-1 text-[10px]">
           {hasTemp && (
-            <span className="rounded-sm border border-border/60 bg-card/40 px-1 py-0.5 font-mono">
+            <span className="rounded-sm border border-border/60 bg-card/60 px-1.5 py-0.5 font-mono">
               t: {effectiveTemp?.toFixed(2) ?? "—"}
             </span>
           )}
           {hasMaxTokens && (
-            <span className="rounded-sm border border-border/60 bg-card/40 px-1 py-0.5 font-mono">
+            <span className="rounded-sm border border-border/60 bg-card/60 px-1.5 py-0.5 font-mono">
               max: {effectiveMaxTokens ?? "—"}
             </span>
           )}
@@ -289,9 +322,19 @@ const NODE_TYPES = {
   agent: AgentNodeCard,
 };
 
+// Edge colors. The catalyst theme stores --accent / --foreground as
+// full color values (#hex or hsl(...)), NOT as bare HSL triples — so
+// `hsl(var(--accent))` would expand to e.g. `hsl(#some-hex)` which
+// is invalid CSS and reactflow drops the stroke entirely (edges go
+// invisible). We use the bare custom-property reference instead;
+// browsers resolve it to whatever the active theme defines.
+const EDGE_SOLID = "var(--foreground)";
+const EDGE_CONDITIONAL = "var(--accent)";
+
 export function ReactFlowAgentTopology({
   topology,
   agentId,
+  agentTools = [],
   selectedNodeId,
   onNodeSelect,
   className,
@@ -311,11 +354,12 @@ export function ReactFlowAgentTopology({
           schema: n.config_schema,
           defaults: n.config_defaults,
           selectedNodeId,
+          toolList: agentTools,
         } satisfies CommonNodeData,
         draggable: false,
         selectable: true,
       })),
-    [topology.nodes, positions, agentId, selectedNodeId],
+    [topology.nodes, positions, agentId, selectedNodeId, agentTools],
   );
 
   const edges: Edge[] = useMemo(
@@ -326,15 +370,21 @@ export function ReactFlowAgentTopology({
         target: e.target,
         animated: false,
         // Conditional router edges = dashed accent; solid edges =
-        // neutral. Mirrors the legend on the dagre view's caption.
+        // bright foreground. Stroke 2.5 keeps edges readable against
+        // the dark canvas + Background dot grid.
         style: e.conditional
-          ? { stroke: "hsl(var(--accent))", strokeDasharray: "6 4" }
-          : { stroke: "hsl(var(--muted-foreground) / 0.7)" },
+          ? {
+              stroke: EDGE_CONDITIONAL,
+              strokeDasharray: "6 4",
+              strokeWidth: 2.5,
+              strokeOpacity: 0.9,
+            }
+          : { stroke: EDGE_SOLID, strokeWidth: 2.5, strokeOpacity: 0.65 },
         markerEnd: {
           type: "arrowclosed" as const,
-          color: e.conditional
-            ? "hsl(var(--accent))"
-            : "hsl(var(--muted-foreground) / 0.7)",
+          width: 18,
+          height: 18,
+          color: e.conditional ? EDGE_CONDITIONAL : EDGE_SOLID,
         },
       })),
     [topology.edges],
@@ -354,7 +404,7 @@ export function ReactFlowAgentTopology({
   return (
     <div
       className={cn(
-        "h-[420px] w-full rounded-lg border border-border/60 bg-card/30 overflow-hidden",
+        "h-[520px] w-full rounded-lg border border-border/60 bg-card/30 overflow-hidden",
         className,
       )}
     >

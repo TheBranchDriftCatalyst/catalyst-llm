@@ -260,6 +260,7 @@ function AgentDetail({ agent }: { agent: AgentDescriptor }) {
           <ReactFlowAgentTopology
             topology={agent.topology}
             agentId={agent.id}
+            agentTools={agent.tools}
             selectedNodeId={selectedNodeId}
             onNodeSelect={setSelectedNodeId}
           />
