@@ -5,6 +5,9 @@
 
 Self-hosted uncensored LLM stack running locally with web search, MCP tools, and multiple chat UIs. The Talos cluster nodes are too small for LLM workloads - this runs on your development machine instead.
 
+For the repo's module layout, conventions, and deferred refactor decisions,
+see [`docs/STRUCTURE.md`](docs/STRUCTURE.md).
+
 ---
 
 ## KUBERNETES DEPLOYMENT - NOT YET COMPLETE

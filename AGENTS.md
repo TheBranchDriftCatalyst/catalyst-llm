@@ -2,6 +2,9 @@
 
 This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
 
+For the repository's module layout, conventions, and deferred decisions, see
+[`docs/STRUCTURE.md`](docs/STRUCTURE.md).
+
 ## Quick Reference
 
 ```bash
