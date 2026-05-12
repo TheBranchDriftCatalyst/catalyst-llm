@@ -70,7 +70,7 @@ def _scripted_events() -> list[dict[str, Any]]:
 
 
 class _FakeGraph:
-    async def astream_events(self, _state, version: str = "v2") -> AsyncIterator[dict]:
+    async def astream_events(self, _state, version: str = "v2", **kwargs) -> AsyncIterator[dict]:
         for ev in _scripted_events():
             yield ev
 
