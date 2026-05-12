@@ -40,6 +40,14 @@ export interface CustomPreset {
   modelPattern?: string;
   /** Free-form tag list for grouping in the editor sidebar. */
   tags?: string[];
+  /** Coarse semantic axis for grouping in the picker — e.g. "research",
+   * "chat", "code", "extraction". Distinct from `category` (which is
+   * the role slot) and `tags` (free-form). Optional; null = unfiled. */
+  domain?: string;
+  /** Functional purpose within the chosen domain — e.g. "system",
+   * "critique", "synthesis", "summary". Lets the prompt picker show
+   * "research / critique" as a meaningful group. Optional. */
+  purpose?: string;
   /** True for SDK-shipped seeds; false (or absent) for user creations. */
   builtin?: boolean;
   createdAt: number;

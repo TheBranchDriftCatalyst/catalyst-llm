@@ -144,6 +144,14 @@ export interface ChatStreamRequest {
    *                 critic:  { enabled: true } } }
    */
   agent_config?: Record<string, Record<string, Record<string, unknown>>>;
+  /**
+   * Resolution map for `system_prompt_ref` values referenced in
+   * agent_config. The server replaces a node's `system_prompt` with
+   * the resolved content when a ref matches. Refs without a match
+   * fall through to the node's inline `system_prompt` or schema
+   * default. Built client-side by chatStore from PromptStore.
+   */
+  prompt_overrides?: Record<string, string>;
 }
 
 // ─── Agent registry types (mirror /api/agents schema) ─────────────────
@@ -187,7 +195,7 @@ export interface AgentTopology {
  * `step` and `secret` are passed verbatim to the chosen widget.
  */
 export interface AgentFieldUiHints {
-  widget?: "model" | "textarea";
+  widget?: "model" | "textarea" | "hidden";
   step?: number;
   secret?: boolean;
 }

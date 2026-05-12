@@ -271,11 +271,25 @@ class ResearchMembersConfig(BaseModel):
         description="Hard cap on each member's internal graph steps (≈2 per search round-trip).",
         json_schema_extra={"ui": {"step": 1}},
     )
+    max_tokens: int = Field(
+        default=2048,
+        ge=64,
+        le=32768,
+        title="Max tokens",
+        description="Response-length cap per member draft.",
+        json_schema_extra={"ui": {"step": 64}},
+    )
     system_prompt: str = Field(
         default=DEFAULT_RESEARCH_SYSTEM_PROMPT,
         title="System prompt",
         description="Instructions every council member follows.",
         json_schema_extra={"ui": {"widget": "textarea"}},
+    )
+    system_prompt_ref: str = Field(
+        default="",
+        title="System prompt ref",
+        description="PromptStore id; resolved via request.prompt_overrides when set.",
+        json_schema_extra={"ui": {"widget": "hidden"}},
     )
 
 
@@ -313,11 +327,25 @@ class ResearchCriticConfig(BaseModel):
         description="Lower = more deterministic approval decisions.",
         json_schema_extra={"ui": {"step": 0.05}},
     )
+    max_tokens: int = Field(
+        default=2048,
+        ge=64,
+        le=32768,
+        title="Max tokens",
+        description="Response-length cap for the critic's JSON output.",
+        json_schema_extra={"ui": {"step": 64}},
+    )
     system_prompt: str = Field(
         default=DEFAULT_CRITIC_SYSTEM_PROMPT,
         title="System prompt",
         description="What the critic looks for. Adjust to weight different quality signals.",
         json_schema_extra={"ui": {"widget": "textarea"}},
+    )
+    system_prompt_ref: str = Field(
+        default="",
+        title="System prompt ref",
+        description="PromptStore id; resolved via request.prompt_overrides when set.",
+        json_schema_extra={"ui": {"widget": "hidden"}},
     )
     max_critique_rounds: int = Field(
         default=2,
@@ -355,11 +383,25 @@ class ResearchFusionConfig(BaseModel):
         description="Lower = more conservative synthesis.",
         json_schema_extra={"ui": {"step": 0.05}},
     )
+    max_tokens: int = Field(
+        default=4096,
+        ge=64,
+        le=32768,
+        title="Max tokens",
+        description="Response-length cap for the consolidated answer.",
+        json_schema_extra={"ui": {"step": 64}},
+    )
     system_prompt: str = Field(
         default=DEFAULT_FUSION_SYSTEM_PROMPT,
         title="System prompt",
         description="Instructions the fusion agent follows when consolidating drafts.",
         json_schema_extra={"ui": {"widget": "textarea"}},
+    )
+    system_prompt_ref: str = Field(
+        default="",
+        title="System prompt ref",
+        description="PromptStore id; resolved via request.prompt_overrides when set.",
+        json_schema_extra={"ui": {"widget": "hidden"}},
     )
 
 
@@ -466,7 +508,12 @@ def _underlying_is_ollama(client: CatalystLiteLLMClient, model: str) -> bool:
         return False
 
 
-def _build_member_graph(model: str, temperature: float, system_prompt: str):
+def _build_member_graph(
+    model: str,
+    temperature: float,
+    system_prompt: str,
+    max_tokens: int,
+):
     """Compile the per-member researcher graph: agent ↔ web_search loop.
 
     Built per-dispatch (one compile per chat request) so per-request
@@ -477,6 +524,7 @@ def _build_member_graph(model: str, temperature: float, system_prompt: str):
     llm = client.get_chat_model(
         model=model,
         temperature=temperature,
+        max_tokens=max_tokens,
         # Force non-streaming when this member is Ollama-routed so the
         # LLM's tool_calls field is populated structurally; the bound
         # web_search then actually dispatches instead of arriving as
@@ -510,7 +558,10 @@ async def _run_member(
     to reference "member #2 said X")."""
     annotated = f"You are council member #{member_id + 1}.\n\n{brief}"
     compiled = _build_member_graph(
-        members_cfg.model, members_cfg.temperature, members_cfg.system_prompt
+        members_cfg.model,
+        members_cfg.temperature,
+        members_cfg.system_prompt,
+        members_cfg.max_tokens,
     )
     try:
         result = await compiled.ainvoke(
@@ -540,6 +591,7 @@ async def _run_critic(
     llm = client.get_chat_model(
         model=model,
         temperature=critic_cfg.temperature,
+        max_tokens=critic_cfg.max_tokens,
         # `with_structured_output` is doubly Ollama-fragile under
         # streaming (it uses tool-calling under the hood). Force
         # non-streaming when routed there.
@@ -590,6 +642,7 @@ async def _run_fusion(
     llm = client.get_chat_model(
         model=model,
         temperature=fusion_cfg.temperature,
+        max_tokens=fusion_cfg.max_tokens,
         # No tools bound, but force non-streaming when routed to
         # Ollama anyway — keeps fusion's output a single chat-model-
         # end event at the parent's astream_events, which makes the
@@ -643,6 +696,7 @@ async def _run_shallow_bypass(
         members_cfg.model,
         members_cfg.temperature,
         DEFAULT_SHALLOW_SYSTEM_PROMPT,
+        members_cfg.max_tokens,
     )
     try:
         result = await compiled.ainvoke(

@@ -74,7 +74,13 @@ export function NodeInlineConfig({
 }: NodeInlineConfigProps) {
   const fields = useMemo(() => {
     const props = schema.properties || {};
-    return Object.entries(props).map(([name, field]) => ({ name, field }));
+    // Skip any field whose schema marks it `ui.widget = "hidden"`.
+    // Today that's `system_prompt_ref` on agent node configs — it's a
+    // companion to `system_prompt` and is bound via the prompt-icon
+    // button + sheet (T8), not by an inline form control.
+    return Object.entries(props)
+      .filter(([, field]) => field.ui?.widget !== "hidden")
+      .map(([name, field]) => ({ name, field }));
   }, [schema]);
 
   if (fields.length === 0) {

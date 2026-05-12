@@ -45,6 +45,11 @@ type Draft = {
   user: string;
   modelPattern: string;
   tags: string;
+  /** Semantic axis (e.g. "research", "chat", "code"). Optional. */
+  domain: string;
+  /** Functional purpose within the domain (e.g. "system", "critique",
+   * "synthesis"). Optional. */
+  purpose: string;
 };
 
 const EMPTY_DRAFT: Draft = {
@@ -55,6 +60,8 @@ const EMPTY_DRAFT: Draft = {
   user: "",
   modelPattern: "",
   tags: "",
+  domain: "",
+  purpose: "",
 };
 
 const CATEGORY_META = {
@@ -125,6 +132,8 @@ export function PromptEditor({ className, initialPresetId }: PromptEditorProps) 
       user: p.user ?? "",
       modelPattern: p.modelPattern ?? "",
       tags: (p.tags ?? []).join(", "),
+      domain: p.domain ?? "",
+      purpose: p.purpose ?? "",
     });
     setDirty(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -173,6 +182,8 @@ export function PromptEditor({ className, initialPresetId }: PromptEditorProps) 
         draft.category === "system" ? undefined : draft.user || undefined,
       modelPattern: draft.modelPattern.trim() || undefined,
       tags: cleanTags.length ? cleanTags : undefined,
+      domain: draft.domain.trim() || undefined,
+      purpose: draft.purpose.trim() || undefined,
     };
     if (selectedId) {
       updatePreset(selectedId, payload);
@@ -695,6 +706,46 @@ function EditorForm({
             placeholder="rp, creative, uncensored"
             className="h-8 text-xs"
           />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="prompt-domain" className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Domain
+          </Label>
+          <Input
+            id="prompt-domain"
+            value={draft.domain}
+            onChange={(e) => onField("domain", e.target.value)}
+            placeholder="research / chat / code / extraction"
+            className="h-8 text-xs"
+            list="prompt-domain-suggestions"
+          />
+          <datalist id="prompt-domain-suggestions">
+            <option value="research" />
+            <option value="chat" />
+            <option value="code" />
+            <option value="extraction" />
+            <option value="vision" />
+          </datalist>
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="prompt-purpose" className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Purpose
+          </Label>
+          <Input
+            id="prompt-purpose"
+            value={draft.purpose}
+            onChange={(e) => onField("purpose", e.target.value)}
+            placeholder="system / critique / synthesis / summary"
+            className="h-8 text-xs"
+            list="prompt-purpose-suggestions"
+          />
+          <datalist id="prompt-purpose-suggestions">
+            <option value="system" />
+            <option value="critique" />
+            <option value="synthesis" />
+            <option value="summary" />
+            <option value="extraction" />
+          </datalist>
         </div>
       </div>
 

@@ -211,6 +211,18 @@ class MainAgentNodeConfig(BaseModel):
         description="Prepended to every chat request from this agent.",
         json_schema_extra={"ui": {"widget": "textarea"}},
     )
+    system_prompt_ref: str = Field(
+        default="",
+        title="System prompt ref",
+        description=(
+            "Optional id pointing at a saved prompt in the operator's "
+            "PromptStore. When set AND the request body's "
+            "prompt_overrides map carries that id, the resolved content "
+            "wins over the inline `system_prompt`. Hidden in the inline "
+            "node form — bound via the prompt-icon button + sheet."
+        ),
+        json_schema_extra={"ui": {"widget": "hidden"}},
+    )
 
 
 register_agent(

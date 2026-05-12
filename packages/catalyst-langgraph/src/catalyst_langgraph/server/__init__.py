@@ -253,19 +253,46 @@ async def _produce_agent_events(
     agent_config_raw = request.agent_config or {}
     main_raw = agent_config_raw.get("main") or {}
     research_raw = agent_config_raw.get("research") or {}
+    prompt_overrides = request.prompt_overrides or {}
+
+    def _resolve_prompt_ref(node_raw: dict[str, Any]) -> dict[str, Any]:
+        """If the operator bound this node to a saved prompt
+        (`system_prompt_ref`), look it up in the request's prompt
+        overrides map and write the resolved content into
+        `system_prompt` before validation. Strip the ref afterwards
+        so the validated dict matches the runtime contract (ref is a
+        UI-side concept; the agent code only reads `system_prompt`)."""
+        if not node_raw or "system_prompt_ref" not in node_raw:
+            return node_raw
+        out = dict(node_raw)
+        ref = out.pop("system_prompt_ref")
+        if ref and ref in prompt_overrides:
+            out["system_prompt"] = prompt_overrides[ref]
+        # else: ref was set but the map didn't carry the content
+        # (operator dispatched without exposing the prompt). Fall
+        # through to whatever inline `system_prompt` is present, or
+        # the node's default.
+        return out
+
     try:
         main_overrides = validate_overrides(
-            "main", "agent", main_raw.get("agent") or {}
+            "main", "agent", _resolve_prompt_ref(main_raw.get("agent") or {})
         )
         validated_research = {
             "members": validate_overrides(
-                "research", "members", research_raw.get("members") or {}
+                "research",
+                "members",
+                _resolve_prompt_ref(research_raw.get("members") or {}),
             ),
             "critic": validate_overrides(
-                "research", "critic", research_raw.get("critic") or {}
+                "research",
+                "critic",
+                _resolve_prompt_ref(research_raw.get("critic") or {}),
             ),
             "fusion": validate_overrides(
-                "research", "fusion", research_raw.get("fusion") or {}
+                "research",
+                "fusion",
+                _resolve_prompt_ref(research_raw.get("fusion") or {}),
             ),
         }
     except Exception as exc:

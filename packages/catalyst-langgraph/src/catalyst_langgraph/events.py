@@ -230,3 +230,23 @@ class ChatStreamRequest(BaseModel):
             }
         ],
     )
+    prompt_overrides: Optional[dict[str, str]] = Field(
+        default=None,
+        description=(
+            "Resolution map for `system_prompt_ref` values referenced "
+            "in `agent_config`. When a node's overrides carry "
+            "`system_prompt_ref: <id>` and this map has `<id>: <content>`, "
+            "the server replaces the node's `system_prompt` with the "
+            "resolved content before validation. Lets clients bind "
+            "nodes to saved prompts (kept in the client-side "
+            "PromptStore) without the server needing its own library. "
+            "Refs without a match in this map fall through to the "
+            "node's inline `system_prompt` (or default)."
+        ),
+        examples=[
+            {
+                "preset-abc123": "You are a helpful assistant.",
+                "preset-def456": "You are a research analyst.",
+            }
+        ],
+    )
