@@ -1,45 +1,41 @@
 /**
- * Engine tab — per-Agent topology viewer + config editor.
+ * Engine tab — viewport-bound, no-scroll layout.
  *
- * Two-pane layout:
- *   Left: list of Agents registered with catalyst-langgraph (one card
- *         per Agent — main, research, future sub-agents).
- *   Right: selected Agent's topology + schema-driven config form.
+ *   ┌────────────┬──────────────────────────────────────────┐
+ *   │            │  header (agent name + tools + reset)     │
+ *   │  Agents    ├──────────────────────────────────────────┤
+ *   │  picker    │                                          │
+ *   │  (280px)   │   ReactFlow topology (fills h+w)         │
+ *   │            │                                          │
+ *   └────────────┴──────────────────────────────────────────┘
  *
- * Config edits flow through useEngineStore (persisted to
- * localStorage under `catalyst-llm-sdk:engine`); chatStore.sendMessage
- * reads the store on every chat dispatch and stuffs the overrides
- * into the wire request's `agent_config` field.
+ * A right-side `Sheet` overlay (Radix, from catalyst-ui) is wired in
+ * but inert in T4' — T6 (runs-by-node) and T8 (PromptExplorerSheet)
+ * fill its content and add the triggers that flip `sheetContext`.
  *
- * v1: static topology + form. v2 plans: live activity (SSE-driven
- * node highlighting), per-chat overrides, named config presets.
+ * Config edits flow through useEngineStore (persisted to localStorage
+ * under `catalyst-llm-sdk:engine:v2`); chatStore.sendMessage reads
+ * the store on every chat dispatch and stuffs the overrides into the
+ * wire request's `agent_config` field.
+ *
+ * Stacked NodeConfigCards (the interim from T2) are gone — T5' moves
+ * every field onto the node cards themselves.
  */
 import { useMemo, useState } from "react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@thebranchdriftcatalyst/catalyst-ui/ui/sheet";
 import { Activity, RefreshCw, RotateCcw, Wrench } from "lucide-react";
-import type {
-  AgentDescriptor,
-  AgentTopologyNode,
-} from "../../agent/events.js";
+import type { AgentDescriptor } from "../../agent/events.js";
 import { useAgents } from "../../react/hooks.js";
 import { useEngineStore } from "../../react/engineStore.js";
 import { cn } from "../utils.js";
-import { AgentConfigForm } from "./AgentConfigForm.js";
 import { ReactFlowAgentTopology } from "./ReactFlowAgentTopology.js";
-
-// Stable empty references for zustand selectors. Returning a fresh `{}`
-// or `[]` from a selector tells React's getSnapshot machinery the value
-// changed every render, which triggers an infinite re-render loop.
-// Module-level constants keep the reference identity stable across
-// renders for the no-override case.
-const EMPTY_OVERRIDES: Record<string, unknown> = Object.freeze({});
 
 function countAgentOverrides(
   agentCfg: Record<string, Record<string, unknown>> | undefined,
@@ -52,19 +48,34 @@ function countAgentOverrides(
   return n;
 }
 
+/**
+ * What the right-side Sheet should show. Lifted to EngineView so
+ * triggers anywhere in the tree (a node's prompt icon, a node's
+ * runs icon, etc.) can open the sheet by setting this state. T4'
+ * defines the shape; T6/T8 fill in the union with real content
+ * types.
+ */
+export type SheetContext =
+  | { kind: "prompt"; agentId: string; nodeId: string }
+  | { kind: "runs"; agentId: string; nodeId: string }
+  | null;
+
 export interface EngineViewProps {
   className?: string;
 }
 
 export function EngineView({ className }: EngineViewProps) {
   const { agents, loading, error, refresh } = useAgents();
-  const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>(
+    undefined,
+  );
+  const [sheetContext, setSheetContext] = useState<SheetContext>(null);
 
   const selected = useMemo(() => {
     if (!agents.length) return undefined;
-    const found = agents.find((a) => a.id === selectedId);
+    const found = agents.find((a) => a.id === selectedAgentId);
     return found ?? agents[0];
-  }, [agents, selectedId]);
+  }, [agents, selectedAgentId]);
 
   return (
     <div
@@ -73,6 +84,9 @@ export function EngineView({ className }: EngineViewProps) {
         className,
       )}
     >
+      {/* LEFT: agent picker. h-full + flex column + inner overflow-y-auto
+       * keeps the whole pane scrollable only when there are more agents
+       * than fit; the top of the picker is always pinned. */}
       <aside className="flex w-72 shrink-0 flex-col border-r border-border bg-card/30">
         <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
@@ -113,14 +127,18 @@ export function EngineView({ className }: EngineViewProps) {
                 key={a.id}
                 agent={a}
                 active={selected?.id === a.id}
-                onClick={() => setSelectedId(a.id)}
+                onClick={() => setSelectedAgentId(a.id)}
               />
             ))
           )}
         </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto">
+      {/* CENTER: agent header + reactflow canvas. flex-1 + min-h-0
+       * lets the canvas claim every remaining pixel. Without min-h-0
+       * the flex child would push past the viewport and reintroduce
+       * page-level scrolling. */}
+      <main className="flex flex-1 flex-col overflow-hidden">
         {selected ? (
           <AgentDetail agent={selected} />
         ) : (
@@ -129,6 +147,32 @@ export function EngineView({ className }: EngineViewProps) {
           </div>
         )}
       </main>
+
+      {/* RIGHT: contextual Sheet. Inert in T4' — placeholder content
+       * until T6 (runs) and T8 (prompt explorer) wire in real bodies +
+       * triggers. */}
+      <Sheet
+        open={sheetContext !== null}
+        onOpenChange={(open) => {
+          if (!open) setSheetContext(null);
+        }}
+      >
+        <SheetContent side="right" className="w-[400px] sm:w-[500px]">
+          <SheetHeader>
+            <SheetTitle>
+              {sheetContext?.kind === "prompt" ? "Prompts" : "Runs"}
+            </SheetTitle>
+            <SheetDescription>
+              {sheetContext
+                ? `${sheetContext.agentId}.${sheetContext.nodeId}`
+                : ""}
+            </SheetDescription>
+          </SheetHeader>
+          <div className="mt-4 text-sm text-muted-foreground">
+            Sheet body lands in {sheetContext?.kind === "prompt" ? "llm-ta1" : "llm-jui"}.
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
@@ -142,10 +186,6 @@ function AgentCard({
   active: boolean;
   onClick: () => void;
 }) {
-  // Select the underlying (stable-by-reference) inner config object,
-  // then derive the count outside the selector. Returning a freshly
-  // computed sum from the selector triggers the getSnapshot-cached
-  // warning + infinite loop (see EMPTY_OVERRIDES rationale above).
   const agentCfg = useEngineStore((s) => s.configs[agent.id]);
   const overrideCount = countAgentOverrides(agentCfg);
   return (
@@ -188,38 +228,35 @@ function AgentCard({
 }
 
 function AgentDetail({ agent }: { agent: AgentDescriptor }) {
-  // Select the inner per-Agent config object directly
-  // (stable-by-reference) — see EMPTY_OVERRIDES rationale at top.
   const agentCfg = useEngineStore((s) => s.configs[agent.id]);
   const resetAgent = useEngineStore((s) => s.resetAgent);
   const editedCount = countAgentOverrides(agentCfg);
 
-  // Selection lives here for now; T4 (llm-mxj) moves this into a
-  // proper three-pane layout where the right sidebar consumes it.
-  // Plumbing it through today so node clicks aren't a no-op while
-  // the user evaluates the new graph.
+  // Node selection drives the topology's visual highlight only in
+  // T4'. T5' adds inline-on-node config so selection becomes more
+  // meaningful; T6/T8 add per-node triggers that open the sheet via
+  // onOpenSheet.
   const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>(
     undefined,
   );
 
-  const configurableNodes = useMemo(
-    () => agent.topology.nodes.filter((n) => n.config_schema !== null),
-    [agent.topology.nodes],
-  );
-
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-6 p-6">
-      <header className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold">
+    <>
+      {/* Tight header strip — shrink-0 so the topology canvas below
+       * gets every leftover pixel. */}
+      <header className="flex shrink-0 items-start justify-between gap-3 border-b border-border/60 px-6 py-3">
+        <div className="min-w-0 flex-1">
+          <h1 className="flex items-center gap-2 text-xl font-semibold">
             <Activity className="h-5 w-5 text-primary" aria-hidden="true" />
-            {agent.id}
+            <span className="truncate">{agent.id}</span>
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">
             {agent.description}
           </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
           {agent.tools.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-1">
               {agent.tools.map((t) => (
                 <span
                   key={t}
@@ -231,113 +268,38 @@ function AgentDetail({ agent }: { agent: AgentDescriptor }) {
               ))}
             </div>
           )}
+          {editedCount > 0 && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => resetAgent(agent.id)}
+              title="Clear all overrides for this Agent"
+            >
+              <RotateCcw className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+              Reset all
+            </Button>
+          )}
         </div>
-        {editedCount > 0 && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => resetAgent(agent.id)}
-            title="Clear all overrides for this Agent"
-          >
-            <RotateCcw className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
-            Reset all
-          </Button>
-        )}
       </header>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Topology</CardTitle>
-          <CardDescription>
-            The LangGraph state machine this Agent runs. Conditional edges
-            (dashed, accent-coloured) are router transitions; solid edges
-            always fire. Click a node to highlight it (right-panel detail
-            view lands in the next milestone).
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ReactFlowAgentTopology
-            topology={agent.topology}
-            agentId={agent.id}
-            agentTools={agent.tools}
-            selectedNodeId={selectedNodeId}
-            onNodeSelect={setSelectedNodeId}
-          />
-        </CardContent>
-      </Card>
-
-      {configurableNodes.length === 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Config</CardTitle>
-            <CardDescription>
-              No tunable nodes on this Agent.
-            </CardDescription>
-          </CardHeader>
-        </Card>
-      ) : (
-        configurableNodes.map((node) => (
-          <NodeConfigCard key={node.id} agentId={agent.id} node={node} />
-        ))
-      )}
-    </div>
-  );
-}
-
-function NodeConfigCard({
-  agentId,
-  node,
-}: {
-  agentId: string;
-  node: AgentTopologyNode;
-}) {
-  const overridesOrNull = useEngineStore((s) => s.configs[agentId]?.[node.id]);
-  const overrides = overridesOrNull ?? EMPTY_OVERRIDES;
-  const setField = useEngineStore((s) => s.setField);
-  const resetNode = useEngineStore((s) => s.resetNode);
-  const editedCount = Object.keys(overrides).length;
-  // Narrowed by configurableNodes filter, but TS doesn't know.
-  if (node.config_schema === null) return null;
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
-        <div>
-          <CardTitle className="text-base">
-            <span className="font-mono">{node.id}</span>
-            <span className="ml-2 rounded-md border border-border/60 bg-muted/30 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-              {node.type}
-            </span>
-          </CardTitle>
-          <CardDescription className="mt-1">
-            Edits persist in localStorage and ride along on every chat
-            dispatch via the request's{" "}
-            <code className="rounded bg-muted/40 px-1 py-0.5 text-xs">
-              agent_config[{agentId}][{node.id}]
-            </code>{" "}
-            field.
-          </CardDescription>
-        </div>
-        {editedCount > 0 && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => resetNode(agentId, node.id)}
-            title={`Clear overrides for ${node.id}`}
-          >
-            <RotateCcw className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
-            Reset {node.id}
-          </Button>
-        )}
-      </CardHeader>
-      <CardContent>
-        <AgentConfigForm
-          schema={node.config_schema}
-          overrides={overrides}
-          onChange={(name, value) => setField(agentId, node.id, name, value)}
+      {/* Canvas fills the rest of the viewport. min-h-0 is the
+       * load-bearing CSS — without it the flex child would refuse
+       * to shrink below its intrinsic height and the page would
+       * re-introduce scrolling. */}
+      <div className="min-h-0 flex-1">
+        <ReactFlowAgentTopology
+          topology={agent.topology}
+          agentId={agent.id}
+          agentTools={agent.tools}
+          selectedNodeId={selectedNodeId}
+          onNodeSelect={setSelectedNodeId}
+          // Override the rounded card framing — at viewport scale
+          // the inner border becomes redundant with the header
+          // divider above and the page chrome around it.
+          className="rounded-none border-0"
         />
-      </CardContent>
-    </Card>
+      </div>
+    </>
   );
 }

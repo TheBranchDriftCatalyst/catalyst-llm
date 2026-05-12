@@ -524,7 +524,11 @@ export function ReactFlowAgentTopology({
   return (
     <div
       className={cn(
-        "h-[520px] w-full rounded-lg border border-border/60 bg-card/30 overflow-hidden",
+        // Default: fill the parent's flex container. Callers can
+        // override (e.g. fixed height) via className. The earlier
+        // hardcoded h-[520px] is gone so the viewport-bound layout
+        // (T4') can size the canvas dynamically.
+        "h-full w-full bg-card/30 overflow-hidden",
         // FloatingEdge anchors edges to the perimeter, so the visible
         // <Handle/> dots are now misleading (they sit at top/bottom
         // centre while the edge meets the node somewhere else).
