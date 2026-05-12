@@ -3,13 +3,24 @@
 Endpoints:
   GET  /healthz                Liveness probe.
   POST /api/chat/stream        SSE — typed agent events (see events.py).
-
-/api/models and /api/tools land in a follow-up issue (llm-7li).
+  GET  /api/models             LiteLLM model catalogue.
+  GET  /api/tools              Dispatchable tools registry.
+  GET  /api/agents             Registered Agents + schemas.
+  GET  /api/runs               DuckDB event trace (observability).
 
 Run locally:
     python -m catalyst_langgraph.server
 or:
     uvicorn catalyst_langgraph.server:app --reload --port 7078
+
+Module structure (split out during the llm-doh refactor — boilerplate
+lives in sibling modules, this file owns the agent-loop + API surface):
+  server/app.py        — make_app() factory + OPENAPI tag schema
+  server/lifespan.py   — EventStore lifecycle (FastAPI lifespan)
+  server/log_setup.py  — setup_logging() entrypoint (named log_setup
+                          to avoid shadowing stdlib `logging`)
+  server/health.py     — /healthz APIRouter
+  server/__main__.py   — `python -m catalyst_langgraph.server` shim
 """
 from __future__ import annotations
 
@@ -19,11 +30,8 @@ import logging
 import os
 import time
 import uuid
-from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Literal, Optional
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import (
     AIMessage,
     BaseMessage,
@@ -36,9 +44,8 @@ from sse_starlette.sse import EventSourceResponse
 
 import httpx
 
-from . import __version__
-from .client import CatalystLiteLLMClient
-from .events import (
+from ..client import CatalystLiteLLMClient
+from ..events import (
     AgentEvent,
     Cancelled,
     ChatStreamRequest,
@@ -50,98 +57,24 @@ from .events import (
     ToolCallEnd,
     ToolCallStart,
 )
-from .agents import AGENTS, validate_overrides
-from .graph import build_graph
-from .persistence import EventStore, get_event_store, set_event_store
-from .tools import ALL_TOOLS
-from .tools.cancel import cancel_event, install_cancel_event
-from .tools.host import TOOL_HOST_API_KEY, TOOL_HOST_URL
-from .tools.research import caller_context, research_overrides
+from ..agents import AGENTS, validate_overrides
+from ..graph import build_graph
+from ..persistence import get_event_store
+from ..tools import ALL_TOOLS
+from ..tools.cancel import cancel_event, install_cancel_event
+from ..tools.host import TOOL_HOST_API_KEY, TOOL_HOST_URL
+from ..tools.research import caller_context, research_overrides
 
+from .app import make_app
+from .health import health_router
+from .lifespan import app_lifespan
+from .log_setup import setup_logging
+
+setup_logging()
 log = logging.getLogger("catalyst-langgraph")
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)-7s %(name)s %(message)s",
-)
 
-
-OPENAPI_TAGS = [
-    {
-        "name": "chat",
-        "description": (
-            "The main entry point: stream a chat completion as typed "
-            "agent events (run_started, token, tool_call_start, "
-            "tool_call_end, message_done, error). See "
-            "[events.py](https://github.com/TheBranchDriftCatalyst/catalyst-llm) "
-            "for the AgentEvent union."
-        ),
-    },
-    {
-        "name": "discovery",
-        "description": (
-            "What the engine can do: which models, which tools, "
-            "which Agents (compiled LangGraph state machines). "
-            "Drives the playground's pickers, the tool toggle, and "
-            "the Engine tab's per-Agent config form."
-        ),
-    },
-    {
-        "name": "health",
-        "description": "Liveness probes for k8s.",
-    },
-    {
-        "name": "observability",
-        "description": (
-            "DuckDB-backed event trace. Every SSE event the engine "
-            "yields is mirrored into a queryable file (set via the "
-            "`EVENTS_DB` env var) so operators can audit runs, debug "
-            "runaway loops, and feed downstream cost / latency "
-            "dashboards. When the env var is unset, the store is a "
-            "no-op and these endpoints return empty lists."
-        ),
-    },
-]
-
-
-@asynccontextmanager
-async def _lifespan(app: FastAPI):
-    """FastAPI lifespan — owns the EventStore's lifetime.
-
-    Built on startup, closed (flush + join writer thread) on shutdown.
-    The store reads its DuckDB path from `EVENTS_DB`; with no env it
-    initialises in disabled mode so local dev without DuckDB still
-    works (insert becomes a no-op).
-    """
-    store = EventStore()
-    set_event_store(store)
-    log.info("event store: enabled=%s path=%s", store._enabled, store._path)
-    try:
-        yield
-    finally:
-        set_event_store(None)
-        store.close()
-
-
-app = FastAPI(
-    title="catalyst-langgraph",
-    version=__version__,
-    openapi_tags=OPENAPI_TAGS,
-    description=(
-        "LangGraph agent service. Owns the agent/tool loop; UIs consume "
-        "a typed SSE event stream."
-    ),
-    lifespan=_lifespan,
-)
-
-# Permissive CORS for dev — playground at localhost:5174 calls us from
-# a different origin. Tighten via ingress in prod.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app = make_app(lifespan=app_lifespan)
+app.include_router(health_router)
 
 
 # ───────────────────────────────────────────────────────────────────────
@@ -618,16 +551,6 @@ def _to_sse(event: AgentEvent) -> dict[str, str]:
 # ───────────────────────────────────────────────────────────────────────
 # Routes
 # ───────────────────────────────────────────────────────────────────────
-
-
-@app.get(
-    "/healthz",
-    tags=["health"],
-    summary="Liveness probe",
-)
-def healthz() -> dict[str, str]:
-    """Liveness probe — used by k8s readinessProbe and `tilt up`."""
-    return {"status": "ok", "service": "catalyst-langgraph", "version": __version__}
 
 
 @app.post(
