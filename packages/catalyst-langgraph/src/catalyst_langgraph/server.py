@@ -18,6 +18,7 @@ import logging
 import os
 import time
 import uuid
+from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Literal, Optional
 
 from fastapi import FastAPI
@@ -49,6 +50,7 @@ from .events import (
 )
 from .agents import AGENTS, validate_overrides
 from .graph import build_graph
+from .persistence import EventStore, get_event_store, set_event_store
 from .tools import ALL_TOOLS
 from .tools.host import TOOL_HOST_API_KEY, TOOL_HOST_URL
 from .tools.research import caller_context, research_overrides
@@ -84,7 +86,37 @@ OPENAPI_TAGS = [
         "name": "health",
         "description": "Liveness probes for k8s.",
     },
+    {
+        "name": "observability",
+        "description": (
+            "DuckDB-backed event trace. Every SSE event the engine "
+            "yields is mirrored into a queryable file (set via the "
+            "`EVENTS_DB` env var) so operators can audit runs, debug "
+            "runaway loops, and feed downstream cost / latency "
+            "dashboards. When the env var is unset, the store is a "
+            "no-op and these endpoints return empty lists."
+        ),
+    },
 ]
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """FastAPI lifespan — owns the EventStore's lifetime.
+
+    Built on startup, closed (flush + join writer thread) on shutdown.
+    The store reads its DuckDB path from `EVENTS_DB`; with no env it
+    initialises in disabled mode so local dev without DuckDB still
+    works (insert becomes a no-op).
+    """
+    store = EventStore()
+    set_event_store(store)
+    log.info("event store: enabled=%s path=%s", store._enabled, store._path)
+    try:
+        yield
+    finally:
+        set_event_store(None)
+        store.close()
 
 
 app = FastAPI(
@@ -95,6 +127,7 @@ app = FastAPI(
         "LangGraph agent service. Owns the agent/tool loop; UIs consume "
         "a typed SSE event stream."
     ),
+    lifespan=_lifespan,
 )
 
 # Permissive CORS for dev — playground at localhost:5174 calls us from
@@ -191,6 +224,54 @@ def _summarise_caller_context(
 
 
 async def _stream_agent_events(
+    *, request: ChatStreamRequest
+) -> AsyncIterator[AgentEvent]:
+    """Run the graph and yield our typed events to the SSE consumer.
+
+    This is the public entry point — it wraps `_produce_agent_events`
+    (the actual graph-driving generator) with a side-effect: every
+    yielded event is also inserted into the EventStore (DuckDB) so
+    runs become queryable / replayable. Wrapping at this layer keeps
+    the producer purely declarative — adding a new event type means
+    adding one yield in `_produce_agent_events`; tracing is automatic.
+    """
+    store = get_event_store()
+    run_id: Optional[str] = None
+    seq = 0
+    async for ev in _produce_agent_events(request=request):
+        # Stash the run_id from the first event so subsequent inserts
+        # share the same key. (RunStarted is always first by contract.)
+        if run_id is None and ev.type == "run_started":
+            run_id = getattr(ev, "run_id", None)
+            if store is not None and run_id is not None:
+                # Snapshot the run's config alongside the event trace
+                # so later queries can correlate cost / behaviour back
+                # to what the parent was configured with.
+                try:
+                    store.insert_run_config(
+                        run_id=run_id,
+                        model=request.model,
+                        tools=request.tools,
+                        agent_config=request.agent_config,
+                        system_prompt=request.system_prompt,
+                    )
+                except Exception as exc:
+                    log.warning("event_store run_config insert failed: %s", exc)
+        if store is not None and run_id is not None:
+            try:
+                store.insert(
+                    run_id=run_id,
+                    seq=seq,
+                    kind=ev.type,
+                    payload=ev.model_dump(),
+                )
+            except Exception as exc:
+                log.warning("event_store insert failed (%s): %s", ev.type, exc)
+        seq += 1
+        yield ev
+
+
+async def _produce_agent_events(
     *, request: ChatStreamRequest
 ) -> AsyncIterator[AgentEvent]:
     """Run the graph and yield our typed events.
@@ -636,6 +717,129 @@ async def list_agents() -> ListAgentsResponse:
             )
         )
     return ListAgentsResponse(agents=out)
+
+
+# ───────────────────────────────────────────────────────────────────────
+# Observability — DuckDB event-trace browse / drill endpoints.
+# Empty arrays when EVENTS_DB isn't set (store disabled), so consumers
+# can treat them as always-safe to call.
+# ───────────────────────────────────────────────────────────────────────
+
+
+class RunSummaryOut(BaseModel):
+    """One row per dispatched chat in the event store."""
+
+    run_id: str
+    started_at: float = Field(description="Epoch seconds of the first event.")
+    finished_at: float = Field(description="Epoch seconds of the latest event.")
+    total_events: int
+    token_count: int = Field(description="Count of `token` events — proxy for response length.")
+    tool_calls: int = Field(description="Count of `tool_call_start` events.")
+    error_count: int = Field(description="Count of `error` events.")
+    terminal_node: Optional[str] = Field(
+        default=None,
+        description="`node` tag on the last event — useful for filtering completed vs errored runs.",
+    )
+    model: Optional[str] = Field(default=None, description="Parent agent model id.")
+    tools_json: Optional[str] = Field(
+        default=None,
+        description="JSON-encoded list of tools the parent was allowed to dispatch.",
+    )
+    agent_config_json: Optional[str] = Field(
+        default=None,
+        description="JSON-encoded agent_config snapshot from the request.",
+    )
+
+
+class ListRunsResponse(BaseModel):
+    runs: list[RunSummaryOut]
+    enabled: bool = Field(
+        description="False when EVENTS_DB is unset and the store is a no-op.",
+    )
+
+
+class RunEventOut(BaseModel):
+    """One event row from the trace."""
+
+    run_id: str
+    seq: int
+    ts: float
+    kind: str = Field(
+        description="AgentEvent.type — `token`, `tool_call_start`, `message_done`, etc.",
+    )
+    node: Optional[str] = Field(
+        default=None,
+        description="Best-effort node attribution (`tool` name, `agent`, `start`, …).",
+    )
+    payload: dict[str, Any] = Field(
+        description="Full event body, exactly as the SSE consumer received it.",
+    )
+
+
+class RunEventsResponse(BaseModel):
+    events: list[RunEventOut]
+
+
+@app.get(
+    "/api/runs",
+    tags=["observability"],
+    response_model=ListRunsResponse,
+    summary="List recent runs",
+    description=(
+        "Returns a summary row per chat dispatch the engine has seen, "
+        "newest first. When the event store is disabled (no `EVENTS_DB`), "
+        "`enabled=false` and `runs=[]`."
+    ),
+)
+async def list_runs(limit: int = 100) -> ListRunsResponse:
+    store = get_event_store()
+    if store is None:
+        return ListRunsResponse(runs=[], enabled=False)
+    rows = store.runs(limit=limit)
+    return ListRunsResponse(
+        runs=[RunSummaryOut(**r) for r in rows],
+        enabled=True,
+    )
+
+
+@app.get(
+    "/api/runs/{run_id}",
+    tags=["observability"],
+    response_model=RunEventsResponse,
+    summary="Get every event for a run",
+    description=(
+        "Returns the full ordered event list for a single run. Useful "
+        "for replay UIs and debugging runaway loops."
+    ),
+)
+async def get_run_events(run_id: str) -> RunEventsResponse:
+    store = get_event_store()
+    if store is None:
+        return RunEventsResponse(events=[])
+    rows = store.events_for(run_id)
+    return RunEventsResponse(events=[RunEventOut(**r) for r in rows])
+
+
+@app.get(
+    "/api/runs/{run_id}/{seq}",
+    tags=["observability"],
+    response_model=RunEventOut,
+    summary="Get one event by (run_id, seq)",
+    description=(
+        "Returns the single event row at the given sequence number — "
+        "handy for replay-this-step UIs that need just one payload."
+    ),
+)
+async def get_run_event(run_id: str, seq: int) -> RunEventOut:
+    store = get_event_store()
+    if store is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="event store disabled")
+    row = store.get_event(run_id, seq)
+    if row is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="event not found")
+    return RunEventOut(**row)
 
 
 def main() -> None:

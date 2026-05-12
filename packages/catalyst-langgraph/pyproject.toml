@@ -22,6 +22,11 @@ dependencies = [
     "uvicorn[standard]>=0.30.0",
     "sse-starlette>=2.1.0",
     "pydantic>=2.7.0",
+    # DuckDB powers the event trace store — every yielded SSE event is
+    # async-written to a queryable file so we can debug runaway loops,
+    # measure cost-per-run, and (eventually) replay individual steps.
+    # Modelled on langgraph-dev's api/app/persistence/event_store.py.
+    "duckdb>=1.0.0",
 ]
 
 [project.optional-dependencies]

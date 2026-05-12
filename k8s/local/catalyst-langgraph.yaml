@@ -54,6 +54,17 @@ spec:
                 secretKeyRef:
                   name: litellm-secrets
                   key: master-key
+            # Event trace destination. When set, every SSE event is
+            # async-written to this DuckDB file for /api/runs to query.
+            # Empty / unset = store stays disabled (insert is no-op).
+            - name: EVENTS_DB
+              value: "/data/events.duckdb"
+          volumeMounts:
+            # Where the event-trace DuckDB lives. emptyDir in dev (a
+            # pod restart wipes the trace, which is fine for k3d); a
+            # real PVC in prod once we promote to talos00.
+            - name: events
+              mountPath: /data
           readinessProbe:
             httpGet:
               path: /healthz
@@ -66,6 +77,9 @@ spec:
               port: http
             initialDelaySeconds: 15
             periodSeconds: 30
+      volumes:
+        - name: events
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
