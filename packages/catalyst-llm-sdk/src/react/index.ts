@@ -22,6 +22,12 @@ export {
   type EngineStore,
   type EngineConfigs,
 } from "./engineStore.js";
+export {
+  useEngineRunStore,
+  type RunDisplay,
+  type RunStatus,
+  type RunToolCall,
+} from "./engineRunStore.js";
 export type {
   Chat,
   ChatTurn,

@@ -2,128 +2,53 @@
  * TestRunSheet — dispatch a one-off chat request through an Agent
  * directly from the Engine tab, without leaving the topology view.
  *
- * Triggered by clicking the __start__ chip on an Agent's topology
- * (today only `main` — sub-agents like `research` reach the runtime
- * via the `research` tool dispatched by main, so a standalone
- * test-run only makes sense from the parent entry point). The sheet
- * collects a one-shot user prompt + a Run button; on submit, it
- * streams the request via `agentClient.streamAgent` (same wire
- * shape chatStore uses) and surfaces the events as they arrive.
+ * Triggered by clicking the __start__ chip on an Agent's topology.
+ * The actual run lifecycle (AbortController, streaming, event-applied
+ * state) lives in useEngineRunStore so the run survives this sheet's
+ * unmount: if the operator closes the sheet, switches agents, or
+ * collapses the panel, the server-side dispatch keeps streaming and
+ * the topology highlight keeps updating; re-opening the sheet picks
+ * up the live state.
  *
- * Why a separate dispatch path (not chatStore.sendMessage):
- *   - chatStore is bound to a chat record (history, persisted
- *     messages, model selection from the chat panel). A test run is
- *     transient — it shouldn't pollute chat history or get
- *     persisted. We use the same `agentClient` underneath, but
- *     manage the events / view locally to the sheet.
+ * This component is essentially a thin view over `runs[agent.id]`
+ * in the run store — input on top, store-driven output below.
  *
- * Phase A (this commit): dispatch + linear event log + final answer.
- * Phase B (TODO, llm-0mp): pipe the event stream's `node` attribution
- *   into ReactFlowAgentTopology.selectedNodeId so the active node
- *   pulses during the run.
- * Phase C (TODO, llm-0mp): clicking a node during/after a run opens
- *   a Sheet branch scoped to that node's events in this specific run.
+ * Phase A (commit 5910458): dispatch + linear event log
+ * Phase B (commit e95d016): live node highlight
+ * Phase C (TODO, llm-0mp): per-node run-event drill-down
  */
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Textarea } from "@thebranchdriftcatalyst/catalyst-ui/ui/textarea";
 import { Play, Square, Wrench } from "lucide-react";
 import { useLLMContext } from "../../react/LLMProvider.js";
+import { useEngineRunStore } from "../../react/engineRunStore.js";
 import { useEngineStore } from "../../react/engineStore.js";
-import { usePromptStore } from "../../react/promptStore.js";
-import type {
-  AgentDescriptor,
-  AgentEvent,
-} from "../../agent/events.js";
+import type { AgentDescriptor } from "../../agent/events.js";
 import { ModelMicroSwitcher } from "../ModelMicroSwitcher.js";
 import { cn } from "../utils.js";
 
 export interface TestRunSheetProps {
   agent: AgentDescriptor;
-  /** Called on every streamed event with the inferred active node id
-   * (or `undefined` when idle). EngineView wires this into
-   * ReactFlowAgentTopology.activeNodeId so the executing node pulses
-   * live in the topology view. */
-  onActiveNodeChange?: (nodeId: string | undefined) => void;
   className?: string;
 }
 
-interface DisplayState {
-  status: "idle" | "streaming" | "done" | "error" | "cancelled";
-  runId?: string;
-  model?: string;
-  content: string;
-  toolCalls: Array<{
-    id: string;
-    name: string;
-    args: Record<string, unknown>;
-    result?: unknown;
-    error?: string;
-    durationMs?: number;
-  }>;
-  events: number;
-  error?: string;
-  finishReason?: string;
-  usage?: Record<string, unknown>;
-}
-
-const EMPTY_DISPLAY: DisplayState = {
-  status: "idle",
-  content: "",
-  toolCalls: [],
-  events: 0,
-};
-
-/**
- * Walk the engineStore overrides + the prompt store to build a
- * prompt_overrides map for any system_prompt_ref bindings. Mirrors
- * the logic in chatStore.sendMessage but is local so the test run
- * stays decoupled from the chat dispatch path.
- */
-function buildPromptOverrides(
-  agentConfig:
-    | Record<string, Record<string, Record<string, unknown>>>
-    | undefined,
-): Record<string, string> | undefined {
-  if (!agentConfig) return undefined;
-  const refIds = new Set<string>();
-  for (const nodeCfgs of Object.values(agentConfig)) {
-    if (!nodeCfgs) continue;
-    for (const fields of Object.values(nodeCfgs)) {
-      if (!fields) continue;
-      const ref = fields["system_prompt_ref"];
-      if (typeof ref === "string" && ref.length > 0) refIds.add(ref);
-    }
-  }
-  if (refIds.size === 0) return undefined;
-  const presets = usePromptStore.getState().presets;
-  const byId = new Map(presets.map((p) => [p.id, p]));
-  const out: Record<string, string> = {};
-  for (const id of refIds) {
-    const p = byId.get(id);
-    if (p?.systemPrompt) out[id] = p.systemPrompt;
-  }
-  return Object.keys(out).length > 0 ? out : undefined;
-}
-
-export function TestRunSheet({
-  agent,
-  onActiveNodeChange,
-  className,
-}: TestRunSheetProps) {
+export function TestRunSheet({ agent, className }: TestRunSheetProps) {
   const { agentClient } = useLLMContext();
   const setField = useEngineStore((s) => s.setField);
 
+  // Run lifecycle — handled by the store.
+  const display = useEngineRunStore((s) => s.runs[agent.id]);
+  const startRun = useEngineRunStore((s) => s.startRun);
+  const stopRun = useEngineRunStore((s) => s.stopRun);
+  const clearRun = useEngineRunStore((s) => s.clearRun);
+
   // Resolve which topology node id is the LLM-call node — for the
-  // main agent it's "agent"; for research it's "members" (the
-  // researcher node). Picked once per agent by scanning the topology
-  // for the first `agent`-typed node that isn't a critic/fusion.
-  // Used to attribute Token events to the right node when the wire
-  // event doesn't carry explicit attribution.
+  // main agent it's "agent"; for research it's "members". Used by
+  // the store's heuristic to attribute Token events to the right
+  // node when the wire event doesn't carry explicit attribution.
   const llmNodeId = useMemo(() => {
     const agentNodes = agent.topology.nodes.filter((n) => n.type === "agent");
-    // Heuristic: prefer "agent" (main), else "members" (research),
-    // else the first agent-typed node.
     return (
       agentNodes.find((n) => n.id === "agent")?.id ??
       agentNodes.find((n) => n.id === "members")?.id ??
@@ -131,19 +56,14 @@ export function TestRunSheet({
     );
   }, [agent]);
 
-  // Set of node ids that exist on this topology (lets us match
-  // tool-call names like "web_search" to a topology node when one
-  // exists with that id, instead of falling back to "tools").
   const nodeIds = useMemo(
     () => new Set(agent.topology.nodes.map((n) => n.id)),
     [agent],
   );
 
-  // The model picker writes directly through to engineStore on the
-  // LLM node — same state the node card's model chip reads from. This
-  // is the source of truth for "what model will this agent dispatch
-  // to" across the entire Engine tab; the picker here and the picker
-  // on the node card always agree.
+  // The model picker writes through to engineStore on the LLM node
+  // — same state the node card's model chip reads from. Source of
+  // truth for "what model will this agent dispatch to".
   const liveLLMNodeOverrides = useEngineStore(
     (s) => (llmNodeId ? s.configs[agent.id]?.[llmNodeId] : undefined),
   );
@@ -162,64 +82,24 @@ export function TestRunSheet({
     setField(agent.id, llmNodeId, "model", modelId);
   }
 
+  // Prompt input is local — typing it shouldn't churn other watchers
+  // through the store. Reset to "" after a dispatch.
   const [prompt, setPrompt] = useState("");
-  const [display, setDisplay] = useState<DisplayState>(EMPTY_DISPLAY);
-  const abortRef = useRef<AbortController | null>(null);
 
-  const isRunning = display.status === "streaming";
-  const canRun = prompt.trim().length > 0 && !isRunning && !!agentClient;
+  const isRunning = display?.status === "streaming";
+  const canRun =
+    prompt.trim().length > 0 && !isRunning && !!agentClient && !!effectiveModel;
 
-  const dispatch = useCallback(async () => {
-    if (!canRun) return;
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
-
-    setDisplay({
-      ...EMPTY_DISPLAY,
-      status: "streaming",
+  const dispatch = useCallback(() => {
+    if (!canRun || !agentClient) return;
+    void startRun({
+      agent,
+      agentClient,
+      prompt,
+      model: effectiveModel,
+      llmNodeId,
+      nodeIds,
     });
-    onActiveNodeChange?.("__start__");
-
-    // Wire shape mirrors chatStore.sendMessage — same backend code path,
-    // so per-node overrides + prompt refs Just Work. The model is set
-    // via engineStore (same picker as the node card), so it flows
-    // through agent_config; request.model is a backstop default the
-    // server only falls back to if no node override is present.
-    const agentConfig = useEngineStore.getState().asRequestPayload();
-    const promptOverrides = buildPromptOverrides(agentConfig);
-
-    try {
-      const stream = agentClient.streamAgent(
-        {
-          model: effectiveModel,
-          messages: [{ role: "user", content: prompt }],
-          tools: agent.tools.length > 0 ? agent.tools : undefined,
-          agent_config: agentConfig,
-          prompt_overrides: promptOverrides,
-        },
-        { signal: ctrl.signal },
-      );
-
-      for await (const ev of stream) {
-        applyEvent(setDisplay, ev);
-        const active = deriveActiveNode(ev, llmNodeId, nodeIds);
-        if (active !== undefined) onActiveNodeChange?.(active);
-        if (ctrl.signal.aborted) break;
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setDisplay((d) => ({
-        ...d,
-        status: ctrl.signal.aborted ? "cancelled" : "error",
-        error: msg,
-      }));
-    } finally {
-      abortRef.current = null;
-      // Land on __end__ once the stream is fully drained — gives the
-      // visual a "this is where we stopped" anchor instead of just
-      // freezing on whatever the last event happened to be.
-      onActiveNodeChange?.("__end__");
-    }
   }, [
     agent,
     agentClient,
@@ -227,22 +107,13 @@ export function TestRunSheet({
     effectiveModel,
     llmNodeId,
     nodeIds,
-    onActiveNodeChange,
     prompt,
+    startRun,
   ]);
-
-  function stop() {
-    abortRef.current?.abort();
-  }
-
-  function reset() {
-    setDisplay(EMPTY_DISPLAY);
-    onActiveNodeChange?.(undefined);
-  }
 
   return (
     <div className={cn("flex h-full min-h-0 flex-col gap-3", className)}>
-      {/* ── Top: prompt input + model override + Run/Stop ─────────── */}
+      {/* ── Top: prompt input + model + Run/Stop ──────────────────── */}
       <div className="flex shrink-0 flex-col gap-2">
         <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
           <span className="font-mono text-foreground">{agent.id}</span>
@@ -259,7 +130,7 @@ export function TestRunSheet({
           onKeyDown={(e) => {
             if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && canRun) {
               e.preventDefault();
-              void dispatch();
+              dispatch();
             }
           }}
         />
@@ -267,22 +138,10 @@ export function TestRunSheet({
           <label className="text-[10px] uppercase tracking-wider text-muted-foreground">
             model
           </label>
-          {/* Same picker the node cards use — writes through to the
-           * SAME engineStore field, so the picker on this sheet and
-           * the picker on the agent node card always read the same
-           * value. No separate "test-run model" concept; changing
-           * the model here changes it everywhere this Agent is used
-           * (including the Chat tab's main agent dispatches). */}
           <div className="flex-1">
             <ModelMicroSwitcher
               value={effectiveModel}
               onChange={(v) => setEffectiveModel(v)}
-              // We're inside a Radix Sheet — portalling the popover
-              // would make Radix treat every click as "outside" and
-              // dismiss the sheet, swallowing the click. Render
-              // inline so clicks register inside the sheet's DOM
-              // tree (the popover is position: fixed so it still
-              // visually escapes any ancestor overflow).
               disablePortal
             />
           </div>
@@ -291,7 +150,7 @@ export function TestRunSheet({
               type="button"
               size="sm"
               variant="destructive"
-              onClick={stop}
+              onClick={() => stopRun(agent.id)}
               className="h-7 text-xs"
             >
               <Square className="mr-1 h-3 w-3" aria-hidden="true" />
@@ -301,7 +160,7 @@ export function TestRunSheet({
             <Button
               type="button"
               size="sm"
-              onClick={() => void dispatch()}
+              onClick={dispatch}
               disabled={!canRun}
               className="h-7 text-xs"
               title="Cmd/Ctrl-Enter from the prompt"
@@ -310,12 +169,12 @@ export function TestRunSheet({
               run
             </Button>
           )}
-          {display.status !== "idle" && !isRunning && (
+          {display && !isRunning && (
             <Button
               type="button"
               size="sm"
               variant="ghost"
-              onClick={reset}
+              onClick={() => clearRun(agent.id)}
               className="h-7 text-xs"
             >
               clear
@@ -324,9 +183,11 @@ export function TestRunSheet({
         </div>
       </div>
 
-      {/* ── Bottom: output (flex-1, scrolls) ──────────────────────── */}
+      {/* ── Bottom: store-driven output ───────────────────────────── */}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-border/60 bg-card/30">
-        {display.status === "idle" ? (
+        {display ? (
+          <RunOutput display={display} />
+        ) : (
           <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
             <div>
               <p className="mb-1">No output yet.</p>
@@ -336,117 +197,17 @@ export function TestRunSheet({
               </p>
             </div>
           </div>
-        ) : (
-          <RunOutput display={display} />
         )}
       </div>
     </div>
   );
 }
 
-/**
- * Map a streamed AgentEvent to the topology node that's "currently
- * active" right now. Used for the live-highlight on the topology
- * (Phase B). The server doesn't emit explicit node attribution on
- * every event, so we infer:
- *
- *   - run_started     → __start__ (handled at dispatch entry, not here)
- *   - token           → the LLM node (e.g. "agent" for main, "members"
- *                       for research). Identified by topology type at
- *                       caller time.
- *   - tool_call_start → either the exact node id matching the tool name
- *                       (e.g. research's "web_search" node), or the
- *                       generic "tools" dispatcher if no exact match.
- *   - tool_call_end   → back to the LLM node (we're about to feed the
- *                       tool result back into the model).
- *   - iteration       → also the LLM node (one more loop entry).
- *   - message_done /
- *     error /
- *     cancelled       → __end__ (handled at exit, not here).
- *
- * Returns `undefined` for events we don't care to highlight on.
- */
-function deriveActiveNode(
-  ev: AgentEvent,
-  llmNodeId: string | undefined,
-  nodeIds: Set<string>,
-): string | undefined {
-  switch (ev.type) {
-    case "run_started":
-      return "__start__";
-    case "token":
-    case "iteration":
-      return llmNodeId;
-    case "tool_call_start":
-      // Prefer the exact node-id match (e.g. research has a "web_search"
-      // node that IS the tool). Fall back to a generic "tools"
-      // dispatcher node if one exists on the topology.
-      if (nodeIds.has(ev.name)) return ev.name;
-      if (nodeIds.has("tools")) return "tools";
-      return undefined;
-    case "tool_call_end":
-      return llmNodeId;
-    case "message_done":
-    case "cancelled":
-    case "error":
-      return "__end__";
-    default:
-      return undefined;
-  }
-}
-
-function applyEvent(
-  set: React.Dispatch<React.SetStateAction<DisplayState>>,
-  ev: AgentEvent,
-) {
-  set((d) => {
-    const next: DisplayState = { ...d, events: d.events + 1 };
-    switch (ev.type) {
-      case "run_started":
-        next.runId = ev.run_id;
-        next.model = ev.model;
-        return next;
-      case "token":
-        next.content = d.content + ev.content;
-        return next;
-      case "tool_call_start":
-        next.toolCalls = [
-          ...d.toolCalls,
-          { id: ev.id, name: ev.name, args: ev.args },
-        ];
-        return next;
-      case "tool_call_end": {
-        next.toolCalls = d.toolCalls.map((c) =>
-          c.id === ev.id
-            ? {
-                ...c,
-                result: ev.result,
-                error: ev.error,
-                durationMs: ev.duration_ms,
-              }
-            : c,
-        );
-        return next;
-      }
-      case "message_done":
-        next.status = "done";
-        next.finishReason = ev.finish_reason;
-        next.usage = ev.usage;
-        return next;
-      case "error":
-        next.status = "error";
-        next.error = ev.message;
-        return next;
-      case "cancelled":
-        next.status = "cancelled";
-        return next;
-      default:
-        return next;
-    }
-  });
-}
-
-function RunOutput({ display }: { display: DisplayState }) {
+function RunOutput({
+  display,
+}: {
+  display: NonNullable<ReturnType<typeof useEngineRunStore.getState>["runs"][string]>;
+}) {
   return (
     <div className="flex flex-1 flex-col overflow-y-auto">
       {/* Status strip */}

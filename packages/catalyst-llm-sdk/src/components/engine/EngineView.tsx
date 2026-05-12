@@ -39,6 +39,7 @@ import { PromptExplorerSheet } from "../PromptExplorerSheet.js";
 import { NodeRunsList } from "./NodeRunsList.js";
 import { ReactFlowAgentTopology } from "./ReactFlowAgentTopology.js";
 import { TestRunSheet } from "./TestRunSheet.js";
+import { useEngineRunStore } from "../../react/engineRunStore.js";
 
 function countAgentOverrides(
   agentCfg: Record<string, Record<string, unknown>> | undefined,
@@ -74,19 +75,20 @@ export function EngineView({ className }: EngineViewProps) {
     undefined,
   );
   const [sheetContext, setSheetContext] = useState<SheetContext>(null);
-  // The node id currently executing during a test run (Phase B of
-  // llm-0mp). Set by TestRunSheet on every streamed event; read by
-  // ReactFlowAgentTopology so the active node pulses on the canvas.
-  // Distinct from operator-clicked selection.
-  const [activeNodeId, setActiveNodeId] = useState<string | undefined>(
-    undefined,
-  );
 
   const selected = useMemo(() => {
     if (!agents.length) return undefined;
     const found = agents.find((a) => a.id === selectedAgentId);
     return found ?? agents[0];
   }, [agents, selectedAgentId]);
+
+  // Live "executing now" node id for the currently selected agent.
+  // Sourced from useEngineRunStore so the topology highlight keeps
+  // updating even when the TestRunSheet is closed (the run continues
+  // server-side; nothing's lost on sheet dismiss).
+  const activeNodeId = useEngineRunStore((s) =>
+    selected ? s.runs[selected.id]?.activeNodeId : undefined,
+  );
 
   return (
     <div
@@ -224,10 +226,7 @@ export function EngineView({ className }: EngineViewProps) {
               />
             )}
             {sheetContext?.kind === "test-run" && selected && (
-              <TestRunSheet
-                agent={selected}
-                onActiveNodeChange={setActiveNodeId}
-              />
+              <TestRunSheet agent={selected} />
             )}
             {sheetContext?.kind === "runs" && (
               <NodeRunsList
