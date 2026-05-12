@@ -1,3 +1,9 @@
 
 # Use bd merge for beads JSONL files
 .beads/issues.jsonl merge=beads
+
+# k8s/base/litellm/config.yaml has an auto-generated section spliced in by
+# packages/mac-node/scripts/gen-litellm.py — collapse it in PR reviews so
+# regenerated diffs don't dominate the change. Marker is per-file; the file
+# stays in-tree where kustomize expects to read it.
+k8s/base/litellm/config.yaml linguist-generated=true
