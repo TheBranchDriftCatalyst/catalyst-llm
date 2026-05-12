@@ -277,6 +277,13 @@ export function TestRunSheet({
             <ModelMicroSwitcher
               value={effectiveModel}
               onChange={(v) => setEffectiveModel(v)}
+              // We're inside a Radix Sheet — portalling the popover
+              // would make Radix treat every click as "outside" and
+              // dismiss the sheet, swallowing the click. Render
+              // inline so clicks register inside the sheet's DOM
+              // tree (the popover is position: fixed so it still
+              // visually escapes any ancestor overflow).
+              disablePortal
             />
           </div>
           {isRunning ? (

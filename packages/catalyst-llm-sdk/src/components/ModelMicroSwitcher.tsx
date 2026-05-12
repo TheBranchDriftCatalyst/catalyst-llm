@@ -12,6 +12,20 @@ export interface ModelMicroSwitcherProps {
   value: string;
   onChange: (value: string) => void;
   className?: string;
+  /**
+   * Render the popover inline in the DOM tree instead of portalling
+   * it to document.body. Set this when the switcher is mounted inside
+   * a Radix Dialog/Sheet — those containers treat any
+   * portalled-elsewhere click as "outside" and close themselves,
+   * which makes the popover un-clickable. The popover is already
+   * `position: fixed`, so it still visually escapes any ancestor
+   * `overflow: hidden` even without the portal.
+   *
+   * Default false: outside a Dialog (e.g. inside a reactflow node)
+   * the portal is required so we escape the node's CSS stacking
+   * context that comes from reactflow's `transform`.
+   */
+  disablePortal?: boolean;
 }
 
 const ICON_FOR: Record<EndpointType, React.ElementType> = {
@@ -30,6 +44,7 @@ export function ModelMicroSwitcher({
   value,
   onChange,
   className,
+  disablePortal = false,
 }: ModelMicroSwitcherProps) {
   const { models } = useModels();
   const [open, setOpen] = useState(false);
@@ -232,10 +247,17 @@ export function ModelMicroSwitcher({
       {/* Portal the popover so it escapes any ancestor stacking
        * context (reactflow nodes set `transform`, which creates a
        * new context and clips child popovers behind sibling nodes).
-       * SSR guard: only call createPortal in the browser. */}
-      {popover && typeof document !== "undefined"
-        ? createPortal(popover, document.body)
-        : null}
+       * SSR guard: only call createPortal in the browser. When
+       * `disablePortal` is set (e.g. inside a Radix Sheet / Dialog
+       * which would otherwise treat the portalled popover as an
+       * outside-click and close itself), we render the popover
+       * inline — position: fixed keeps it visually escaped from any
+       * ancestor overflow, and staying in the DOM tree keeps clicks
+       * inside the Dialog's interaction scope. */}
+      {popover &&
+        (disablePortal || typeof document === "undefined"
+          ? popover
+          : createPortal(popover, document.body))}
     </div>
   );
 }
