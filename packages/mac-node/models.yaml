@@ -146,16 +146,26 @@ ollama:
     # Qwen3-32B, but the MoE-A12B design keeps wall-clock close to a
     # 14B dense at full quality. Trained as an agentic generalist;
     # structured-output reliability is good under our streaming=off
-    # gate. Q4_K_M lands at ~62GB which fits with KV headroom on a
-    # 128GB M5 Max; Q5_K_M (~75GB) is also viable if we drop one of
-    # the 70B-class peers (Hermes-4) from the working set. Sharded
-    # GGUFs — same merge-gguf strategy as Hermes-4 / behemoth-x.
-    - name: "hf.co/unsloth/GLM-4.5-Air-GGUF:Q4_K_M"
+    # gate.
+    #
+    # Q4_K_M ~62GB which fits with KV headroom on 128GB unified
+    # memory. Sharded across multiple files on HF (over the 50GB
+    # single-file limit), so the direct `hf.co/...:tag` form 404s
+    # on `ollama pull manifest`. Use the merge-gguf strategy —
+    # download-models.py grabs the shards, runs llama-gguf-split
+    # --merge, then `ollama create glm-4.5-air:Q4_K_M`. Same path
+    # behemoth-x / qwen3-coder-opus already exercise.
+    - name: glm-4.5-air:Q4_K_M
       alias: glm-4.5-air
       description: "GLM-4.5 Air 106B-A12B MoE @ Q4_K_M (~62GB, 12B active) — top open-weight BFCL v3 tier (~76.7%). MoE keeps wall-clock close to a 14B dense at full quality. Agentic-generalist trained — strong tool calling under streaming=off. ChatML."
       tags: [chat, function-calling, moe, reasoning]
       category: serving
       target: [mac]
+      pull:
+        strategy: merge-gguf
+        hf_repo: "unsloth/GLM-4.5-Air-GGUF"
+        hf_pattern: "*Q4_K_M*.gguf"
+        template_from: chatml
 
     # ── Coding (Opus-distilled variants) ─────────────────────────
     # Two siblings to qwen3-coder above — same Qwen3-Coder-Next base,

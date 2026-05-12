@@ -110,19 +110,18 @@ model_list:
       pipeline_tag: text-generation
       param_count: 8190735360
       hf_repo: Qwen/Qwen3-8B
+      max_input_tokens: 40960
+      max_tokens: 40960
 
   - model_name: mac/glm-4.5-air
     litellm_params:
-      model: ollama/hf.co/unsloth/GLM-4.5-Air-GGUF:Q4_K_M
+      model: ollama/glm-4.5-air:Q4_K_M
       api_base: http://192.168.1.33:11434
     model_info:
       description: GLM-4.5 Air 106B-A12B MoE @ Q4_K_M (~62GB, 12B active) — top open-weight BFCL v3 tier (~76.7%). MoE keeps
         wall-clock close to a 14B dense at full quality. Agentic-generalist trained — strong tool calling under streaming=off.
         ChatML. - Mac M5 Max Metal
       supports_reasoning: true
-      license: mit
-      pipeline_tag: text-generation
-      hf_repo: unsloth/GLM-4.5-Air-GGUF
 
   - model_name: mac/qwen3-coder-opus
     litellm_params:
