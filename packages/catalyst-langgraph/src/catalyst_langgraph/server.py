@@ -13,6 +13,7 @@ or:
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -39,6 +40,7 @@ from . import __version__
 from .client import CatalystLiteLLMClient
 from .events import (
     AgentEvent,
+    Cancelled,
     ChatStreamRequest,
     ErrorEvent,
     Iteration,
@@ -52,6 +54,7 @@ from .agents import AGENTS, validate_overrides
 from .graph import build_graph
 from .persistence import EventStore, get_event_store, set_event_store
 from .tools import ALL_TOOLS
+from .tools.cancel import cancel_event, install_cancel_event
 from .tools.host import TOOL_HOST_API_KEY, TOOL_HOST_URL
 from .tools.research import caller_context, research_overrides
 
@@ -234,13 +237,21 @@ async def _stream_agent_events(
     runs become queryable / replayable. Wrapping at this layer keeps
     the producer purely declarative — adding a new event type means
     adding one yield in `_produce_agent_events`; tracing is automatic.
+
+    Cancellation: when the SSE consumer disconnects, uvicorn raises
+    `CancelledError` at our next `yield` (or `GeneratorExit` if our
+    `aclose()` is called). We translate that into a final `Cancelled`
+    event INSIDE the inner producer so it lands in the trace; here we
+    just have to make sure it gets flushed to the store before the
+    fast-path teardown kills the queue.
     """
     store = get_event_store()
     run_id: Optional[str] = None
     seq = 0
-    async for ev in _produce_agent_events(request=request):
-        # Stash the run_id from the first event so subsequent inserts
-        # share the same key. (RunStarted is always first by contract.)
+
+    def _persist(ev: AgentEvent) -> None:
+        """Mirror one event into the store. No-op when store disabled."""
+        nonlocal run_id, seq
         if run_id is None and ev.type == "run_started":
             run_id = getattr(ev, "run_id", None)
             if store is not None and run_id is not None:
@@ -268,6 +279,9 @@ async def _stream_agent_events(
             except Exception as exc:
                 log.warning("event_store insert failed (%s): %s", ev.type, exc)
         seq += 1
+
+    async for ev in _produce_agent_events(request=request):
+        _persist(ev)
         yield ev
 
 
@@ -357,6 +371,36 @@ async def _produce_agent_events(
         _summarise_caller_context(request.messages, request.system_prompt)
     )
 
+    # Explicit cancellation channel: sub-agents (research council
+    # members, critic, fusion) await / poll this Event to short-circuit
+    # cleanly when the user presses STOP. The implicit cascade via
+    # asyncio.CancelledError still works — this is BELT + suspenders.
+    # The event is set in the finally block so any straggler races
+    # resolve to their cancellation placeholder rather than blocking.
+    cancel_ev, cancel_token = install_cancel_event()
+
+    def _reset_request_contextvars() -> None:
+        """Restore all per-request ContextVars to their pre-request state.
+
+        Called from every exit path — normal completion, errors,
+        cancellation, GeneratorExit. Keeping this in one place is the
+        defence against ContextVar leakage between requests on the
+        same uvicorn worker (which was issue (b) in the cancel-bus
+        design doc).
+        """
+        try:
+            research_overrides.reset(research_overrides_token)
+        except (ValueError, LookupError):
+            pass
+        try:
+            caller_context.reset(caller_context_token)
+        except (ValueError, LookupError):
+            pass
+        try:
+            cancel_event.reset(cancel_token)
+        except (ValueError, LookupError):
+            pass
+
     try:
         app_graph = build_graph(
             model=request.model,
@@ -369,8 +413,7 @@ async def _produce_agent_events(
     except Exception as exc:  # bad model / config / wiring
         log.exception("graph build failed")
         yield ErrorEvent(message=f"graph build failed: {exc}")
-        research_overrides.reset(research_overrides_token)
-        caller_context.reset(caller_context_token)
+        _reset_request_contextvars()
         return
 
     state = {"messages": _coerce_messages(request.messages)}
@@ -496,16 +539,66 @@ async def _produce_agent_events(
                     duration_ms=duration_ms,
                     owner_tool_id=_current_owner_tool_id(),
                 )
+    except asyncio.CancelledError:
+        # SSE consumer disconnected (UI pressed STOP / closed the tab).
+        # 1) Set the cooperative cancel signal so any race_with_cancel()
+        #    in flight inside sub-agents resolves to its placeholder
+        #    instead of blocking.
+        # 2) Synthesise tool_call_end events for anything currently
+        #    in-flight so the trace has no orphan tool_call_start rows
+        #    (gap (d) in the design doc).
+        # 3) Yield a terminal `Cancelled` event so the UI knows the
+        #    server cooperated rather than the connection just dying.
+        # We DO NOT re-raise — re-raising would prevent the final yield
+        # from flowing through `_stream_agent_events` into the event
+        # store. Letting the generator return cleanly lets the wrapper
+        # call `_persist(Cancelled)` before its own task is reaped.
+        log.info("agent stream cancelled — propagating to sub-agents")
+        cancel_ev.set()
+        in_flight = list(outer_tool_stack)
+        for tcid in in_flight:
+            started = tool_starts.pop(tcid, ("", time.monotonic()))[1]
+            duration_ms = int((time.monotonic() - started) * 1000)
+            try:
+                yield ToolCallEnd(
+                    id=tcid,
+                    error="cancelled",
+                    duration_ms=duration_ms,
+                    owner_tool_id=None,
+                )
+            except (asyncio.CancelledError, GeneratorExit):
+                # Consumer is fully gone; the event still lands in the
+                # store via _persist() above the yield in the wrapper.
+                break
+        try:
+            yield Cancelled(
+                reason="client_abort",
+                propagated_to=in_flight or None,
+            )
+        except (asyncio.CancelledError, GeneratorExit):
+            pass
+        return
+    except GeneratorExit:
+        # The async generator was closed (aclose()) — e.g. the SSE
+        # response wrapper unwound before we finished. Same logic as
+        # CancelledError but we MUST NOT yield further (GeneratorExit
+        # is the contract for "no more sends"). Just clean up and
+        # re-raise per PEP 525.
+        cancel_ev.set()
+        _reset_request_contextvars()
+        raise
     except Exception as exc:
         log.exception("agent stream errored")
         yield ErrorEvent(message=str(exc))
         return
     finally:
-        # Always reset the ContextVars — leaving them set would leak
-        # the previous request's config / context into the next one
-        # running in this worker.
-        research_overrides.reset(research_overrides_token)
-        caller_context.reset(caller_context_token)
+        # Always reset ContextVars (research_overrides, caller_context,
+        # cancel_event) — leaving them set would leak the previous
+        # request's state into the next one running on the same worker.
+        # Also set cancel_ev defensively so any straggler awaits inside
+        # cancelled sub-tasks resolve to their placeholder.
+        cancel_ev.set()
+        _reset_request_contextvars()
 
     yield MessageDone(finish_reason=last_finish, usage=last_usage)
 

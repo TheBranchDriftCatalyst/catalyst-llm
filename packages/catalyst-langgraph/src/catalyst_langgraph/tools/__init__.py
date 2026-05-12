@@ -15,6 +15,13 @@ and register it in `ALL_TOOLS` below.
 
 from typing import Optional
 
+from .cancel import (
+    cancel_event,
+    get_cancel_event,
+    install_cancel_event,
+    is_cancelled,
+    race_with_cancel,
+)
 from .host import web_search
 from .research import research
 
@@ -36,4 +43,14 @@ def get_tools(names: Optional[list[str]] = None) -> list:
     return [ALL_TOOLS[n] for n in names if n in ALL_TOOLS]
 
 
-__all__ = ["ALL_TOOLS", "get_tools", "web_search", "research"]
+__all__ = [
+    "ALL_TOOLS",
+    "get_tools",
+    "web_search",
+    "research",
+    "cancel_event",
+    "get_cancel_event",
+    "install_cancel_event",
+    "is_cancelled",
+    "race_with_cancel",
+]

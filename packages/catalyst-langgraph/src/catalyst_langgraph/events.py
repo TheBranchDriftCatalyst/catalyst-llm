@@ -92,6 +92,40 @@ class ErrorEvent(BaseModel):
     message: str
 
 
+class Cancelled(BaseModel):
+    """The run was cancelled before message_done.
+
+    Emitted when the SSE generator's outer task is cancelled (UI
+    pressed STOP, client disconnected, etc.). Carries the reason as
+    free text and an optional list of sub-agent ids the signal was
+    propagated to — useful for the UI to acknowledge "the council
+    members heard it" rather than "we just dropped the connection".
+
+    This is a terminal event: nothing follows it on the wire. The UI
+    treats it like message_done with finish_reason="abort" but with
+    the extra signal that the cancel was COOPERATIVE (sub-agents
+    returned cleanly) rather than just-dropped-the-tcp-connection.
+    """
+
+    type: Literal["cancelled"] = "cancelled"
+    reason: str = Field(
+        default="client_abort",
+        description=(
+            "Why the run was cancelled. `client_abort` = the SSE "
+            "consumer disconnected (UI pressed STOP / closed the tab). "
+            "`timeout` reserved for future server-side caps."
+        ),
+    )
+    propagated_to: Optional[list[str]] = Field(
+        default=None,
+        description=(
+            "Best-effort list of in-flight tool_call_ids the cancel "
+            "was signalled to. Empty / None when no tool was running "
+            "when the cancel fired."
+        ),
+    )
+
+
 # Discriminated union — Pydantic uses the `type` field to pick the right
 # model when parsing on the UI side (TS will mirror this with a
 # string-tagged union). Keep this list ordered the same way the UI
@@ -105,6 +139,7 @@ AgentEvent = Union[
     Iteration,
     MessageDone,
     ErrorEvent,
+    Cancelled,
 ]
 
 
