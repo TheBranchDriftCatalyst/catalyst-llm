@@ -126,6 +126,37 @@ ollama:
       tags: [coding, moe, function-calling]
       category: serving
 
+    # Qwen3 8B — small, fast, the most-stable Ollama tool-caller in
+    # its size class. Docker's local-tool-calling eval gives it F1
+    # 0.933 with ~half the latency of the 14B variant; community
+    # consensus is "rarely hallucinates calls or drops parameters".
+    # Ideal council member when council_size > 1: small enough to
+    # run multiple instances in parallel on the M5 Max without
+    # serialising on the GPU, fast enough to keep loop wall-clock
+    # short. Keep at Ollama default Q4_K_M — Qwen3 dense models
+    # don't benefit much from Q8 at 8B and the speed win matters
+    # more here than the marginal quality bump.
+    - name: qwen3:8b
+      alias: qwen3-8b
+      description: "Qwen3 8B (general chat) @ Q4_K_M (default) — small, fast, most-stable Ollama tool-caller in its size class (F1 0.933 on Docker's local-tool-use eval; rarely hallucinates calls). Ideal council member when council_size ≥ 2 — sub-second per turn on M5 Max, leaves headroom for parallel members."
+      tags: [chat, function-calling]
+      category: serving
+
+    # GLM-4.5 Air — top open-weight BFCL tier (~76.7% v3) alongside
+    # Qwen3-32B, but the MoE-A12B design keeps wall-clock close to a
+    # 14B dense at full quality. Trained as an agentic generalist;
+    # structured-output reliability is good under our streaming=off
+    # gate. Q4_K_M lands at ~62GB which fits with KV headroom on a
+    # 128GB M5 Max; Q5_K_M (~75GB) is also viable if we drop one of
+    # the 70B-class peers (Hermes-4) from the working set. Sharded
+    # GGUFs — same merge-gguf strategy as Hermes-4 / behemoth-x.
+    - name: "hf.co/unsloth/GLM-4.5-Air-GGUF:Q4_K_M"
+      alias: glm-4.5-air
+      description: "GLM-4.5 Air 106B-A12B MoE @ Q4_K_M (~62GB, 12B active) — top open-weight BFCL v3 tier (~76.7%). MoE keeps wall-clock close to a 14B dense at full quality. Agentic-generalist trained — strong tool calling under streaming=off. ChatML."
+      tags: [chat, function-calling, moe, reasoning]
+      category: serving
+      target: [mac]
+
     # ── Coding (Opus-distilled variants) ─────────────────────────
     # Two siblings to qwen3-coder above — same Qwen3-Coder-Next base,
     # SFT'd on Opus-4.6 / Claude-4.5-Opus high-reasoning traces. They
