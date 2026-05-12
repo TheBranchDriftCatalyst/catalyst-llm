@@ -48,9 +48,9 @@ import type {
   AgentTopology,
   AgentTopologyNode,
 } from "../../agent/events.js";
-import { ModelMicroSwitcher } from "../ModelMicroSwitcher.js";
 import { useEngineStore } from "../../react/engineStore.js";
 import { cn } from "../utils.js";
+import { NodeInlineConfig } from "./NodeInlineConfig.js";
 
 export interface ReactFlowAgentTopologyProps {
   topology: AgentTopology;
@@ -64,24 +64,51 @@ export interface ReactFlowAgentTopologyProps {
   selectedNodeId?: string;
   /** Fires on node click (with node id) AND on pane click (with `undefined`). */
   onNodeSelect?: (nodeId: string | undefined) => void;
+  /** Called when a node's prompt-icon button is clicked. Lets the
+   * EngineView open the contextual Sheet scoped to that node. */
+  onOpenPromptSheet?: (nodeId: string) => void;
   className?: string;
 }
 
-// Per-type sizing fed into dagre so the layout respects each card's
-// actual footprint. Card components below use matching style widths.
-// Sizes are deliberately generous — embedded selectors + tool chip
-// rows need room to breathe; cramped cards force ellipsis on model
-// ids and make the popover positioning ugly.
-const NODE_SIZES: Record<AgentTopologyNode["type"], { w: number; h: number }> =
-  {
-    start: { w: 140, h: 44 },
-    end: { w: 140, h: 44 },
-    tools: { w: 220, h: 96 },
-    agent: { w: 280, h: 140 },
-  };
+// Sizing for the fixed-shape node types (start/end/tools). Agent nodes
+// size themselves from their schema field count — see
+// computeAgentNodeSize() below.
+const FIXED_NODE_SIZES: Record<"start" | "end" | "tools", { w: number; h: number }> = {
+  start: { w: 140, h: 44 },
+  end: { w: 140, h: 44 },
+  tools: { w: 220, h: 96 },
+};
+const AGENT_NODE_WIDTH = 300;
+const AGENT_HEADER_PX = 30;       // icon + nodeId row
+const AGENT_ROW_PX = 28;          // one schema field, inline control
+const AGENT_VERTICAL_PADDING = 24; // top + bottom card padding
+const AGENT_MIN_HEIGHT = 80;
+const AGENT_MAX_HEIGHT = 360;
 
-const RANK_SEP = 80;
-const NODE_SEP = 90;
+function computeAgentNodeSize(
+  schema: AgentConfigSchema | null,
+): { w: number; h: number } {
+  if (!schema?.properties) {
+    return { w: AGENT_NODE_WIDTH, h: AGENT_MIN_HEIGHT };
+  }
+  const fieldCount = Object.keys(schema.properties).length;
+  const h = Math.min(
+    Math.max(
+      AGENT_MIN_HEIGHT,
+      AGENT_HEADER_PX + fieldCount * AGENT_ROW_PX + AGENT_VERTICAL_PADDING,
+    ),
+    AGENT_MAX_HEIGHT,
+  );
+  return { w: AGENT_NODE_WIDTH, h };
+}
+
+function getNodeSize(node: AgentTopologyNode): { w: number; h: number } {
+  if (node.type === "agent") return computeAgentNodeSize(node.config_schema);
+  return FIXED_NODE_SIZES[node.type];
+}
+
+const RANK_SEP = 60;
+const NODE_SEP = 80;
 
 // Per-type icon + visual tone. Tones colour the card border + a faint
 // background tint; the existing dagre view used the same palette so
@@ -123,8 +150,13 @@ interface CommonNodeData extends Record<string, unknown> {
   schema: AgentConfigSchema | null;
   defaults: Record<string, unknown> | null;
   selectedNodeId: string | undefined;
+  /** Computed pixel size — also fed to dagre. Cards style themselves
+   * with these explicit width/height values to match. */
+  size: { w: number; h: number };
   /** Tools to render on `tools` nodes. Other node types ignore. */
   toolList: string[];
+  /** Called when the prompt-icon button on an agent node is clicked. */
+  onOpenPromptSheet?: (nodeId: string) => void;
 }
 
 function layoutWithDagre(
@@ -141,7 +173,7 @@ function layoutWithDagre(
   g.setDefaultEdgeLabel(() => ({}));
 
   for (const n of topology.nodes) {
-    const size = NODE_SIZES[n.type];
+    const size = getNodeSize(n);
     g.setNode(n.id, { width: size.w, height: size.h });
   }
   for (const e of topology.edges) {
@@ -152,7 +184,7 @@ function layoutWithDagre(
   const out: Record<string, { x: number; y: number }> = {};
   for (const n of topology.nodes) {
     const d = g.node(n.id) as { x: number; y: number };
-    const size = NODE_SIZES[n.type];
+    const size = getNodeSize(n);
     // dagre reports centre points; reactflow uses top-left corners.
     out[n.id] = { x: d.x - size.w / 2, y: d.y - size.h / 2 };
   }
@@ -243,81 +275,94 @@ function AgentNodeCard({ data }: NodeProps) {
   const Icon = visual.icon;
   const selected = d.selectedNodeId === d.nodeId;
 
-  // Live model + temp from engineStore, falling back to defaults
-  // advertised by the schema. The selector at the bottom of the
-  // (right) Config tab in T5 is the canonical edit surface; this
-  // inline switcher is a shortcut for the most-tweaked knob.
-  const liveModel = useEngineStore(
-    (s) => s.configs[d.agentId]?.[d.nodeId]?.model as string | undefined,
+  // Subscribe to the whole per-node override dict so any field edit
+  // re-renders this card (and the NodeInlineConfig inside it reads
+  // the same dict for both value-merge and override-key membership).
+  // EMPTY_OBJ keeps reference identity stable when nothing's set.
+  const nodeOverrides = useEngineStore(
+    (s) => s.configs[d.agentId]?.[d.nodeId],
   );
-  const liveTemp = useEngineStore(
-    (s) => s.configs[d.agentId]?.[d.nodeId]?.temperature as number | undefined,
-  );
-  const liveMaxTokens = useEngineStore(
-    (s) => s.configs[d.agentId]?.[d.nodeId]?.max_tokens as number | undefined,
-  );
+  const overrides = nodeOverrides ?? EMPTY_OBJ;
   const setField = useEngineStore((s) => s.setField);
 
-  const schemaProps = d.schema?.properties ?? {};
-  const hasModel = "model" in schemaProps;
-  const hasTemp = "temperature" in schemaProps;
-  const hasMaxTokens = "max_tokens" in schemaProps;
+  if (!d.schema) {
+    return (
+      <div
+        className={cn(
+          "flex flex-col gap-1 rounded-md border-2 p-2 shadow-sm transition-all",
+          visual.tone,
+          selected &&
+            "ring-2 ring-primary/60 ring-offset-1 ring-offset-background",
+        )}
+        style={{ width: d.size.w, height: d.size.h }}
+        title={`agent node: ${d.nodeId}`}
+      >
+        <Handle type="target" position={Position.Top} />
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span className="font-mono truncate">{d.nodeId}</span>
+        </div>
+        <span className="text-[10px] text-muted-foreground">
+          no schema advertised
+        </span>
+        <Handle type="source" position={Position.Bottom} />
+      </div>
+    );
+  }
 
-  const effectiveModel =
-    liveModel ?? ((d.defaults?.model as string | undefined) || "");
-  const effectiveTemp =
-    liveTemp ?? (d.defaults?.temperature as number | undefined);
-  const effectiveMaxTokens =
-    liveMaxTokens ?? (d.defaults?.max_tokens as number | undefined);
+  // Materialise effective values: explicit override wins, else
+  // schema default. NodeInlineConfig wants both the merged values
+  // and the set of override keys (for the inline reset affordance).
+  const schemaProps = d.schema.properties ?? {};
+  const defaults = d.defaults ?? {};
+  const overrideKeys = new Set(Object.keys(overrides));
+  const values: Record<string, unknown> = {};
+  for (const fieldName of Object.keys(schemaProps)) {
+    values[fieldName] = overrideKeys.has(fieldName)
+      ? overrides[fieldName]
+      : defaults[fieldName];
+  }
 
   return (
     <div
       className={cn(
-        "flex h-[140px] w-[280px] flex-col gap-2 rounded-md border-2 p-3 shadow-sm transition-all",
+        "flex flex-col gap-1.5 rounded-md border-2 p-2 shadow-sm transition-all",
         visual.tone,
-        selected && "ring-2 ring-primary/60 ring-offset-1 ring-offset-background",
+        selected &&
+          "ring-2 ring-primary/60 ring-offset-1 ring-offset-background",
       )}
+      style={{ width: d.size.w, height: d.size.h }}
       title={`agent node: ${d.nodeId}`}
     >
       <Handle type="target" position={Position.Top} />
       <div className="flex items-center gap-2 text-sm font-medium">
         <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
         <span className="font-mono truncate">{d.nodeId}</span>
+        {overrideKeys.size > 0 && (
+          <span className="ml-auto rounded-full bg-primary/20 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-primary">
+            {overrideKeys.size}
+          </span>
+        )}
       </div>
-
-      {/* Model switcher — the .nodrag/.nopan/.nowheel hooks stop
-       * reactflow's pan handler from eating clicks on the trigger
-       * button. The popover itself is portalled to document.body
-       * (ModelMicroSwitcher uses createPortal) so it escapes
-       * reactflow's per-node stacking context. */}
-      {hasModel && (
-        <div className="nodrag nopan nowheel">
-          <ModelMicroSwitcher
-            value={effectiveModel}
-            onChange={(v) => setField(d.agentId, d.nodeId, "model", v)}
-            className="w-full"
-          />
-        </div>
-      )}
-
-      {(hasTemp || hasMaxTokens) && (
-        <div className="flex flex-wrap items-center gap-1 text-[10px]">
-          {hasTemp && (
-            <span className="rounded-sm border border-border/60 bg-card/60 px-1.5 py-0.5 font-mono">
-              t: {effectiveTemp?.toFixed(2) ?? "—"}
-            </span>
-          )}
-          {hasMaxTokens && (
-            <span className="rounded-sm border border-border/60 bg-card/60 px-1.5 py-0.5 font-mono">
-              max: {effectiveMaxTokens ?? "—"}
-            </span>
-          )}
-        </div>
-      )}
+      <NodeInlineConfig
+        schema={d.schema}
+        values={values}
+        overrideKeys={overrideKeys}
+        onChange={(field, value) =>
+          setField(d.agentId, d.nodeId, field, value)
+        }
+        onOpenPromptSheet={() => d.onOpenPromptSheet?.(d.nodeId)}
+        className="flex-1 overflow-y-auto"
+      />
       <Handle type="source" position={Position.Bottom} />
     </div>
   );
 }
+
+// Stable empty-object sentinel for the zustand selector. Returning a
+// fresh `{}` from a selector would trigger React's getSnapshot warning
+// and an infinite render loop.
+const EMPTY_OBJ: Record<string, unknown> = Object.freeze({});
 
 const NODE_TYPES = {
   start: StartEndChip,
@@ -453,6 +498,7 @@ export function ReactFlowAgentTopology({
   agentTools = [],
   selectedNodeId,
   onNodeSelect,
+  onOpenPromptSheet,
   className,
 }: ReactFlowAgentTopologyProps) {
   const positions = useMemo(() => layoutWithDagre(topology), [topology]);
@@ -470,12 +516,21 @@ export function ReactFlowAgentTopology({
           schema: n.config_schema,
           defaults: n.config_defaults,
           selectedNodeId,
+          size: getNodeSize(n),
           toolList: agentTools,
+          onOpenPromptSheet,
         } satisfies CommonNodeData,
         draggable: false,
         selectable: true,
       })),
-    [topology.nodes, positions, agentId, selectedNodeId, agentTools],
+    [
+      topology.nodes,
+      positions,
+      agentId,
+      selectedNodeId,
+      agentTools,
+      onOpenPromptSheet,
+    ],
   );
 
   const edges: Edge[] = useMemo(

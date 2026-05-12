@@ -140,7 +140,16 @@ export function EngineView({ className }: EngineViewProps) {
        * page-level scrolling. */}
       <main className="flex flex-1 flex-col overflow-hidden">
         {selected ? (
-          <AgentDetail agent={selected} />
+          <AgentDetail
+            agent={selected}
+            onOpenPromptSheet={(nodeId) =>
+              setSheetContext({
+                kind: "prompt",
+                agentId: selected.id,
+                nodeId,
+              })
+            }
+          />
         ) : (
           <div className="flex h-full items-center justify-center text-muted-foreground">
             Select an agent on the left to inspect it.
@@ -227,7 +236,13 @@ function AgentCard({
   );
 }
 
-function AgentDetail({ agent }: { agent: AgentDescriptor }) {
+function AgentDetail({
+  agent,
+  onOpenPromptSheet,
+}: {
+  agent: AgentDescriptor;
+  onOpenPromptSheet: (nodeId: string) => void;
+}) {
   const agentCfg = useEngineStore((s) => s.configs[agent.id]);
   const resetAgent = useEngineStore((s) => s.resetAgent);
   const editedCount = countAgentOverrides(agentCfg);
@@ -294,6 +309,7 @@ function AgentDetail({ agent }: { agent: AgentDescriptor }) {
           agentTools={agent.tools}
           selectedNodeId={selectedNodeId}
           onNodeSelect={setSelectedNodeId}
+          onOpenPromptSheet={onOpenPromptSheet}
           // Override the rounded card framing — at viewport scale
           // the inner border becomes redundant with the header
           // divider above and the page chrome around it.
