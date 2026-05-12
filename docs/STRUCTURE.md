@@ -25,7 +25,6 @@ tilt/            Shared Tilt helpers (common.tiltfile)
 Tiltfile         Dev rail: k3d + native Ollama + chat UIs
 tilt-ops/        Prod ops rail (read-only port-forwards + Argo CD buttons)
 taskfiles/       Shared Taskfile fragments (test-contract.yml)
-tests/snapshots/ Committed kustomize renders — regression gate
 ```
 
 ## Conventions
@@ -34,9 +33,9 @@ tests/snapshots/ Committed kustomize renders — regression gate
   `taskfiles/test-contract.yml` (with `flatten: true`) to inherit `default`
   + `test` alias. Each package keeps its own `test:lint`/`unit`/`smoke`/
   `full` because the actual toolchains diverge (uv, vitest, bash).
-- **k8s regression gate** — `task test:snapshots` diffs current
-  `kubectl kustomize` output against `tests/snapshots/k8s-{local,talos00}.yaml`.
-  Refresh via `task snapshots:render` when manifests intentionally change.
+- **Tiltfile parse gate** — `task parse` validates both `Tiltfile` (dev) and
+  `tilt-ops/Tiltfile` (prod) using `tilt alpha tiltfile-result`. Run before
+  pushing Tilt changes.
 - **Tilt rails** — root `Tiltfile` (dev) and `tilt-ops/Tiltfile` (prod ops)
   are intentionally separate. Do not unify them — they encode different
   control intents (auto-rebuild vs manual triggers).
