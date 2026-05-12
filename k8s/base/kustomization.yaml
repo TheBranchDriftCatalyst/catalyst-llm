@@ -25,7 +25,9 @@ resources:
 
   # NOT in base — opt-in per env:
   #   - litellm/  → talos00 only (dev uses the deployed proxy)
-  #   - openclaw/ → talos00 only (composio key not provisioned yet)
+  #   - claw-runtime/ → talos00 only (composio key not provisioned yet);
+  #     directory holds the deployed agent runtime (k8s service), distinct
+  #     from packages/openclaw/ which is the local knowledge vault
   #   - ollama/   → disabled across envs (external inference)
   #   - poisonarr/ → has its own namespace
 
