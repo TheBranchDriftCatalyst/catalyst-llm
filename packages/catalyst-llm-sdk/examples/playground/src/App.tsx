@@ -5,6 +5,7 @@ import {
   Columns3,
   Wand2,
   Database,
+  Cpu,
 } from "lucide-react";
 import {
   CatalystAgentClient,
@@ -13,6 +14,7 @@ import {
   ChatTabs,
   CompareView,
   ConnectionStatus,
+  EngineView,
   LLMProvider,
   ModelMicroSwitcher,
   PromptEditor,
@@ -54,13 +56,14 @@ const agentClient = new CatalystAgentClient({ baseUrl: agentBaseUrl });
 // tool-host). The available tool catalog is fetched at runtime via
 // `useAvailableTools()` (→ /api/tools); nothing to construct here.
 
-type Page = "chat" | "compare" | "prompts" | "stats";
+type Page = "chat" | "compare" | "prompts" | "engine" | "stats";
 
 const PATH_TO_PAGE: Record<string, Page> = {
   "/": "chat",
   "/chat": "chat",
   "/compare": "compare",
   "/prompts": "prompts",
+  "/engine": "engine",
   "/stats": "stats",
 };
 
@@ -75,6 +78,7 @@ function pageFromPath(path: string): Page {
 function pathFromPage(page: Page): string {
   if (page === "compare") return "/compare";
   if (page === "prompts") return "/prompts";
+  if (page === "engine") return "/engine";
   if (page === "stats") return "/stats";
   return "/chat";
 }
@@ -152,6 +156,12 @@ function Header({ page, setPage }: { page: Page; setPage: (p: Page) => void }) {
             onClick={() => setPage("prompts")}
             icon={Wand2}
             label="Prompts"
+          />
+          <PageTab
+            active={page === "engine"}
+            onClick={() => setPage("engine")}
+            icon={Cpu}
+            label="Engine"
           />
           {/* /stats is dev-only — prod builds drop the tab entirely
               along with the entire DuckDB-WASM payload. */}
@@ -307,6 +317,11 @@ function App() {
         {page === "prompts" && (
           <main id="main-content" className="flex-1 overflow-hidden">
             <PromptEditor />
+          </main>
+        )}
+        {page === "engine" && (
+          <main id="main-content" className="flex-1 overflow-hidden">
+            <EngineView />
           </main>
         )}
         {page === "stats" && import.meta.env.DEV && StatsView && (

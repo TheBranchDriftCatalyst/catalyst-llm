@@ -1,3 +1,12 @@
+export { EngineView, type EngineViewProps } from "./engine/EngineView.js";
+export {
+  AgentTopologyView,
+  type AgentTopologyProps,
+} from "./engine/AgentTopology.js";
+export {
+  AgentConfigForm,
+  type AgentConfigFormProps,
+} from "./engine/AgentConfigForm.js";
 export { ChatMessage, type ChatMessageProps } from "./ChatMessage.js";
 export { ToolCallCard, type ToolCallCardProps } from "./ToolCallCard.js";
 export { RenderedContent, type RenderedContentProps } from "./RenderedContent.js";

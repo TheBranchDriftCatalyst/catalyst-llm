@@ -539,8 +539,21 @@ class ListAgentsResponse(BaseModel):
 )
 async def list_agents() -> ListAgentsResponse:
     """Return the Agents registered with the engine."""
+    # Stable display order: `main` (the parent / top-level chat
+    # agent) first, then everything else in insertion order. Without
+    # this, Python's dict-iteration order leaks the module import
+    # sequence into the UI (graph.py's `from .tools import get_tools`
+    # triggers research's registration before main's), which surprises
+    # operators who expect to find the top-level agent on top.
+    preferred: list[str] = ["main"]
+    seen: set[str] = set()
+    ordered_ids = [aid for aid in preferred if aid in AGENTS]
+    seen.update(ordered_ids)
+    ordered_ids.extend(aid for aid in AGENTS if aid not in seen)
+
     out: list[AgentDescriptorOut] = []
-    for desc in AGENTS.values():
+    for aid in ordered_ids:
+        desc = AGENTS[aid]
         out.append(
             AgentDescriptorOut(
                 id=desc.id,
