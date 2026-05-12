@@ -967,6 +967,78 @@ async def list_runs(limit: int = 100) -> ListRunsResponse:
     )
 
 
+# ───────────────────────────────────────────────────────────────────────
+# Runs by node — powers the Engine page's right-side Sheet: clicking the
+# runs icon on a node card calls this to surface the recent runs that
+# touched that node, with a light terminal status indicator.
+#
+# Declared BEFORE /api/runs/{run_id} so FastAPI's path-match doesn't
+# treat "by-node" as a run_id value. The two endpoints share the
+# `/api/runs/` prefix; static segments must beat parameterised ones in
+# declaration order.
+# ───────────────────────────────────────────────────────────────────────
+
+
+class RunByNodeOut(BaseModel):
+    """One row in the /api/runs/by-node response."""
+
+    run_id: str
+    last_ts: float = Field(
+        description="epoch seconds of the most recent event on this node",
+    )
+    event_count: int = Field(
+        description="how many events for this run were attributed to the node",
+    )
+    had_error: bool = Field(
+        description="true when the run emitted at least one `error` event",
+    )
+    completed: bool = Field(
+        description="true when the run emitted a `message_done` (terminal)",
+    )
+
+
+class ListRunsByNodeResponse(BaseModel):
+    runs: list[RunByNodeOut]
+
+
+@app.get(
+    "/api/runs/by-node",
+    tags=["observability"],
+    response_model=ListRunsByNodeResponse,
+    summary="List recent runs that touched a given node",
+    description=(
+        "Filters the event trace by per-event `node` attribution (`agent`, "
+        "`tools`, a tool name like `web_search`, …) and groups into one "
+        "row per run_id. Newest first. Returns `runs=[]` when the event "
+        "store is disabled."
+    ),
+)
+async def list_runs_by_node(
+    node: str,
+    agent_id: Optional[str] = None,
+    limit: int = 20,
+) -> ListRunsByNodeResponse:
+    # ``agent_id`` is informational today — the events schema has no
+    # agent_id column, so we filter on ``node`` alone. The UI passes it
+    # so we can add per-agent scoping later without changing the wire.
+    if limit < 1 or limit > 200:
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=422,
+            detail="limit must be between 1 and 200",
+        )
+
+    store = get_event_store()
+    if store is None:
+        return ListRunsByNodeResponse(runs=[])
+    rows = store.runs_by_node(node=node, limit=limit)
+    # agent_id retained on the signature for forward-compat; not used
+    # for filtering today.
+    _ = agent_id
+    return ListRunsByNodeResponse(runs=[RunByNodeOut(**r) for r in rows])
+
+
 @app.get(
     "/api/runs/{run_id}",
     tags=["observability"],

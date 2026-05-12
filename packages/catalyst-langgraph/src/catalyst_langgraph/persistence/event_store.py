@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_run ON events(run_id);
 CREATE INDEX IF NOT EXISTS idx_events_kind ON events(kind);
+-- Supports /api/runs/by-node lookups: WHERE node = ? GROUP BY run_id.
+CREATE INDEX IF NOT EXISTS idx_events_node ON events(node);
 
 CREATE TABLE IF NOT EXISTS run_configs (
     run_id           VARCHAR PRIMARY KEY,
@@ -245,6 +247,54 @@ class EventStore:
             return [dict(zip(cols, row)) for row in rows]
         except Exception as exc:
             log.warning("EventStore.runs() failed: %s", exc)
+            return []
+
+    def runs_by_node(self, node: str, limit: int = 20) -> list[dict]:
+        """Recent runs that produced an event attributed to ``node``.
+
+        Used by the Engine page's right-side Sheet: when the operator
+        clicks the runs icon on a node card, the UI calls this to list
+        the last few runs that touched that node along with light
+        terminal status (completed / had_error) and an event count.
+
+        We filter on the ``node`` column (per-event attribution set by
+        ``_node_for``) rather than ``agent_id`` because the events
+        schema has no agent_id — every event in a run already belongs
+        to exactly one parent agent. If per-agent scoping is wanted
+        later, that's a follow-up that joins ``run_configs`` or adds an
+        agent column to ``events``.
+        """
+        if not self._enabled or self._con is None:
+            return []
+        try:
+            sql = """
+            SELECT run_id,
+                   MAX(ts)                                            AS last_ts,
+                   COUNT(*)                                           AS event_count,
+                   MAX(CASE WHEN kind = 'error' THEN 1 ELSE 0 END)    AS had_error,
+                   MAX(CASE WHEN kind = 'message_done' THEN 1 ELSE 0 END)
+                                                                      AS completed
+            FROM events
+            WHERE node = ?
+            GROUP BY run_id
+            ORDER BY last_ts DESC
+            LIMIT ?
+            """
+            with self._write_lock:
+                self._con.execute(sql, [node, int(limit)])
+                rows = self._con.fetchall()
+                cols = [d[0] for d in self._con.description]
+            out: list[dict] = []
+            for row in rows:
+                d = dict(zip(cols, row))
+                # DuckDB returns the MAX(CASE ...) aggregates as ints;
+                # cast to bool here so callers don't have to.
+                d["had_error"] = bool(d.get("had_error"))
+                d["completed"] = bool(d.get("completed"))
+                out.append(d)
+            return out
+        except Exception as exc:
+            log.warning("EventStore.runs_by_node(%s) failed: %s", node, exc)
             return []
 
     def events_for(self, run_id: str) -> list[dict]:

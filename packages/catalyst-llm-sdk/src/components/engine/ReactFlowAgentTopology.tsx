@@ -42,7 +42,7 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Activity, CircleDot, Flag, Users, Wrench } from "lucide-react";
+import { Activity, CircleDot, Flag, History, Users, Wrench } from "lucide-react";
 import type {
   AgentConfigSchema,
   AgentTopology,
@@ -68,6 +68,10 @@ export interface ReactFlowAgentTopologyProps {
   /** Called when a node's prompt-icon button is clicked. Lets the
    * EngineView open the contextual Sheet scoped to that node. */
   onOpenPromptSheet?: (nodeId: string) => void;
+  /** Called when a node's runs-icon button is clicked. Symmetric with
+   * `onOpenPromptSheet` — the EngineView flips its sheetContext to
+   * `{ kind: "runs", agentId, nodeId }` and renders NodeRunsList. */
+  onOpenRunsSheet?: (nodeId: string) => void;
   className?: string;
 }
 
@@ -197,6 +201,8 @@ interface CommonNodeData extends Record<string, unknown> {
    * `council_size` → N small avatar circles). Visual only — the
    * stamps are NOT separately configurable nodes. */
   instanceCountField?: string | null;
+  /** Called when the runs-icon button on an agent / tools node is clicked. */
+  onOpenRunsSheet?: (nodeId: string) => void;
 }
 
 function layoutWithDagre(
@@ -282,6 +288,10 @@ function ToolsNodeCard({ data }: NodeProps) {
       <div className="flex items-center gap-1.5 text-sm font-medium">
         <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
         <span className="font-mono truncate">{d.nodeId}</span>
+        <RunsIconButton
+          onClick={() => d.onOpenRunsSheet?.(d.nodeId)}
+          className="ml-auto"
+        />
       </div>
       {chips.length > 0 ? (
         <div className="flex flex-wrap items-center gap-1 overflow-hidden text-[10px]">
@@ -306,6 +316,44 @@ function ToolsNodeCard({ data }: NodeProps) {
       )}
       <Handle type="source" position={Position.Bottom} />
     </div>
+  );
+}
+
+/**
+ * Tiny ghost-style icon button that opens the per-node runs Sheet
+ * (NodeRunsList) when clicked. Shared by AgentNodeCard and
+ * ToolsNodeCard so both tap into the same trigger affordance.
+ *
+ * Uses raw <button> rather than the catalyst-ui <Button> because the
+ * icon-only sizing inside a 28px-tall card row needs tighter padding
+ * than <Button size="sm"> exposes. The `nodrag` class keeps reactflow
+ * from treating a click as a node-drag start (the parent card has
+ * `draggable: false` but the handler still pre-empts the event).
+ */
+function RunsIconButton({
+  onClick,
+  className,
+}: {
+  onClick: () => void;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        // Stop the click from bubbling to the node-click handler that
+        // toggles selection — the runs sheet is a distinct affordance.
+        e.stopPropagation();
+        onClick();
+      }}
+      title="Recent runs on this node"
+      className={cn(
+        "nodrag flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent/40 hover:text-foreground",
+        className,
+      )}
+    >
+      <History className="h-3 w-3" aria-hidden="true" />
+    </button>
   );
 }
 
@@ -341,6 +389,10 @@ function AgentNodeCard({ data }: NodeProps) {
         <div className="flex items-center gap-2 text-sm font-medium">
           <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
           <span className="font-mono truncate">{d.nodeId}</span>
+          <RunsIconButton
+            onClick={() => d.onOpenRunsSheet?.(d.nodeId)}
+            className="ml-auto"
+          />
         </div>
         <span className="text-[10px] text-muted-foreground">
           no schema advertised
@@ -399,6 +451,13 @@ function AgentNodeCard({ data }: NodeProps) {
             {overrideKeys.size}
           </span>
         )}
+        <RunsIconButton
+          onClick={() => d.onOpenRunsSheet?.(d.nodeId)}
+          // When the override badge is absent, push the button to the
+          // right edge of the header. When it's present, the badge
+          // already takes `ml-auto` so the button sits flush to it.
+          className={overrideKeys.size > 0 ? "" : "ml-auto"}
+        />
       </div>
       {instanceField && instanceCount > 0 && (
         <div
@@ -613,6 +672,7 @@ export function ReactFlowAgentTopology({
   selectedNodeId,
   onNodeSelect,
   onOpenPromptSheet,
+  onOpenRunsSheet,
   className,
 }: ReactFlowAgentTopologyProps) {
   const positions = useMemo(() => layoutWithDagre(topology), [topology]);
@@ -727,6 +787,7 @@ export function ReactFlowAgentTopology({
           size: getNodeSize(n),
           toolList: agentTools,
           onOpenPromptSheet,
+          onOpenRunsSheet,
           instanceCountField: n.instance_count_field ?? null,
         } satisfies CommonNodeData,
         draggable: false,
@@ -749,6 +810,7 @@ export function ReactFlowAgentTopology({
     selectedNodeId,
     agentTools,
     onOpenPromptSheet,
+    onOpenRunsSheet,
     groupedLayout,
   ]);
 
