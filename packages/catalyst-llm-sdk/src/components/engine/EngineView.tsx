@@ -38,6 +38,7 @@ import { cn } from "../utils.js";
 import { PromptExplorerSheet } from "../PromptExplorerSheet.js";
 import { NodeRunsList } from "./NodeRunsList.js";
 import { ReactFlowAgentTopology } from "./ReactFlowAgentTopology.js";
+import { TestRunSheet } from "./TestRunSheet.js";
 
 function countAgentOverrides(
   agentCfg: Record<string, Record<string, unknown>> | undefined,
@@ -60,6 +61,7 @@ function countAgentOverrides(
 export type SheetContext =
   | { kind: "prompt"; agentId: string; nodeId: string }
   | { kind: "runs"; agentId: string; nodeId: string }
+  | { kind: "test-run"; agentId: string }
   | null;
 
 export interface EngineViewProps {
@@ -158,6 +160,9 @@ export function EngineView({ className }: EngineViewProps) {
                 nodeId,
               })
             }
+            onStartTestRun={() =>
+              setSheetContext({ kind: "test-run", agentId: selected.id })
+            }
           />
         ) : (
           <div className="flex h-full items-center justify-center text-muted-foreground">
@@ -188,14 +193,18 @@ export function EngineView({ className }: EngineViewProps) {
             <SheetTitle>
               {sheetContext?.kind === "prompt"
                 ? `Prompts for ${sheetContext.agentId}.${sheetContext.nodeId}`
-                : "Runs"}
+                : sheetContext?.kind === "test-run"
+                  ? `Test run · ${sheetContext.agentId}`
+                  : "Runs"}
             </SheetTitle>
             <SheetDescription>
               {sheetContext?.kind === "prompt"
                 ? "Bind a saved prompt, set an inline override, or edit the bound preset."
-                : sheetContext
-                  ? `${sheetContext.agentId}.${sheetContext.nodeId}`
-                  : ""}
+                : sheetContext?.kind === "test-run"
+                  ? "Dispatch a one-off chat request through this Agent's LangGraph flow."
+                  : sheetContext
+                    ? `${sheetContext.agentId}.${sheetContext.nodeId}`
+                    : ""}
             </SheetDescription>
           </SheetHeader>
           <div className="mt-4 flex min-h-0 flex-1 flex-col">
@@ -205,6 +214,9 @@ export function EngineView({ className }: EngineViewProps) {
                 nodeId={sheetContext.nodeId}
                 onClose={() => setSheetContext(null)}
               />
+            )}
+            {sheetContext?.kind === "test-run" && selected && (
+              <TestRunSheet agent={selected} />
             )}
             {sheetContext?.kind === "runs" && (
               <NodeRunsList
@@ -273,10 +285,12 @@ function AgentDetail({
   agent,
   onOpenPromptSheet,
   onOpenRunsSheet,
+  onStartTestRun,
 }: {
   agent: AgentDescriptor;
   onOpenPromptSheet: (nodeId: string) => void;
   onOpenRunsSheet: (nodeId: string) => void;
+  onStartTestRun: () => void;
 }) {
   const agentCfg = useEngineStore((s) => s.configs[agent.id]);
   const resetAgent = useEngineStore((s) => s.resetAgent);
@@ -346,6 +360,7 @@ function AgentDetail({
           onNodeSelect={setSelectedNodeId}
           onOpenPromptSheet={onOpenPromptSheet}
           onOpenRunsSheet={onOpenRunsSheet}
+          onStartTestRun={onStartTestRun}
           // Override the rounded card framing — at viewport scale
           // the inner border becomes redundant with the header
           // divider above and the page chrome around it.

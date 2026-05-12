@@ -72,6 +72,11 @@ export interface ReactFlowAgentTopologyProps {
    * `onOpenPromptSheet` — the EngineView flips its sheetContext to
    * `{ kind: "runs", agentId, nodeId }` and renders NodeRunsList. */
   onOpenRunsSheet?: (nodeId: string) => void;
+  /** Called when the __start__ chip is clicked. EngineView flips
+   * sheetContext to `{ kind: "test-run", agentId }` and renders the
+   * TestRunSheet so the operator can dispatch a one-shot chat request
+   * through this Agent's flow without leaving the Engine tab. */
+  onStartTestRun?: () => void;
   className?: string;
 }
 
@@ -203,6 +208,9 @@ interface CommonNodeData extends Record<string, unknown> {
   instanceCountField?: string | null;
   /** Called when the runs-icon button on an agent / tools node is clicked. */
   onOpenRunsSheet?: (nodeId: string) => void;
+  /** Called when the __start__ chip is clicked. Only set on the
+   * start chip; other node types ignore. */
+  onStartTestRun?: () => void;
 }
 
 function layoutWithDagre(
@@ -244,22 +252,45 @@ function StartEndChip({ data }: NodeProps) {
   const visual = NODE_VISUAL[d.type];
   const Icon = visual.icon;
   const selected = d.selectedNodeId === d.nodeId;
-  return (
-    <div
-      className={cn(
-        "flex h-[44px] w-[140px] items-center gap-2 rounded-full border-2 px-4 text-sm font-mono shadow-sm transition-all",
-        visual.tone,
-        selected && "ring-2 ring-primary/60 ring-offset-1 ring-offset-background",
-      )}
-      title={`${visual.label}: ${d.nodeId}`}
-    >
-      {/* Terminals only need one handle each. Reactflow renders nothing
-       * visual at the handle position by default; they're just edge
-       * anchors. */}
+  const runnable = d.type === "start" && typeof d.onStartTestRun === "function";
+  const className = cn(
+    "flex h-[44px] w-[140px] items-center gap-2 rounded-full border-2 px-4 text-sm font-mono shadow-sm transition-all",
+    visual.tone,
+    selected && "ring-2 ring-primary/60 ring-offset-1 ring-offset-background",
+    runnable && "cursor-pointer hover:ring-2 hover:ring-primary/40",
+  );
+  const handles = (
+    <>
       {d.type !== "start" && <Handle type="target" position={Position.Top} />}
+      {d.type !== "end" && <Handle type="source" position={Position.Bottom} />}
+    </>
+  );
+  // Make the start chip a real button when a test-run dispatcher is
+  // wired up — clicking it opens the TestRunSheet for this agent. The
+  // .nodrag/.nopan guard stops reactflow from interpreting the click
+  // as the start of a canvas drag.
+  if (runnable) {
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          d.onStartTestRun?.();
+        }}
+        className={cn(className, "nodrag")}
+        title={`start: ${d.nodeId} — click to dispatch a test run`}
+      >
+        {handles}
+        <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+        <span className="truncate">{d.nodeId}</span>
+      </button>
+    );
+  }
+  return (
+    <div className={className} title={`${visual.label}: ${d.nodeId}`}>
+      {handles}
       <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
       <span className="truncate">{d.nodeId}</span>
-      {d.type !== "end" && <Handle type="source" position={Position.Bottom} />}
     </div>
   );
 }
@@ -673,6 +704,7 @@ export function ReactFlowAgentTopology({
   onNodeSelect,
   onOpenPromptSheet,
   onOpenRunsSheet,
+  onStartTestRun,
   className,
 }: ReactFlowAgentTopologyProps) {
   const positions = useMemo(() => layoutWithDagre(topology), [topology]);
@@ -788,6 +820,11 @@ export function ReactFlowAgentTopology({
           toolList: agentTools,
           onOpenPromptSheet,
           onOpenRunsSheet,
+          // Only the __start__ chip receives the dispatcher — wiring
+          // it on every node would let any chip click trigger a run,
+          // which is wrong. The StartEndChip component double-checks
+          // type === "start" before rendering the runnable variant.
+          onStartTestRun: n.type === "start" ? onStartTestRun : undefined,
           instanceCountField: n.instance_count_field ?? null,
         } satisfies CommonNodeData,
         draggable: false,
@@ -811,6 +848,7 @@ export function ReactFlowAgentTopology({
     agentTools,
     onOpenPromptSheet,
     onOpenRunsSheet,
+    onStartTestRun,
     groupedLayout,
   ]);
 

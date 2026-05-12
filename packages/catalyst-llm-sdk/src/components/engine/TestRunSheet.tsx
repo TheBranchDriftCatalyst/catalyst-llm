@@ -1,0 +1,411 @@
+/**
+ * TestRunSheet — dispatch a one-off chat request through an Agent
+ * directly from the Engine tab, without leaving the topology view.
+ *
+ * Triggered by clicking the __start__ chip on an Agent's topology
+ * (today only `main` — sub-agents like `research` reach the runtime
+ * via the `research` tool dispatched by main, so a standalone
+ * test-run only makes sense from the parent entry point). The sheet
+ * collects a one-shot user prompt + a Run button; on submit, it
+ * streams the request via `agentClient.streamAgent` (same wire
+ * shape chatStore uses) and surfaces the events as they arrive.
+ *
+ * Why a separate dispatch path (not chatStore.sendMessage):
+ *   - chatStore is bound to a chat record (history, persisted
+ *     messages, model selection from the chat panel). A test run is
+ *     transient — it shouldn't pollute chat history or get
+ *     persisted. We use the same `agentClient` underneath, but
+ *     manage the events / view locally to the sheet.
+ *
+ * Phase A (this commit): dispatch + linear event log + final answer.
+ * Phase B (TODO, llm-0mp): pipe the event stream's `node` attribution
+ *   into ReactFlowAgentTopology.selectedNodeId so the active node
+ *   pulses during the run.
+ * Phase C (TODO, llm-0mp): clicking a node during/after a run opens
+ *   a Sheet branch scoped to that node's events in this specific run.
+ */
+import { useCallback, useMemo, useRef, useState } from "react";
+import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
+import { Textarea } from "@thebranchdriftcatalyst/catalyst-ui/ui/textarea";
+import { Play, Square, Wrench } from "lucide-react";
+import { useLLMContext } from "../../react/LLMProvider.js";
+import { useEngineStore } from "../../react/engineStore.js";
+import { usePromptStore } from "../../react/promptStore.js";
+import type {
+  AgentDescriptor,
+  AgentEvent,
+} from "../../agent/events.js";
+import { cn } from "../utils.js";
+
+export interface TestRunSheetProps {
+  agent: AgentDescriptor;
+  className?: string;
+}
+
+interface DisplayState {
+  status: "idle" | "streaming" | "done" | "error" | "cancelled";
+  runId?: string;
+  model?: string;
+  content: string;
+  toolCalls: Array<{
+    id: string;
+    name: string;
+    args: Record<string, unknown>;
+    result?: unknown;
+    error?: string;
+    durationMs?: number;
+  }>;
+  events: number;
+  error?: string;
+  finishReason?: string;
+  usage?: Record<string, unknown>;
+}
+
+const EMPTY_DISPLAY: DisplayState = {
+  status: "idle",
+  content: "",
+  toolCalls: [],
+  events: 0,
+};
+
+/**
+ * Walk the engineStore overrides + the prompt store to build a
+ * prompt_overrides map for any system_prompt_ref bindings. Mirrors
+ * the logic in chatStore.sendMessage but is local so the test run
+ * stays decoupled from the chat dispatch path.
+ */
+function buildPromptOverrides(
+  agentConfig:
+    | Record<string, Record<string, Record<string, unknown>>>
+    | undefined,
+): Record<string, string> | undefined {
+  if (!agentConfig) return undefined;
+  const refIds = new Set<string>();
+  for (const nodeCfgs of Object.values(agentConfig)) {
+    if (!nodeCfgs) continue;
+    for (const fields of Object.values(nodeCfgs)) {
+      if (!fields) continue;
+      const ref = fields["system_prompt_ref"];
+      if (typeof ref === "string" && ref.length > 0) refIds.add(ref);
+    }
+  }
+  if (refIds.size === 0) return undefined;
+  const presets = usePromptStore.getState().presets;
+  const byId = new Map(presets.map((p) => [p.id, p]));
+  const out: Record<string, string> = {};
+  for (const id of refIds) {
+    const p = byId.get(id);
+    if (p?.systemPrompt) out[id] = p.systemPrompt;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+export function TestRunSheet({ agent, className }: TestRunSheetProps) {
+  const { agentClient } = useLLMContext();
+
+  // The model the test run uses defaults to the live `agent` node's
+  // model override (or schema default). Operator can override per-run
+  // by editing the input below the prompt.
+  const liveAgentNodeOverrides = useEngineStore(
+    (s) => s.configs[agent.id]?.["agent"],
+  );
+  const defaultModel = useMemo(() => {
+    const liveModel = liveAgentNodeOverrides?.model;
+    if (typeof liveModel === "string" && liveModel.length > 0) return liveModel;
+    const agentNode = agent.topology.nodes.find((n) => n.id === "agent");
+    const defModel = agentNode?.config_defaults?.model;
+    return typeof defModel === "string" ? defModel : "";
+  }, [agent, liveAgentNodeOverrides]);
+
+  const [prompt, setPrompt] = useState("");
+  const [modelOverride, setModelOverride] = useState("");
+  const [display, setDisplay] = useState<DisplayState>(EMPTY_DISPLAY);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const isRunning = display.status === "streaming";
+  const canRun = prompt.trim().length > 0 && !isRunning && !!agentClient;
+
+  const dispatch = useCallback(async () => {
+    if (!canRun) return;
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
+    setDisplay({
+      ...EMPTY_DISPLAY,
+      status: "streaming",
+    });
+
+    // Wire shape mirrors chatStore.sendMessage — same backend code path,
+    // so per-node overrides + prompt refs Just Work.
+    const agentConfig = useEngineStore.getState().asRequestPayload();
+    const promptOverrides = buildPromptOverrides(agentConfig);
+    const effectiveModel = modelOverride.trim() || defaultModel;
+
+    try {
+      const stream = agentClient.streamAgent(
+        {
+          model: effectiveModel,
+          messages: [{ role: "user", content: prompt }],
+          tools: agent.tools.length > 0 ? agent.tools : undefined,
+          agent_config: agentConfig,
+          prompt_overrides: promptOverrides,
+        },
+        { signal: ctrl.signal },
+      );
+
+      for await (const ev of stream) {
+        applyEvent(setDisplay, ev);
+        if (ctrl.signal.aborted) break;
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setDisplay((d) => ({
+        ...d,
+        status: ctrl.signal.aborted ? "cancelled" : "error",
+        error: msg,
+      }));
+    } finally {
+      abortRef.current = null;
+    }
+  }, [agent, agentClient, canRun, defaultModel, modelOverride, prompt]);
+
+  function stop() {
+    abortRef.current?.abort();
+  }
+
+  function reset() {
+    setDisplay(EMPTY_DISPLAY);
+  }
+
+  return (
+    <div className={cn("flex h-full min-h-0 flex-col gap-3", className)}>
+      {/* ── Top: prompt input + model override + Run/Stop ─────────── */}
+      <div className="flex shrink-0 flex-col gap-2">
+        <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+          <span className="font-mono text-foreground">{agent.id}</span>
+          <span className="text-[10px] uppercase tracking-wider">
+            test run · dispatches through the langgraph flow
+          </span>
+        </div>
+        <Textarea
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          placeholder={`Ask ${agent.id} something…  (⌘/Ctrl+Enter to run)`}
+          rows={4}
+          className="font-mono text-xs"
+          onKeyDown={(e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && canRun) {
+              e.preventDefault();
+              void dispatch();
+            }
+          }}
+        />
+        <div className="flex items-center gap-2">
+          <label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            model
+          </label>
+          <input
+            value={modelOverride}
+            onChange={(e) => setModelOverride(e.target.value)}
+            placeholder={defaultModel || "model id"}
+            className="h-7 flex-1 rounded border border-border bg-background px-2 font-mono text-[11px]"
+          />
+          {isRunning ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="destructive"
+              onClick={stop}
+              className="h-7 text-xs"
+            >
+              <Square className="mr-1 h-3 w-3" aria-hidden="true" />
+              stop
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void dispatch()}
+              disabled={!canRun}
+              className="h-7 text-xs"
+              title="Cmd/Ctrl-Enter from the prompt"
+            >
+              <Play className="mr-1 h-3 w-3" aria-hidden="true" />
+              run
+            </Button>
+          )}
+          {display.status !== "idle" && !isRunning && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={reset}
+              className="h-7 text-xs"
+            >
+              clear
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Bottom: output (flex-1, scrolls) ──────────────────────── */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-border/60 bg-card/30">
+        {display.status === "idle" ? (
+          <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
+            <div>
+              <p className="mb-1">No output yet.</p>
+              <p className="text-xs">
+                Type a prompt above and hit{" "}
+                <span className="font-mono">run</span>.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <RunOutput display={display} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function applyEvent(
+  set: React.Dispatch<React.SetStateAction<DisplayState>>,
+  ev: AgentEvent,
+) {
+  set((d) => {
+    const next: DisplayState = { ...d, events: d.events + 1 };
+    switch (ev.type) {
+      case "run_started":
+        next.runId = ev.run_id;
+        next.model = ev.model;
+        return next;
+      case "token":
+        next.content = d.content + ev.content;
+        return next;
+      case "tool_call_start":
+        next.toolCalls = [
+          ...d.toolCalls,
+          { id: ev.id, name: ev.name, args: ev.args },
+        ];
+        return next;
+      case "tool_call_end": {
+        next.toolCalls = d.toolCalls.map((c) =>
+          c.id === ev.id
+            ? {
+                ...c,
+                result: ev.result,
+                error: ev.error,
+                durationMs: ev.duration_ms,
+              }
+            : c,
+        );
+        return next;
+      }
+      case "message_done":
+        next.status = "done";
+        next.finishReason = ev.finish_reason;
+        next.usage = ev.usage;
+        return next;
+      case "error":
+        next.status = "error";
+        next.error = ev.message;
+        return next;
+      case "cancelled":
+        next.status = "cancelled";
+        return next;
+      default:
+        return next;
+    }
+  });
+}
+
+function RunOutput({ display }: { display: DisplayState }) {
+  return (
+    <div className="flex flex-1 flex-col overflow-y-auto">
+      {/* Status strip */}
+      <div className="flex items-center gap-2 border-b border-border/60 bg-muted/20 px-3 py-1.5 text-[11px]">
+        <span
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+            display.status === "streaming" &&
+              "bg-primary/15 text-primary animate-pulse",
+            display.status === "done" && "bg-emerald-500/15 text-emerald-200",
+            display.status === "error" && "bg-rose-500/15 text-rose-200",
+            display.status === "cancelled" &&
+              "bg-amber-500/15 text-amber-200",
+          )}
+        >
+          {display.status}
+        </span>
+        {display.model && (
+          <span className="font-mono text-muted-foreground">
+            {display.model}
+          </span>
+        )}
+        {display.runId && (
+          <span className="font-mono text-[10px] text-muted-foreground">
+            #{display.runId.slice(0, 8)}
+          </span>
+        )}
+        <span className="ml-auto text-[10px] text-muted-foreground">
+          {display.events} events
+        </span>
+      </div>
+
+      {/* Tool calls */}
+      {display.toolCalls.length > 0 && (
+        <div className="border-b border-border/60 px-3 py-2">
+          <div className="mb-1 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+            <Wrench className="h-3 w-3" aria-hidden="true" />
+            tool calls ({display.toolCalls.length})
+          </div>
+          <div className="space-y-1">
+            {display.toolCalls.map((c) => (
+              <div
+                key={c.id}
+                className="rounded-sm border border-border/40 bg-muted/10 px-2 py-1 text-[11px]"
+              >
+                <div className="flex items-center justify-between font-mono">
+                  <span>{c.name}</span>
+                  {c.durationMs !== undefined && (
+                    <span className="text-[10px] text-muted-foreground">
+                      {c.durationMs}ms
+                    </span>
+                  )}
+                </div>
+                <pre className="mt-0.5 overflow-x-auto text-[10px] text-muted-foreground">
+                  {JSON.stringify(c.args, null, 2)}
+                </pre>
+                {c.error && (
+                  <div className="mt-1 text-[10px] text-destructive">
+                    error: {c.error}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Assistant content (accumulated tokens) */}
+      {display.content && (
+        <div className="flex-1 whitespace-pre-wrap px-3 py-2 font-mono text-[12px] leading-relaxed">
+          {display.content}
+        </div>
+      )}
+
+      {display.error && (
+        <div className="border-t border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+          {display.error}
+        </div>
+      )}
+
+      {display.status === "done" && display.usage && (
+        <div className="border-t border-border/60 bg-muted/20 px-3 py-1.5 text-[10px] text-muted-foreground">
+          finish: {display.finishReason ?? "?"} · usage:{" "}
+          {JSON.stringify(display.usage)}
+        </div>
+      )}
+    </div>
+  );
+}
