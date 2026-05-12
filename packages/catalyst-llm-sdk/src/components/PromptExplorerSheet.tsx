@@ -1,48 +1,49 @@
 /**
- * PromptExplorerSheet — the right-side Sheet body for the Engine tab.
+ * PromptExplorerSheet — workbench-style prompt manager for the Engine tab.
  *
- * Operator clicks the prompt-icon button on a node's inline config; the
- * Engine tab flips `sheetContext.kind === "prompt"` and renders this
- * inside the open `<SheetContent>`. The sheet itself (wrapper, header)
- * lives in EngineView so we can share it with the runs sheet (T6).
+ *   ┌────────────────────────────────────────────────────────────────┐
+ *   │ 🔍 [ search …             ]  [+ New]                           │  shrink-0
+ *   │ ┌──┐ ┌────┐ ┌──┐ ┌──────┐ ┌──┐  ← horizontal chip picker      │
+ *   │ └──┘ └────┘ └──┘ └──────┘ └──┘                                 │
+ *   ├────────────────────────────────────────────────────────────────┤
+ *   │ 🔗 main.agent → bound to: <name>   [bind selected] [clear]     │  shrink-0
+ *   ├────────────────────────────────────────────────────────────────┤
+ *   │                                                                  │
+ *   │   PromptEditForm (the SAME form the standalone Prompts tab uses) │  flex-1
+ *   │   filling all remaining vertical space                           │
+ *   │                                                                  │
+ *   └────────────────────────────────────────────────────────────────┘
  *
- * Three stacked sections:
+ * Differs from the first pass (three stacked sections in a narrow Sheet):
  *
- *   1. Binding controls — only when a node is bound to a preset OR has
- *      a raw inline `system_prompt` override. Clear binding + show /
- *      edit the inline override textarea.
+ *   - Sheet itself is wider (~50vw) — EngineView's <SheetContent>
+ *     supplies the width.
+ *   - Picker is a single search input + a horizontal chip row, not a
+ *     vertical grouped list. Bound prompt is highlighted with a ring.
+ *   - Edit form fills the remaining height (reuses PromptEditForm from
+ *     the standalone Prompts tab — same component, same widgets, same
+ *     keyboard shortcuts).
+ *   - "Bind selected to <node>" is its own row between picker + form so
+ *     the binding action is always visible without scrolling.
+ *   - Dropped the inline-system_prompt-override UI — the field still
+ *     exists in the data model but isn't surfaced here; saved prompts
+ *     are the canonical edit surface. Operators who want a one-off raw
+ *     override can still set `system_prompt` directly via the API.
  *
- *   2. Picker — `<PromptPickerList>` filtered to presets eligible for
- *      a system slot (category `system` or `both`), grouped by
- *      domain → purpose. Clicking a row writes
- *      `system_prompt_ref = preset.id` and closes the sheet.
- *
- *   3. Edit-bound — collapsible `<PromptEditForm>` for the bound
- *      preset. Save patches the PromptStore directly; the node's
- *      binding (system_prompt_ref) is untouched, so the next chat
- *      dispatch picks up the new content.
- *
- * DRY notes: the picker list and edit form are both extracted out of
- * PromptEditor.tsx, so the standalone Prompts tab and this sheet share
- * the same row visuals, filter semantics, and save plumbing.
+ * DRY notes: PromptEditForm + PromptPickerList primitives were
+ * extracted from PromptEditor.tsx in the T8 first pass — both are
+ * reused here. New code is mostly the search/chip-row chrome + binding
+ * row + state plumbing.
  */
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
-import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
-import { Textarea } from "@thebranchdriftcatalyst/catalyst-ui/ui/textarea";
-import {
-  ChevronDown,
-  ChevronRight,
-  ExternalLink,
-  Pencil,
-  X as XIcon,
-} from "lucide-react";
+import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
+import { Link2, Plus, Search, X as XIcon } from "lucide-react";
 import { useEngineStore } from "../react/engineStore.js";
 import { usePromptStore } from "../react/promptStore.js";
 import {
   EMPTY_PROMPT_DRAFT,
   PromptEditForm,
-  PromptPickerList,
   draftToPayload,
   presetToDraft,
   type PromptDraft,
@@ -52,10 +53,11 @@ import { cn } from "./utils.js";
 export interface PromptExplorerSheetProps {
   agentId: string;
   /** The node (= per-Pydantic-config bucket) whose `system_prompt_ref`
-   * and `system_prompt` overrides we're editing. */
+   * binding we're managing. */
   nodeId: string;
-  /** Close the sheet — invoked after picking a preset so the operator
-   * sees the binding land immediately on the node card. */
+  /** Close the sheet. Today the workbench keeps the sheet open even
+   * after binding — the operator may keep editing. Pass-through for
+   * future affordances (e.g. a close button in the binding row). */
   onClose: () => void;
   className?: string;
 }
@@ -63,258 +65,320 @@ export interface PromptExplorerSheetProps {
 export function PromptExplorerSheet({
   agentId,
   nodeId,
-  onClose,
+  onClose: _onClose,
   className,
 }: PromptExplorerSheetProps) {
   const presets = usePromptStore((s) => s.presets);
+  const addPreset = usePromptStore((s) => s.addPreset);
   const updatePreset = usePromptStore((s) => s.updatePreset);
+  const removePreset = usePromptStore((s) => s.removePreset);
+  const duplicatePreset = usePromptStore((s) => s.duplicatePreset);
 
   const setField = useEngineStore((s) => s.setField);
   const boundRef = useEngineStore(
     (s) => s.configs[agentId]?.[nodeId]?.system_prompt_ref as string | undefined,
   );
-  const inlineOverride = useEngineStore(
-    (s) => s.configs[agentId]?.[nodeId]?.system_prompt as string | undefined,
+
+  // Only system-capable prompts are valid bindings for a system_prompt
+  // field. "both" presets fill both slots, so they're included.
+  const systemPresets = useMemo(
+    () =>
+      presets.filter((p) => p.category === "system" || p.category === "both"),
+    [presets],
   );
 
+  // Local: what's being viewed/edited (independent of binding).
+  // Initial pick: the bound preset → otherwise the first system preset
+  // → otherwise null (operator starts on the "new" path).
+  const [selectedId, setSelectedId] = useState<string | null>(
+    () => boundRef ?? systemPresets[0]?.id ?? null,
+  );
+
+  // When the sheet remounts on a different node (or the binding changes
+  // out from under us), re-anchor the selection on the bound preset so
+  // the operator opens onto the prompt that's currently in use.
+  useEffect(() => {
+    if (boundRef && selectedId !== boundRef) {
+      setSelectedId(boundRef);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentId, nodeId, boundRef]);
+
+  const selected = useMemo(
+    () => (selectedId ? presets.find((p) => p.id === selectedId) : undefined),
+    [presets, selectedId],
+  );
   const bound = useMemo(
     () => (boundRef ? presets.find((p) => p.id === boundRef) : undefined),
     [presets, boundRef],
   );
 
-  // Picker filter — local to this sheet instance; resets every time the
-  // sheet remounts (i.e. you reopen it on a different node).
+  // Filter input — affects the chip row only; selection persists across
+  // filter changes even when the selected chip scrolls out of view.
   const [filter, setFilter] = useState("");
+  const filtered = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    if (!q) return systemPresets;
+    return systemPresets.filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        (p.description ?? "").toLowerCase().includes(q) ||
+        (p.tags ?? []).join(" ").toLowerCase().includes(q) ||
+        (p.domain ?? "").toLowerCase().includes(q) ||
+        (p.purpose ?? "").toLowerCase().includes(q),
+    );
+  }, [systemPresets, filter]);
 
-  // Only system-ish presets are candidates for binding to system_prompt.
-  const systemPresets = useMemo(
-    () => presets.filter((p) => p.category === "system" || p.category === "both"),
-    [presets],
-  );
+  // ── Edit-form draft (mirrors PromptEditor's pattern) ────────────────
+  const [draft, setDraft] = useState<PromptDraft>(EMPTY_PROMPT_DRAFT);
+  const [dirty, setDirty] = useState(false);
+  const [isNewDraft, setIsNewDraft] = useState(false);
 
-  // ── Inline override editor ──────────────────────────────────────────
-  const [inlineEditOpen, setInlineEditOpen] = useState(false);
-  const [inlineDraft, setInlineDraft] = useState(inlineOverride ?? "");
-  // Re-sync when the underlying value changes (e.g. another tab cleared
-  // the override). Effects nicely on remount too.
   useEffect(() => {
-    setInlineDraft(inlineOverride ?? "");
-  }, [inlineOverride, agentId, nodeId]);
-
-  const inlineDirty = inlineDraft !== (inlineOverride ?? "");
-
-  function saveInlineOverride() {
-    const next = inlineDraft.trim();
-    setField(agentId, nodeId, "system_prompt", next ? inlineDraft : undefined);
-  }
-  function clearInlineOverride() {
-    setField(agentId, nodeId, "system_prompt", undefined);
-    setInlineEditOpen(false);
-  }
-
-  // ── Edit-bound form ────────────────────────────────────────────────
-  // Collapsible — the picker is the primary action, the editor is a
-  // power-user affordance.
-  const [editOpen, setEditOpen] = useState(false);
-  const [editDraft, setEditDraft] = useState<PromptDraft>(EMPTY_PROMPT_DRAFT);
-  const [editDirty, setEditDirty] = useState(false);
-
-  // Whenever the bound preset (or its underlying content) changes, reset
-  // the editor draft to mirror it — except don't blow away unsaved
-  // changes mid-edit.
-  useEffect(() => {
-    if (editDirty) return;
-    setEditDraft(bound ? presetToDraft(bound) : EMPTY_PROMPT_DRAFT);
+    if (dirty) return; // don't clobber unsaved edits
+    if (selected) {
+      setDraft(presetToDraft(selected));
+      setIsNewDraft(false);
+    } else if (!isNewDraft) {
+      setDraft(EMPTY_PROMPT_DRAFT);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bound?.id, bound?.updatedAt]);
+  }, [selected?.id, selected?.updatedAt]);
 
-  function setEditField<K extends keyof PromptDraft>(k: K, v: PromptDraft[K]) {
-    setEditDraft((d) => ({ ...d, [k]: v }));
-    setEditDirty(true);
-  }
-  function saveBoundPreset() {
-    if (!bound) return;
-    updatePreset(bound.id, draftToPayload(editDraft));
-    setEditDirty(false);
-  }
-  function discardBoundEdit() {
-    if (!bound) return;
-    setEditDraft(presetToDraft(bound));
-    setEditDirty(false);
+  function setDraftField<K extends keyof PromptDraft>(k: K, v: PromptDraft[K]) {
+    setDraft((d) => ({ ...d, [k]: v }));
+    setDirty(true);
   }
 
-  // ── Picker click ───────────────────────────────────────────────────
-  function pickPreset(id: string) {
-    setField(agentId, nodeId, "system_prompt_ref", id);
-    onClose();
+  function save() {
+    const payload = draftToPayload(draft);
+    if (selected && !isNewDraft) {
+      updatePreset(selected.id, payload);
+    } else {
+      // Force category to system for fresh prompts created from this
+      // sheet — operator's intent is to bind to a system_prompt field,
+      // and the picker only surfaces system/both presets.
+      const id = addPreset({ ...payload, category: payload.category ?? "system" });
+      setSelectedId(id);
+      setIsNewDraft(false);
+    }
+    setDirty(false);
+  }
+
+  function discard() {
+    if (selected && !isNewDraft) {
+      setDraft(presetToDraft(selected));
+    } else {
+      setDraft(EMPTY_PROMPT_DRAFT);
+      setIsNewDraft(false);
+      setSelectedId(systemPresets[0]?.id ?? null);
+    }
+    setDirty(false);
+  }
+
+  function newPreset() {
+    setSelectedId(null);
+    setDraft({
+      ...EMPTY_PROMPT_DRAFT,
+      name: "New system prompt",
+      category: "system",
+    });
+    setIsNewDraft(true);
+    setDirty(true);
+  }
+
+  function deleteSelected() {
+    if (!selected) return;
+    if (boundRef === selected.id) {
+      setField(agentId, nodeId, "system_prompt_ref", undefined);
+    }
+    removePreset(selected.id);
+    const remaining = systemPresets.filter((p) => p.id !== selected.id);
+    setSelectedId(remaining[0]?.id ?? null);
+    setDirty(false);
+    setIsNewDraft(false);
+  }
+
+  function duplicateSelected() {
+    if (!selected) return;
+    const newId = duplicatePreset(selected.id);
+    if (newId) {
+      setSelectedId(newId);
+      setDirty(false);
+    }
+  }
+
+  // ── Binding actions ────────────────────────────────────────────────
+  function bindSelected() {
+    if (!selectedId) return;
+    setField(agentId, nodeId, "system_prompt_ref", selectedId);
   }
   function clearBinding() {
     setField(agentId, nodeId, "system_prompt_ref", undefined);
   }
 
-  // ── Header summary line ────────────────────────────────────────────
-  const summary = bound
-    ? `currently bound: ${bound.name}`
-    : inlineOverride
-      ? "currently bound: (inline override)"
-      : "currently bound: (none)";
+  const canBindSelected = selectedId && selectedId !== boundRef && !isNewDraft;
 
   return (
-    <div className={cn("flex h-full min-h-0 flex-col gap-3", className)}>
-      <div className="rounded-md border border-border/60 bg-muted/20 p-2 text-[11px] text-muted-foreground">
-        {summary}
+    <div className={cn("flex h-full min-h-0 flex-col gap-2", className)}>
+      {/* ── Top: search + chip picker ─────────────────────────────── */}
+      <div className="flex shrink-0 flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search
+              className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Input
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Search saved prompts (name, description, tags, domain, purpose)…"
+              className="h-8 pl-7 text-xs"
+            />
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={newPreset}
+            className="h-8 shrink-0 text-xs"
+            title="Create a new system prompt"
+          >
+            <Plus className="mr-1 h-3 w-3" aria-hidden="true" />
+            new
+          </Button>
+        </div>
+        <div className="flex shrink-0 gap-1 overflow-x-auto pb-1">
+          {filtered.length === 0 ? (
+            <span className="px-2 py-1 text-[11px] italic text-muted-foreground">
+              {systemPresets.length === 0
+                ? "No system prompts saved yet — click 'new' to start."
+                : "no match"}
+            </span>
+          ) : (
+            filtered.map((p) => {
+              const isSelected = p.id === selectedId && !isNewDraft;
+              const isBound = p.id === boundRef;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedId(p.id);
+                    setIsNewDraft(false);
+                  }}
+                  title={
+                    `${p.name}${p.description ? ` — ${p.description}` : ""}` +
+                    (isBound ? " (bound)" : "")
+                  }
+                  className={cn(
+                    "inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition-colors",
+                    isSelected
+                      ? "border-primary bg-primary/10 text-foreground"
+                      : "border-border/60 bg-card/40 hover:bg-card/70",
+                    isBound &&
+                      !isSelected &&
+                      "ring-1 ring-primary/40 ring-offset-1 ring-offset-background",
+                  )}
+                >
+                  {isBound && (
+                    <Link2
+                      className="h-3 w-3 text-primary"
+                      aria-hidden="true"
+                    />
+                  )}
+                  <span className="max-w-[200px] truncate">{p.name}</span>
+                </button>
+              );
+            })
+          )}
+        </div>
       </div>
 
-      {/* ── Section 1 — Binding controls ─────────────────────────── */}
-      {(bound || inlineOverride !== undefined) && (
-        <section className="space-y-2 rounded-md border border-border/60 bg-card/30 p-2">
-          <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-            <Pencil className="h-3 w-3" aria-hidden="true" />
-            binding
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {bound && (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={clearBinding}
-                className="text-[10px]"
-                title="Unbind this node from its saved prompt"
-              >
-                <XIcon className="mr-1 h-3 w-3" />
-                clear binding
-              </Button>
-            )}
+      {/* ── Middle: binding status + actions ──────────────────────── */}
+      <div className="flex shrink-0 items-center justify-between gap-2 rounded-md border border-border/60 bg-muted/20 px-3 py-1.5 text-xs">
+        <div className="flex items-center gap-2 truncate">
+          <Link2
+            className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <span className="text-muted-foreground">
+            <span className="font-mono text-foreground">
+              {agentId}.{nodeId}
+            </span>{" "}
+            bound to:{" "}
+            <span
+              className={cn(
+                "font-medium",
+                bound ? "text-foreground" : "italic text-muted-foreground",
+              )}
+            >
+              {bound ? bound.name : "(none)"}
+            </span>
+          </span>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {boundRef && (
             <Button
               type="button"
               size="sm"
               variant="ghost"
-              onClick={() => setInlineEditOpen((v) => !v)}
-              className="text-[10px]"
+              onClick={clearBinding}
+              className="h-7 text-[11px]"
+              title="Unbind this node from its saved prompt"
             >
-              {inlineEditOpen ? (
-                <ChevronDown className="mr-1 h-3 w-3" />
-              ) : (
-                <ChevronRight className="mr-1 h-3 w-3" />
-              )}
-              {inlineOverride !== undefined
-                ? "edit inline override"
-                : "set inline override"}
+              <XIcon className="mr-1 h-3 w-3" aria-hidden="true" />
+              clear
             </Button>
-            {inlineOverride !== undefined && (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={clearInlineOverride}
-                className="text-[10px] text-destructive hover:bg-destructive/10"
-                title="Remove the raw system_prompt override"
-              >
-                <XIcon className="mr-1 h-3 w-3" />
-                clear override
-              </Button>
-            )}
-          </div>
-          {inlineEditOpen && (
-            <div className="space-y-1">
-              <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                Raw system_prompt override
-              </Label>
-              <Textarea
-                value={inlineDraft}
-                onChange={(e) => setInlineDraft(e.target.value)}
-                placeholder="Type a one-off system prompt for this node…"
-                className="min-h-[120px] resize-y font-mono text-xs leading-relaxed"
-                spellCheck={false}
-              />
-              <div className="flex justify-end gap-1">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setInlineDraft(inlineOverride ?? "")}
-                  disabled={!inlineDirty}
-                  className="text-[10px]"
-                >
-                  discard
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={saveInlineOverride}
-                  disabled={!inlineDirty}
-                  className="text-[10px]"
-                >
-                  save override
-                </Button>
-              </div>
-            </div>
           )}
-        </section>
-      )}
-
-      {/* ── Section 2 — Pick a saved prompt ──────────────────────── */}
-      <section className="flex min-h-0 flex-1 flex-col rounded-md border border-border/60 bg-card/30">
-        <div className="flex items-center gap-1.5 border-b border-border/60 bg-muted/20 px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-          pick a saved prompt
-          <span className="opacity-60">({systemPresets.length})</span>
+          {canBindSelected && (
+            <Button
+              type="button"
+              size="sm"
+              onClick={bindSelected}
+              className="h-7 text-[11px]"
+              title={`Bind ${selected?.name ?? ""} to ${agentId}.${nodeId}`}
+            >
+              <Link2 className="mr-1 h-3 w-3" aria-hidden="true" />
+              bind selected
+            </Button>
+          )}
         </div>
-        <PromptPickerList
-          presets={systemPresets}
-          filter={filter}
-          onFilterChange={setFilter}
-          selectedId={boundRef ?? null}
-          onSelect={pickPreset}
-          groupBy="domain"
-          emptyState={
-            <div className="px-2 py-6 text-center text-xs text-muted-foreground">
-              <p className="mb-2">No system prompts saved yet.</p>
-              <p className="text-[10px] leading-relaxed">
-                Visit the <span className="font-mono">Prompts</span> tab to
-                create one. Set its category to "System prompt" or "Bundle"
-                and it'll show up here.
+      </div>
+
+      {/* ── Bottom: edit form fills remaining height ──────────────── */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-border/60 bg-card/30">
+        {selected || isNewDraft ? (
+          <PromptEditForm
+            draft={draft}
+            dirty={dirty}
+            isNew={isNewDraft}
+            onField={setDraftField}
+            onSave={save}
+            onDiscard={discard}
+            onDelete={selected && !isNewDraft ? deleteSelected : undefined}
+            onDuplicate={selected && !isNewDraft ? duplicateSelected : undefined}
+            headerLabel={
+              isNewDraft
+                ? "new prompt"
+                : selected
+                  ? `editing: ${selected.name}`
+                  : "edit prompt"
+            }
+            className="h-full"
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
+            <div>
+              <p className="mb-2">No system prompts to edit yet.</p>
+              <p className="text-xs">
+                Click <span className="font-mono">new</span> above to create
+                one, then bind it to this node.
               </p>
             </div>
-          }
-          className="flex-1 min-h-0"
-        />
-      </section>
-
-      {/* ── Section 3 — Edit the bound preset ─────────────────────── */}
-      {bound && (
-        <section className="rounded-md border border-border/60 bg-card/30">
-          <button
-            type="button"
-            onClick={() => setEditOpen((v) => !v)}
-            className="flex w-full items-center gap-1.5 border-b border-border/60 bg-muted/20 px-2 py-1.5 text-left text-[10px] font-bold uppercase tracking-wider text-muted-foreground hover:bg-muted/30"
-          >
-            {editOpen ? (
-              <ChevronDown className="h-3 w-3" />
-            ) : (
-              <ChevronRight className="h-3 w-3" />
-            )}
-            edit this prompt
-            <span className="ml-auto inline-flex items-center gap-1 text-[10px] normal-case text-muted-foreground/80">
-              <ExternalLink className="h-3 w-3" />
-              {bound.name}
-            </span>
-          </button>
-          {editOpen && (
-            <div className="max-h-[480px] overflow-y-auto">
-              <PromptEditForm
-                draft={editDraft}
-                dirty={editDirty}
-                isNew={false}
-                onField={setEditField}
-                onSave={saveBoundPreset}
-                onDiscard={discardBoundEdit}
-                headerLabel="edit bound prompt"
-              />
-            </div>
-          )}
-        </section>
-      )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

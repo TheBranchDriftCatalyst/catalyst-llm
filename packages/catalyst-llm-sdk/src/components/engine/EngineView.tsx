@@ -175,7 +175,15 @@ export function EngineView({ className }: EngineViewProps) {
           if (!open) setSheetContext(null);
         }}
       >
-        <SheetContent side="right" className="flex w-[400px] flex-col sm:w-[500px]">
+        <SheetContent
+          side="right"
+          // Wide workbench panel for the prompt explorer (operator
+          // wants a real edit surface, not a narrow sidebar). The
+          // runs panel reuses the same width — its list view is
+          // compact, but rooming it lets long run-ids and rich
+          // event payload previews land without truncation.
+          className="flex w-[50vw] min-w-[640px] max-w-[960px] flex-col"
+        >
           <SheetHeader>
             <SheetTitle>
               {sheetContext?.kind === "prompt"
