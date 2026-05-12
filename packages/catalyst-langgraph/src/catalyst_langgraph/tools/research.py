@@ -121,6 +121,7 @@ DEFAULT_CRITIC_SYSTEM_PROMPT = (
     "- Members are confidently wrong / contradicting authoritative info.\n\n"
     "Keep `feedback` under 3 sentences and specific — the council will "
     "re-search with it as guidance."
+    # TODO: add some rules on formatting here maybe or in fusion?
 )
 
 DEFAULT_FUSION_SYSTEM_PROMPT = (
@@ -341,6 +342,26 @@ def _flatten_content(content: Any) -> str:
     return str(content)
 
 
+def _underlying_is_ollama(client: CatalystLiteLLMClient, model: str) -> bool:
+    """True when LiteLLM routes this model id to an Ollama backend.
+
+    LiteLLM's Ollama OpenAI-compat streaming path doesn't translate
+    tool_calls into structured deltas — the JSON arrives as
+    `delta.content` text instead, so any LLM with tools bound and
+    streaming on emits its tool calls as plain content and the
+    bound web_search never actually fires. Disabling streaming
+    works around it. Mirror the same gate the main `build_graph()`
+    uses; we lose token-level streaming for sub-agents but they
+    weren't user-visible streams anyway.
+    """
+    try:
+        info = client.get_model_info(model) or {}
+        underlying = ((info.get("litellm_params") or {}).get("model") or "").lower()
+        return underlying.startswith("ollama/")
+    except Exception:
+        return False
+
+
 def _build_member_graph(model: str, temperature: float, system_prompt: str):
     """Compile the per-member researcher graph: agent ↔ web_search loop.
 
@@ -349,7 +370,15 @@ def _build_member_graph(model: str, temperature: float, system_prompt: str):
     Compilation is cheap; the round-trip to LiteLLM dominates.
     """
     client = CatalystLiteLLMClient()
-    llm = client.get_chat_model(model=model, temperature=temperature)
+    llm = client.get_chat_model(
+        model=model,
+        temperature=temperature,
+        # Force non-streaming when this member is Ollama-routed so the
+        # LLM's tool_calls field is populated structurally; the bound
+        # web_search then actually dispatches instead of arriving as
+        # text in content (see _underlying_is_ollama for the why).
+        streaming=not _underlying_is_ollama(client, model),
+    )
     llm = llm.bind_tools([web_search])
 
     def agent_node(state: MessagesState) -> dict:
@@ -401,7 +430,14 @@ async def _run_critic(
     failure rather than blocking the run forever."""
     model = cfg.critic_model or cfg.model
     client = CatalystLiteLLMClient()
-    llm = client.get_chat_model(model=model, temperature=cfg.critic_temperature)
+    llm = client.get_chat_model(
+        model=model,
+        temperature=cfg.critic_temperature,
+        # `with_structured_output` is doubly Ollama-fragile under
+        # streaming (it uses tool-calling under the hood). Force
+        # non-streaming when routed there.
+        streaming=not _underlying_is_ollama(client, model),
+    )
     # Structured-output binding — LangChain coerces the JSON into a
     # Critique instance for us.
     structured = llm.with_structured_output(Critique)
@@ -443,7 +479,15 @@ async def _run_fusion(
     into one final markdown answer."""
     model = cfg.fusion_model or cfg.model
     client = CatalystLiteLLMClient()
-    llm = client.get_chat_model(model=model, temperature=cfg.fusion_temperature)
+    llm = client.get_chat_model(
+        model=model,
+        temperature=cfg.fusion_temperature,
+        # No tools bound, but force non-streaming when routed to
+        # Ollama anyway — keeps fusion's output a single chat-model-
+        # end event at the parent's astream_events, which makes the
+        # per-tool reasoning UI cleaner.
+        streaming=not _underlying_is_ollama(client, model),
+    )
     drafts_block = "\n\n".join(
         f"### Member #{i + 1} draft\n{d}" for i, d in enumerate(drafts)
     )

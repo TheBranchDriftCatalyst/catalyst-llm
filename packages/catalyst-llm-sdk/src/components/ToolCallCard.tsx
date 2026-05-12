@@ -23,8 +23,13 @@ import {
   ExternalLink,
   AlertTriangle,
   Clock,
+  Activity,
+  Repeat,
 } from "lucide-react";
-import type { ChatToolCallRecord } from "../react/chatStore.js";
+import type {
+  ChatToolCallRecord,
+  ToolSubEvent,
+} from "../react/chatStore.js";
 import { cn } from "./utils.js";
 
 export interface ToolCallCardProps {
@@ -47,6 +52,14 @@ export function ToolCallCard({
   const [open, setOpen] = useState(defaultOpen);
   const Icon = TOOL_ICONS[record.call.function.name] ?? Wrench;
   const isError = !!record.error;
+  const subEvents = record.sub_events ?? [];
+  // Quick summary numbers for the collapsed row: how many internal
+  // tool calls happened and how many iterations the inner loop went
+  // through. Useful for "this research used the council N times"
+  // glanceability without expanding.
+  const subToolCount = subEvents.filter((e) => e.kind === "tool_call_start").length;
+  const subIterCount = subEvents.filter((e) => e.kind === "iteration").length;
+  const hasSubEvents = subEvents.length > 0;
 
   return (
     <div
@@ -86,6 +99,20 @@ export function ToolCallCard({
         {isError && (
           <AlertTriangle className="h-3 w-3 shrink-0 text-destructive" aria-hidden="true" />
         )}
+        {hasSubEvents && (
+          <span
+            className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-accent"
+            title={`${subToolCount} nested tool calls, ${subIterCount} iterations`}
+          >
+            <Activity className="h-2.5 w-2.5" aria-hidden="true" />
+            reasoning
+            {subToolCount > 0 && (
+              <span className="ml-0.5 font-mono tabular-nums normal-case tracking-normal">
+                ×{subToolCount}
+              </span>
+            )}
+          </span>
+        )}
         <span className="ml-auto inline-flex shrink-0 items-center gap-0.5 text-[9px] text-muted-foreground tabular-nums">
           <Clock className="h-2.5 w-2.5" aria-hidden="true" />
           {fmtDuration(record.duration_ms)}
@@ -120,10 +147,112 @@ export function ToolCallCard({
           ) : (
             <ResultPane name={record.call.function.name} value={record.result} />
           )}
+
+          {/* Sub-agent reasoning trail: events from inner LLMs that
+              fired while THIS tool was executing (council members,
+              critic, fusion). Collapsed by default — drill in for the
+              actual chain of thought. */}
+          {hasSubEvents && (
+            <SubEventTrail subEvents={subEvents} subToolCount={subToolCount} subIterCount={subIterCount} />
+          )}
         </div>
       )}
     </div>
   );
+}
+
+function SubEventTrail({
+  subEvents,
+  subToolCount,
+  subIterCount,
+}: {
+  subEvents: ToolSubEvent[];
+  subToolCount: number;
+  subIterCount: number;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-2 rounded-sm border border-accent/30 bg-accent/5">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-1.5 px-2 py-1 text-left text-[10px] hover:bg-accent/10 transition-colors"
+        aria-expanded={open}
+      >
+        {open ? (
+          <ChevronDown className="h-3 w-3 text-accent" aria-hidden="true" />
+        ) : (
+          <ChevronRight className="h-3 w-3 text-accent" aria-hidden="true" />
+        )}
+        <Activity className="h-3 w-3 text-accent" aria-hidden="true" />
+        <span className="font-bold uppercase tracking-wider text-accent">
+          reasoning
+        </span>
+        <span className="text-muted-foreground">
+          {subEvents.length} events
+          {subToolCount > 0 ? ` · ${subToolCount} tools` : ""}
+          {subIterCount > 0 ? ` · ${subIterCount} iterations` : ""}
+        </span>
+      </button>
+      {open && (
+        <div className="border-t border-accent/20 p-2 space-y-1.5">
+          {subEvents.map((e, i) => (
+            <SubEventRow key={i} event={e} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SubEventRow({ event }: { event: ToolSubEvent }) {
+  switch (event.kind) {
+    case "token":
+      return (
+        <div className="whitespace-pre-wrap break-words font-mono text-[10px] text-foreground/85">
+          {event.content}
+        </div>
+      );
+    case "reasoning":
+      return (
+        <div className="whitespace-pre-wrap break-words rounded-sm bg-muted/40 px-1.5 py-1 font-mono text-[10px] italic text-muted-foreground">
+          <span className="mr-1 not-italic opacity-60">thinking:</span>
+          {event.content}
+        </div>
+      );
+    case "iteration":
+      return (
+        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+          <Repeat className="h-2.5 w-2.5 text-accent" aria-hidden="true" />
+          <span className="uppercase tracking-wider">iteration {event.n}</span>
+        </div>
+      );
+    case "tool_call_start":
+      return (
+        <div className="flex items-center gap-1.5 rounded-sm border border-primary/20 bg-primary/5 px-1.5 py-1 text-[10px]">
+          <Wrench className="h-2.5 w-2.5 text-primary" aria-hidden="true" />
+          <span className="font-mono font-bold text-primary">{event.name}</span>
+          <span className="min-w-0 flex-1 truncate text-muted-foreground">
+            {summarizeArgs(event.name, event.args)}
+          </span>
+        </div>
+      );
+    case "tool_call_end":
+      return (
+        <div
+          className={cn(
+            "flex items-center gap-1.5 px-1.5 py-1 text-[10px] text-muted-foreground",
+            event.error ? "text-destructive" : "",
+          )}
+        >
+          <Clock className="h-2.5 w-2.5" aria-hidden="true" />
+          <span>
+            ↳ {event.error ? "errored" : "returned"} in{" "}
+            {fmtDuration(event.duration_ms)}
+          </span>
+        </div>
+      );
+  }
 }
 
 // ─── Summary helpers ──────────────────────────────────────────────────

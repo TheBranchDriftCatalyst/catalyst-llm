@@ -380,6 +380,23 @@ async def _produce_agent_events(
     last_usage: Optional[dict[str, Any]] = None
     last_finish: Optional[str] = None
 
+    # Stack of currently-in-flight parent-level tool calls. Used to
+    # tag nested events (those produced INSIDE a tool execution, like
+    # the research agent's council members + critic + fusion) with
+    # the owning tool_call_id so the UI can route them into that
+    # tool's expandable section instead of dumping into the parent
+    # chat bubble. The most-recently-started outer tool is what we
+    # attribute to — LangChain's astream_events fires on_tool_start /
+    # on_tool_end at the PARENT level only (inner ToolNodes inside
+    # sub-graphs don't bubble up as on_tool_start at the outer
+    # stream), so depth >1 is rare in practice; LIFO is correct
+    # either way.
+    outer_tool_stack: list[str] = []
+
+    def _current_owner_tool_id() -> Optional[str]:
+        """The tool whose execution we're currently inside, or None."""
+        return outer_tool_stack[-1] if outer_tool_stack else None
+
     try:
         async for ev in app_graph.astream_events(
             state,
@@ -391,8 +408,15 @@ async def _produce_agent_events(
             name = ev.get("name") or ""
 
             if kind == "on_chain_start" and name == "tools":
-                iteration += 1
-                yield Iteration(n=iteration)
+                # Only count parent-level tool-loop entries. The
+                # council members' inner "tools" nodes also fire this
+                # event via astream_events' deep tracing — without
+                # this gate they'd inflate the parent's iteration
+                # counter into nonsense (each member ticks +1 per
+                # internal web_search round-trip).
+                if not outer_tool_stack:
+                    iteration += 1
+                    yield Iteration(n=iteration)
 
             elif kind == "on_chat_model_stream":
                 chunk = data.get("chunk")
@@ -404,22 +428,29 @@ async def _produce_agent_events(
                         for p in content
                     )
                 if content:
-                    yield Token(content=content)
+                    yield Token(
+                        content=content,
+                        owner_tool_id=_current_owner_tool_id(),
+                    )
 
             elif kind == "on_chat_model_end":
                 # LangChain stashes usage + finish in different places
                 # depending on provider; pull the common shape and fall
-                # back gracefully.
-                output = data.get("output")
-                meta = getattr(output, "response_metadata", None) or {}
-                usage = getattr(output, "usage_metadata", None)
-                if usage:
-                    last_usage = (
-                        dict(usage) if not isinstance(usage, dict) else usage
-                    )
-                fr = meta.get("finish_reason") or meta.get("stop_reason")
-                if fr:
-                    last_finish = fr
+                # back gracefully. Only adopt usage / finish_reason from
+                # the OUTER LLM call (no in-flight tool) — sub-agent
+                # LLM completions inside research would otherwise
+                # overwrite the parent's stats.
+                if not outer_tool_stack:
+                    output = data.get("output")
+                    meta = getattr(output, "response_metadata", None) or {}
+                    usage = getattr(output, "usage_metadata", None)
+                    if usage:
+                        last_usage = (
+                            dict(usage) if not isinstance(usage, dict) else usage
+                        )
+                    fr = meta.get("finish_reason") or meta.get("stop_reason")
+                    if fr:
+                        last_finish = fr
 
             elif kind == "on_tool_start":
                 tcid = ev.get("run_id") or uuid.uuid4().hex
@@ -429,7 +460,16 @@ async def _produce_agent_events(
                 # tool only takes a single string, langchain wraps it.
                 if not isinstance(args, dict):
                     args = {"input": args}
-                yield ToolCallStart(id=tcid, name=name, args=args)
+                # Attribute this tool call to its OWNER (if any) before
+                # pushing it onto the stack — that way the outermost
+                # tool isn't "owned by itself".
+                yield ToolCallStart(
+                    id=tcid,
+                    name=name,
+                    args=args,
+                    owner_tool_id=_current_owner_tool_id(),
+                )
+                outer_tool_stack.append(tcid)
 
             elif kind == "on_tool_end":
                 tcid = ev.get("run_id") or ""
@@ -442,7 +482,20 @@ async def _produce_agent_events(
                     if isinstance(output, ToolMessage)
                     else output
                 )
-                yield ToolCallEnd(id=tcid, result=result, duration_ms=duration_ms)
+                # Pop the matching tool from the stack — be defensive
+                # against out-of-order ends (shouldn't happen but
+                # logging churn isn't worth a crash).
+                if tcid in outer_tool_stack:
+                    outer_tool_stack.remove(tcid)
+                # The end-event itself is attributed to the tool's
+                # OWNER (one level out from the tool that's ending),
+                # which is None for top-level tools.
+                yield ToolCallEnd(
+                    id=tcid,
+                    result=result,
+                    duration_ms=duration_ms,
+                    owner_tool_id=_current_owner_tool_id(),
+                )
     except Exception as exc:
         log.exception("agent stream errored")
         yield ErrorEvent(message=str(exc))

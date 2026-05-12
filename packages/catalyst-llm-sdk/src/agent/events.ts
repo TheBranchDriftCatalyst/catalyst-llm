@@ -12,31 +12,44 @@
  * warnings until the backend ships matching code.
  */
 
+/**
+ * Mixin for events that can be nested inside a tool execution. When
+ * `owner_tool_id` is set, the event was produced INSIDE that tool
+ * call (e.g. a council member's tokens while `research` is running);
+ * the UI routes such events into the parent tool card's expandable
+ * "reasoning" section rather than accumulating them on the
+ * assistant turn's main content. When null/undefined, the event came
+ * from the parent agent and renders inline as before.
+ */
+export interface Nestable {
+  owner_tool_id?: string | null;
+}
+
 export interface RunStarted {
   type: "run_started";
   run_id: string;
   model: string;
 }
 
-export interface Token {
+export interface Token extends Nestable {
   type: "token";
   content: string;
 }
 
 /** Reasoning-trace deltas (e.g. `<think>` blocks from r1-style models). */
-export interface Reasoning {
+export interface Reasoning extends Nestable {
   type: "reasoning";
   content: string;
 }
 
-export interface ToolCallStart {
+export interface ToolCallStart extends Nestable {
   type: "tool_call_start";
   id: string;
   name: string;
   args: Record<string, unknown>;
 }
 
-export interface ToolCallEnd {
+export interface ToolCallEnd extends Nestable {
   type: "tool_call_end";
   id: string;
   result?: unknown;
@@ -44,7 +57,7 @@ export interface ToolCallEnd {
   duration_ms: number;
 }
 
-export interface Iteration {
+export interface Iteration extends Nestable {
   type: "iteration";
   n: number;
 }

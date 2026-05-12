@@ -26,6 +26,7 @@ export type {
   Chat,
   ChatTurn,
   ChatToolCallRecord,
+  ToolSubEvent,
 } from "./chatStore.js";
 export {
   useChatCost,

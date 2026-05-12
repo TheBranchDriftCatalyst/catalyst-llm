@@ -31,6 +31,36 @@ export interface ToolCall {
  * shape directly. Persisted with the chat so a refresh keeps the
  * tool-call history.
  */
+/**
+ * One sub-event that happened INSIDE a tool's execution — a council
+ * member's token, a critic's structured-output line, a nested
+ * tool_call_start/end, etc. The backend tags such events with
+ * `owner_tool_id`; chatStore routes them here so the ToolCallCard
+ * can render an expandable "reasoning" section per tool call
+ * instead of leaking them into the parent assistant bubble.
+ *
+ * Discriminated by `kind` so the renderer can switch over shapes
+ * without sniffing structure. Kept minimal — we only carry the
+ * fields the UI actually displays.
+ */
+export type ToolSubEvent =
+  | { kind: "token"; content: string }
+  | { kind: "reasoning"; content: string }
+  | { kind: "iteration"; n: number }
+  | {
+      kind: "tool_call_start";
+      id: string;
+      name: string;
+      args: Record<string, unknown>;
+    }
+  | {
+      kind: "tool_call_end";
+      id: string;
+      result?: unknown;
+      error?: string;
+      duration_ms: number;
+    };
+
 export interface ChatToolCallRecord {
   call: ToolCall;
   args: unknown;
@@ -41,6 +71,15 @@ export interface ChatToolCallRecord {
   iteration: number;
   /** Wall-clock when the call resolved (used for ordering + display). */
   finished_at: number;
+  /**
+   * Events emitted by inner LLMs / nested tools while THIS tool was
+   * running. The ToolCallCard renders these in a collapsible
+   * "reasoning" dropdown so the operator can drill into sub-agent
+   * activity (council members, critic, fusion) without it
+   * polluting the parent chat bubble. Empty / undefined when the
+   * tool had no nested activity (e.g. plain `web_search` calls).
+   */
+  sub_events?: ToolSubEvent[];
 }
 
 export interface ChatTurn {
@@ -362,7 +401,97 @@ export const useChatStore = create<ChatStore>()(
         { signal: ctrl.signal },
       );
 
+      // Helper: append a sub-event to a tool's sub_events array.
+      // Used when an incoming event carries `owner_tool_id` — those
+      // events were produced INSIDE that tool's execution (council
+      // members, critic, fusion, …) and shouldn't render in the
+      // parent chat bubble. The ToolCallCard renders sub_events in
+      // a collapsible "reasoning" section.
+      const appendSubEvent = (ownerToolId: string, subEvent: ToolSubEvent) => {
+        set((s) => ({
+          chats: s.chats.map((c) => {
+            if (c.id !== chatId) return c;
+            const msgs = [...c.messages];
+            const last = msgs[msgs.length - 1];
+            if (last?.role !== "assistant") return c;
+            const idx = recordIndex.get(ownerToolId);
+            if (idx === undefined) return c;
+            const calls = [...(last.tool_calls ?? [])];
+            if (!calls[idx]) return c;
+            const existingSubs = calls[idx].sub_events ?? [];
+            // Coalesce consecutive `token`/`reasoning` chunks into a
+            // single sub-event so the UI doesn't render thousands of
+            // 2-char fragments. Other event kinds are atomic.
+            if (
+              (subEvent.kind === "token" || subEvent.kind === "reasoning") &&
+              existingSubs.length > 0
+            ) {
+              const tail = existingSubs[existingSubs.length - 1];
+              if (tail.kind === subEvent.kind) {
+                const merged = {
+                  ...tail,
+                  content: tail.content + subEvent.content,
+                } as ToolSubEvent;
+                calls[idx] = {
+                  ...calls[idx],
+                  sub_events: [...existingSubs.slice(0, -1), merged],
+                };
+                msgs[msgs.length - 1] = { ...last, tool_calls: calls };
+                return { ...c, messages: msgs };
+              }
+            }
+            calls[idx] = {
+              ...calls[idx],
+              sub_events: [...existingSubs, subEvent],
+            };
+            msgs[msgs.length - 1] = { ...last, tool_calls: calls };
+            return { ...c, messages: msgs };
+          }),
+        }));
+      };
+
       for await (const ev of stream) {
+        // Route nested events (those produced inside a tool's
+        // execution) into the matching tool's sub_events list. This
+        // is what stops a research council's member chatter from
+        // leaking into the parent's chat bubble.
+        const ownerToolId =
+          "owner_tool_id" in ev ? (ev.owner_tool_id ?? null) : null;
+        if (ownerToolId) {
+          switch (ev.type) {
+            case "token":
+              appendSubEvent(ownerToolId, { kind: "token", content: ev.content });
+              continue;
+            case "reasoning":
+              appendSubEvent(ownerToolId, {
+                kind: "reasoning",
+                content: ev.content,
+              });
+              continue;
+            case "iteration":
+              appendSubEvent(ownerToolId, { kind: "iteration", n: ev.n });
+              continue;
+            case "tool_call_start":
+              appendSubEvent(ownerToolId, {
+                kind: "tool_call_start",
+                id: ev.id,
+                name: ev.name,
+                args: ev.args,
+              });
+              continue;
+            case "tool_call_end":
+              appendSubEvent(ownerToolId, {
+                kind: "tool_call_end",
+                id: ev.id,
+                result: ev.result,
+                error: ev.error,
+                duration_ms: ev.duration_ms,
+              });
+              continue;
+            // run_started / message_done / error are top-level only —
+            // fall through to the main switch.
+          }
+        }
         switch (ev.type) {
           case "run_started": {
             // Stash run_id on the assistant turn's meta for traceability.

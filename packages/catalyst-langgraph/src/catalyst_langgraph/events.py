@@ -22,13 +22,36 @@ class RunStarted(BaseModel):
     model: str
 
 
-class Token(BaseModel):
+# Optional attribution shared by every "nestable" event below.
+#
+# When `owner_tool_id` is set, this event was produced INSIDE the
+# execution of the named tool call (e.g. the council members'
+# tokens while `research` runs). The UI uses this to route the
+# event into that tool's expandable "reasoning" section in the
+# ToolCallCard rather than dumping it into the parent's chat bubble.
+# When None / omitted, the event came from the parent agent itself
+# and renders inline as before. Field lives at the event level (not
+# in a wrapper) so existing UIs keep working — they can just ignore
+# the field and behave as today.
+class _Nestable(BaseModel):
+    owner_tool_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Tool-call id this event was produced inside. None when "
+            "produced by the parent agent. UIs use this to nest sub-"
+            "agent activity (council members, critic, fusion) inside "
+            "the parent tool card."
+        ),
+    )
+
+
+class Token(_Nestable):
     """Single LLM content delta (from on_chat_model_stream)."""
     type: Literal["token"] = "token"
     content: str
 
 
-class Reasoning(BaseModel):
+class Reasoning(_Nestable):
     """Reasoning-trace delta (e.g. <think> blocks from r1-style models).
     Today we forward the raw text and let the UI's existing
     splitReasoning() / ReasoningBlock pipeline handle it."""
@@ -36,14 +59,14 @@ class Reasoning(BaseModel):
     content: str
 
 
-class ToolCallStart(BaseModel):
+class ToolCallStart(_Nestable):
     type: Literal["tool_call_start"] = "tool_call_start"
     id: str
     name: str
     args: dict[str, Any]
 
 
-class ToolCallEnd(BaseModel):
+class ToolCallEnd(_Nestable):
     type: Literal["tool_call_end"] = "tool_call_end"
     id: str
     result: Optional[Any] = None
@@ -51,7 +74,7 @@ class ToolCallEnd(BaseModel):
     duration_ms: int
 
 
-class Iteration(BaseModel):
+class Iteration(_Nestable):
     """New tool-loop iteration begins. Mirrors the iteration counter the
     TS SDK exposed; UIs can use it for grouping or progress hints."""
     type: Literal["iteration"] = "iteration"
