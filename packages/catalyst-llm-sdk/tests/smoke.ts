@@ -2,11 +2,24 @@
 //
 //   LITELLM_BASE_URL=http://localhost:4000 LITE_LLM_KEY=sk-…  yarn smoke
 //
-// Exits non-zero on failure so it can gate a release.
+// Exits non-zero on failure so it can gate a release. When the required
+// env vars are unset, exits 0 with a clear "skipped" message so the
+// monorepo's `task test:smoke` aggregator stays green on dev machines
+// without LiteLLM credentials configured.
 
 import { CatalystLLMClient } from "../src/client/index.js";
 
+const REQUIRED_ENV = ["LITELLM_BASE_URL", "LITE_LLM_KEY"] as const;
+
 async function main() {
+  const missing = REQUIRED_ENV.filter((k) => !process.env[k]);
+  if (missing.length > 0) {
+    console.log(
+      `sdk:smoke skipped — set ${missing.join(", ")} to run against a live ` +
+        `LiteLLM proxy (see tests/smoke.ts header for details).`,
+    );
+    return;
+  }
   const client = new CatalystLLMClient();
   const ok = await client.verifyConnection();
   console.log("verifyConnection:", ok);
