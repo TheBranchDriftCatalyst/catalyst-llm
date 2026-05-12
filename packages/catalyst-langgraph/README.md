@@ -10,6 +10,8 @@ nodes can build `ChatOpenAI` instances without an extra package hop.
 External tool calls are forwarded to the FastAPI `tool-host` sidecar
 over HTTP.
 
+TODO: need to change this a bit so that t we can have different agents and 'servers' maybe make the default one a chat agent/architecture
+
 ## Layout
 
 ```

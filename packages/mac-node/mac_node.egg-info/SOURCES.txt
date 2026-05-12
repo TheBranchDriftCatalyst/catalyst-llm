@@ -1,0 +1,6 @@
+pyproject.toml
+mac_node.egg-info/PKG-INFO
+mac_node.egg-info/SOURCES.txt
+mac_node.egg-info/dependency_links.txt
+mac_node.egg-info/requires.txt
+mac_node.egg-info/top_level.txt

@@ -1,0 +1,12 @@
+Metadata-Version: 2.4
+Name: mac-node
+Version: 0.1.0
+Summary: M3 Mac bare-metal LLM inference node services
+Requires-Python: >=3.12
+Requires-Dist: open-webui>=0.8.0
+Requires-Dist: mlx>=0.22.0
+Requires-Dist: mlx-lm>=0.21.0
+Requires-Dist: pyyaml>=6.0
+Requires-Dist: huggingface_hub>=0.24
+Provides-Extra: vllm
+Requires-Dist: vllm-mlx; extra == "vllm"

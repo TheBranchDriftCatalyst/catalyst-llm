@@ -1,0 +1,28 @@
+# SearXNG Settings Override for Catalyst LLM
+# Only override what we need - inherits defaults for the rest
+
+use_default_settings: true
+
+general:
+  instance_name: "Catalyst Search"
+  enable_metrics: false
+
+server:
+  secret_key: "catalyst-llm-searxng-secret-change-in-production"
+  limiter: false
+  image_proxy: true
+  bind_address: "0.0.0.0"
+
+search:
+  safe_search: 0
+  autocomplete: "google"
+  formats:
+    - html
+    - json
+
+ui:
+  default_theme: simple
+  infinite_scroll: true
+  query_in_title: true
+  theme_args:
+    simple_style: dark
