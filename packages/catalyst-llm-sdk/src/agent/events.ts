@@ -248,3 +248,30 @@ export interface AgentDescriptor {
 export interface ListAgentsResponse {
   agents: AgentDescriptor[];
 }
+
+// ─── Runs by node (mirror /api/runs/by-node schema) ───────────────────
+
+/**
+ * One row in the /api/runs/by-node response — a recent run that
+ * touched the queried node, summarised for the Engine page's
+ * NodeRunsList Sheet body.
+ *
+ * `last_ts` is the wire form FastAPI emits when the Python model
+ * declares `float` — epoch seconds since the events table stores ts
+ * as a DOUBLE. (Not an ISO string; the spec note in the ticket
+ * predates the float-typed Pydantic model.) The UI passes it
+ * through `new Date(last_ts * 1000)` for display.
+ */
+export interface RunByNodeRow {
+  run_id: string;
+  /** Epoch seconds (float) of the latest event for this run on this node. */
+  last_ts: number;
+  event_count: number;
+  had_error: boolean;
+  completed: boolean;
+}
+
+/** Response shape for GET /api/runs/by-node. */
+export interface ListRunsByNodeResponse {
+  runs: RunByNodeRow[];
+}

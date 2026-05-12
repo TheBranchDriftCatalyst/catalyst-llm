@@ -4,6 +4,10 @@ export {
   type ReactFlowAgentTopologyProps,
 } from "./engine/ReactFlowAgentTopology.js";
 export {
+  NodeRunsList,
+  type NodeRunsListProps,
+} from "./engine/NodeRunsList.js";
+export {
   AgentConfigForm,
   type AgentConfigFormProps,
 } from "./engine/AgentConfigForm.js";

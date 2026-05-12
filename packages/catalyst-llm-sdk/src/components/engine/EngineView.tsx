@@ -35,6 +35,7 @@ import type { AgentDescriptor } from "../../agent/events.js";
 import { useAgents } from "../../react/hooks.js";
 import { useEngineStore } from "../../react/engineStore.js";
 import { cn } from "../utils.js";
+import { NodeRunsList } from "./NodeRunsList.js";
 import { ReactFlowAgentTopology } from "./ReactFlowAgentTopology.js";
 
 function countAgentOverrides(
@@ -149,6 +150,13 @@ export function EngineView({ className }: EngineViewProps) {
                 nodeId,
               })
             }
+            onOpenRunsSheet={(nodeId) =>
+              setSheetContext({
+                kind: "runs",
+                agentId: selected.id,
+                nodeId,
+              })
+            }
           />
         ) : (
           <div className="flex h-full items-center justify-center text-muted-foreground">
@@ -177,9 +185,17 @@ export function EngineView({ className }: EngineViewProps) {
                 : ""}
             </SheetDescription>
           </SheetHeader>
-          <div className="mt-4 text-sm text-muted-foreground">
-            Sheet body lands in {sheetContext?.kind === "prompt" ? "llm-ta1" : "llm-jui"}.
-          </div>
+          {sheetContext?.kind === "runs" ? (
+            <NodeRunsList
+              agentId={sheetContext.agentId}
+              nodeId={sheetContext.nodeId}
+              className="mt-4"
+            />
+          ) : (
+            <div className="mt-4 text-sm text-muted-foreground">
+              Sheet body lands in llm-ta1.
+            </div>
+          )}
         </SheetContent>
       </Sheet>
     </div>
@@ -239,9 +255,11 @@ function AgentCard({
 function AgentDetail({
   agent,
   onOpenPromptSheet,
+  onOpenRunsSheet,
 }: {
   agent: AgentDescriptor;
   onOpenPromptSheet: (nodeId: string) => void;
+  onOpenRunsSheet: (nodeId: string) => void;
 }) {
   const agentCfg = useEngineStore((s) => s.configs[agent.id]);
   const resetAgent = useEngineStore((s) => s.resetAgent);
@@ -310,6 +328,7 @@ function AgentDetail({
           selectedNodeId={selectedNodeId}
           onNodeSelect={setSelectedNodeId}
           onOpenPromptSheet={onOpenPromptSheet}
+          onOpenRunsSheet={onOpenRunsSheet}
           // Override the rounded card framing — at viewport scale
           // the inner border becomes redundant with the header
           // divider above and the page chrome around it.

@@ -25,6 +25,7 @@ import {
   type AgentEventType,
   type ChatStreamRequest,
   type ListAgentsResponse,
+  type ListRunsByNodeResponse,
 } from "./events.js";
 
 export interface AgentClientConfig {
@@ -119,6 +120,37 @@ export class CatalystAgentClient {
       throw new Error(`listAgents failed: ${resp.status} ${resp.statusText}`);
     }
     return (await resp.json()) as ListAgentsResponse;
+  }
+
+  /**
+   * List the recent runs that touched a given node (per-event `node`
+   * attribution — see catalyst-langgraph's EventStore). Powers the
+   * Engine page's right-side Sheet body: clicking the runs icon on a
+   * node card fetches the last few runs that produced any event on it.
+   *
+   * `agentId` is informational today (the events table has no
+   * agent_id column, so the server ignores it for filtering); it
+   * travels for future per-agent scoping without changing the call
+   * sites on the UI.
+   */
+  async listRunsByNode(
+    node: string,
+    agentId?: string,
+    limit = 20,
+  ): Promise<ListRunsByNodeResponse> {
+    const url = new URL(`${this.baseUrl}/api/runs/by-node`);
+    url.searchParams.set("node", node);
+    if (agentId) url.searchParams.set("agent_id", agentId);
+    url.searchParams.set("limit", String(limit));
+    const resp = await this.fetchImpl(url.toString(), {
+      headers: this.headers,
+    });
+    if (!resp.ok) {
+      throw new Error(
+        `listRunsByNode failed: ${resp.status} ${resp.statusText}`,
+      );
+    }
+    return (await resp.json()) as ListRunsByNodeResponse;
   }
 
   /**
