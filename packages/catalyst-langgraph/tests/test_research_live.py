@@ -53,15 +53,18 @@ TOOL_HOST_OK = bool(os.environ.get("TOOL_HOST_URL"))
 #   RESEARCH_TEST_MODELS=mac/qwen3-8b,mac/glm-4.5-air pytest -m integration tests/test_research_live.py
 _DEFAULT_MODELS = [
     "claude-haiku-4-5-20251001",
-    # Local Ollama row. mac/qwen3-coder is currently what talos00's
-    # LiteLLM advertises; XFAIL'd below because the model
-    # over-searches (ignores "MAX 2 searches" prompt rule) and
-    # exhausts the recursion budget before synthesis. The xfail
-    # surfaces the failure to operators without breaking CI; once
-    # we either (a) deploy qwen3:8b to talos00 LiteLLM, or (b)
-    # engineer a structural per-member search cap into the research
-    # tool, swap this row + drop the xfail marker.
+    # Local Ollama rows. mac/qwen3-coder is what talos00's LiteLLM
+    # advertises; XFAIL'd below because it ignores "MAX 2 searches"
+    # and exhausts the recursion budget before synthesis. mac/phi4
+    # passes the simpler graph + web_search surface (see
+    # test_graph_live.py) — the original llm-gbp bug surface — but
+    # exhibits the same over-search behaviour on the research path's
+    # tighter prompt, so it's XFAIL'd here too. Both rows promote to
+    # plain entries once we either (a) deploy qwen3:8b to talos00
+    # LiteLLM, or (b) engineer a structural per-member search cap
+    # into the research tool.
     "mac/qwen3-coder",
+    "mac/phi4",
 ]
 
 # Models we know fail today. Listed here (rather than dropped from the
@@ -72,6 +75,10 @@ _DEFAULT_MODELS = [
 _KNOWN_BAD_MODELS = {
     "mac/qwen3-coder": (
         "over-searches past 'max 2 searches' rule, hits recursion limit"
+    ),
+    "mac/phi4": (
+        "over-searches past 'max 2 searches' rule, hits recursion limit "
+        "(passes simpler test_graph_live web_search surface — llm-gbp)"
     ),
 }
 TEST_MODELS = [
