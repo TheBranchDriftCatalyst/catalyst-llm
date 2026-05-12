@@ -32,7 +32,7 @@ import { useAgents } from "../../react/hooks.js";
 import { useEngineStore } from "../../react/engineStore.js";
 import { cn } from "../utils.js";
 import { AgentConfigForm } from "./AgentConfigForm.js";
-import { AgentTopologyView } from "./AgentTopology.js";
+import { ReactFlowAgentTopology } from "./ReactFlowAgentTopology.js";
 
 // Stable empty references for zustand selectors. Returning a fresh `{}`
 // or `[]` from a selector tells React's getSnapshot machinery the value
@@ -194,6 +194,14 @@ function AgentDetail({ agent }: { agent: AgentDescriptor }) {
   const resetAgent = useEngineStore((s) => s.resetAgent);
   const editedCount = countAgentOverrides(agentCfg);
 
+  // Selection lives here for now; T4 (llm-mxj) moves this into a
+  // proper three-pane layout where the right sidebar consumes it.
+  // Plumbing it through today so node clicks aren't a no-op while
+  // the user evaluates the new graph.
+  const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>(
+    undefined,
+  );
+
   const configurableNodes = useMemo(
     () => agent.topology.nodes.filter((n) => n.config_schema !== null),
     [agent.topology.nodes],
@@ -244,11 +252,17 @@ function AgentDetail({ agent }: { agent: AgentDescriptor }) {
           <CardDescription>
             The LangGraph state machine this Agent runs. Conditional edges
             (dashed, accent-coloured) are router transitions; solid edges
-            always fire.
+            always fire. Click a node to highlight it (right-panel detail
+            view lands in the next milestone).
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <AgentTopologyView topology={agent.topology} />
+          <ReactFlowAgentTopology
+            topology={agent.topology}
+            agentId={agent.id}
+            selectedNodeId={selectedNodeId}
+            onNodeSelect={setSelectedNodeId}
+          />
         </CardContent>
       </Card>
 

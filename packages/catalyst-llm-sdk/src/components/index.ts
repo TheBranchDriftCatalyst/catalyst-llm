@@ -1,8 +1,8 @@
 export { EngineView, type EngineViewProps } from "./engine/EngineView.js";
 export {
-  AgentTopologyView,
-  type AgentTopologyProps,
-} from "./engine/AgentTopology.js";
+  ReactFlowAgentTopology,
+  type ReactFlowAgentTopologyProps,
+} from "./engine/ReactFlowAgentTopology.js";
 export {
   AgentConfigForm,
   type AgentConfigFormProps,

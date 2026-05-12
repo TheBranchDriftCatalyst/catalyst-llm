@@ -41,12 +41,14 @@
     "build:watch": "tsup --watch",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:junit": "vitest run --reporter=default --reporter=junit --outputFile=.reports/junit.xml",
     "smoke": "tsx tests/smoke.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",
     "@duckdb/duckdb-wasm": "^1.33.1-dev45.0",
+    "@xyflow/react": "^12.10.2",
     "diff": "^9.0.0",
     "eventsource-parser": "^3.0.8",
     "katex": "^0.16.11",
