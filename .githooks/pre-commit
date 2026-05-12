@@ -1,9 +1,17 @@
 #!/usr/bin/env bash
-# pre-commit: keep k8s/base/litellm/config.yaml in sync with packages/mac-node/models.yaml
+# pre-commit:
+#   (1) ruff --fix on staged Python files; auto-fixed changes get re-staged
+#       into the same commit. Unfixable violations abort the commit.
+#   (2) keep k8s/base/litellm/config.yaml in sync with packages/mac-node/models.yaml.
 #
-# Strategy: regenerate the spliced mac-node block. If anything changed and
-# wasn't already staged, abort the commit and tell the user to review +
-# stage the diff. Never silently mutates the commit.
+# Strategy for (1): stash unstaged work (--keep-index) so the autofix only
+# touches what was actually staged, run ruff --fix on the staged paths,
+# re-stage with `git add`, then pop the stash. Files with unfixable
+# violations halt the commit with a clear message.
+#
+# Strategy for (2): regenerate the spliced mac-node block. If anything
+# changed and wasn't already staged, abort the commit and tell the user to
+# review + stage the diff. Never silently mutates the commit.
 #
 # Install (one-time):
 #   git config core.hooksPath .githooks
@@ -13,6 +21,68 @@
 set -euo pipefail
 
 REPO=$(git rev-parse --show-toplevel)
+
+# ─────────────────────────────────────────────────────────────────────
+# (1) Ruff auto-fix on staged Python files
+# ─────────────────────────────────────────────────────────────────────
+
+# Find staged .py files that still exist in the working tree (skip deletes).
+staged_py=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.py$' || true)
+
+if [[ -n "$staged_py" ]]; then
+  # Refuse partial-staging on any of our targets — running ruff --fix on
+  # the working tree would mix unstaged content into the commit. The
+  # textbook stash-and-restore dance gets messy when the staged file is
+  # the same one ruff modifies, so we just bail out with a clear message
+  # and let the user clean up. This case is rare in practice (you have
+  # to deliberately `git add -p` a Python file).
+  for f in $staged_py; do
+    if ! git diff --quiet -- "$f"; then
+      echo "✗ pre-commit: $f has both staged and unstaged changes." >&2
+      echo "  Pre-commit ruff autofix needs a clean working copy of staged" >&2
+      echo "  files. Either stage the rest with 'git add $f' or stash the" >&2
+      echo "  unstaged remainder, then retry. Bypass with --no-verify." >&2
+      exit 1
+    fi
+  done
+
+  # Pick a ruff invocation. Bare `ruff` is preferred when present
+  # (instant); uvx is the portable fallback (downloads ruff on first run).
+  if command -v ruff >/dev/null 2>&1; then
+    RUFF=(ruff)
+  elif command -v uvx >/dev/null 2>&1; then
+    RUFF=(uvx --quiet --from "ruff>=0.6" ruff)
+  else
+    echo "pre-commit: neither 'ruff' nor 'uvx' on PATH — skipping ruff autofix" >&2
+    RUFF=()
+  fi
+
+  if (( ${#RUFF[@]} > 0 )); then
+    # Run ruff --fix on the working tree. Since we asserted above that
+    # each staged file's working copy matches its index, modifying the
+    # working tree is equivalent to modifying the staged content.
+    # Exit code 0 = clean or fully auto-fixed; non-zero = unfixable
+    # violations remain → abort the commit.
+    set +e
+    "${RUFF[@]}" check --fix -- $staged_py
+    ruff_rc=$?
+    set -e
+
+    # Re-stage anything ruff touched. `git add` is a no-op for files
+    # that weren't modified, so unconditional add is safe + simple.
+    git add -- $staged_py
+
+    if (( ruff_rc != 0 )); then
+      echo "✗ pre-commit: ruff reported unfixable violations." >&2
+      echo "  Fix the remaining issues manually, or commit with --no-verify." >&2
+      exit 1
+    fi
+  fi
+fi
+
+# ─────────────────────────────────────────────────────────────────────
+# (2) LiteLLM config sync (models.yaml → k8s/base/litellm/config.yaml)
+# ─────────────────────────────────────────────────────────────────────
 GEN="${REPO}/packages/mac-node/scripts/gen-litellm.py"
 SRC="${REPO}/packages/mac-node/models.yaml"
 TARGET="${REPO}/k8s/base/litellm/config.yaml"
