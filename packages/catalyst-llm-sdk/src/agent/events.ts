@@ -156,18 +156,41 @@ export interface ChatStreamRequest {
 
 // ─── Agent registry types (mirror /api/agents schema) ─────────────────
 
+/** Structural-grouping style for compound containers on the topology canvas.
+ *
+ * `ensemble` — visually suggests "N parallel copies of this thing"
+ *   (faint container, e.g. a Mixture-of-Experts gate around expert nodes).
+ * `actor_critic_loop` — dashed container around generator + critic +
+ *   (optional) fusion participants; conveys the feedback semantics
+ *   without requiring the operator to read the edges.
+ */
+export type GroupType = "ensemble" | "actor_critic_loop";
+
 /** One node in an Agent's topology graph.
  *
  * `config_schema` (JSON Schema from the node's Pydantic class) and
  * `config_defaults` (no-arg instance dump) are non-null only for nodes
  * that actually consume operator-tweakable knobs — start/end terminals
  * and pure-dispatch tools nodes leave both as null.
+ *
+ * Optional structural-grouping metadata (UI-only — does not affect the
+ * runtime LangGraph state machine):
+ *   - `group_id` — nodes sharing the same group_id render inside the
+ *     same compound container on the Engine tab.
+ *   - `group_type` — sets the container's visual style.
+ *   - `instance_count_field` — when set, names a field in *this* node's
+ *     own `config_schema` whose live value drives how many small
+ *     "instance" sub-cards the UI stamps inside the node card. Visual
+ *     only; the sub-cards are not separately configurable.
  */
 export interface AgentTopologyNode {
   id: string;
   type: "start" | "end" | "agent" | "tools";
   config_schema: AgentConfigSchema | null;
   config_defaults: Record<string, unknown> | null;
+  group_type?: GroupType | null;
+  group_id?: string | null;
+  instance_count_field?: string | null;
 }
 
 /** One edge between two topology nodes. */

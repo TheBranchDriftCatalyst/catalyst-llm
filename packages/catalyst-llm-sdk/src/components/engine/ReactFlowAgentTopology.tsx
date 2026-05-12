@@ -42,11 +42,12 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Activity, CircleDot, Flag, Wrench } from "lucide-react";
+import { Activity, CircleDot, Flag, Users, Wrench } from "lucide-react";
 import type {
   AgentConfigSchema,
   AgentTopology,
   AgentTopologyNode,
+  GroupType,
 } from "../../agent/events.js";
 import { useEngineStore } from "../../react/engineStore.js";
 import { cn } from "../utils.js";
@@ -110,6 +111,40 @@ function getNodeSize(node: AgentTopologyNode): { w: number; h: number } {
 const RANK_SEP = 60;
 const NODE_SEP = 80;
 
+// Compound-container padding. We grow the group's bounding box by this
+// many pixels on each side so children don't touch the dashed border,
+// and reserve a `GROUP_LABEL_BAND` strip at the top for the group's
+// "actor-critic loop" / "ensemble" label.
+const GROUP_PADDING = 24;
+const GROUP_LABEL_BAND = 28;
+
+// Group-container visual styling. Keeps tone parity with NODE_VISUAL
+// above so the canvas reads as one palette.
+const GROUP_VISUAL: Record<
+  GroupType,
+  { label: string; border: string; bg: string; text: string }
+> = {
+  actor_critic_loop: {
+    label: "actor-critic loop",
+    // dashed border conveys "this is the feedback loop region"; the
+    // primary/violet tint reads as the LLM-driven part of the graph.
+    border: "border-violet-400/60",
+    bg: "bg-violet-500/[0.06]",
+    text: "text-violet-200",
+  },
+  ensemble: {
+    label: "ensemble",
+    border: "border-amber-400/60",
+    bg: "bg-amber-500/[0.06]",
+    text: "text-amber-200",
+  },
+};
+
+// Cap on how many "instance" thumbnails we stamp inside an ensemble
+// member card. Beyond this we render a +N overflow chip — cheap visual
+// proxy for "more than fit on the card".
+const INSTANCE_STAMP_MAX = 6;
+
 // Per-type icon + visual tone. Tones colour the card border + a faint
 // background tint; the existing dagre view used the same palette so
 // the swap is visually continuous.
@@ -157,6 +192,11 @@ interface CommonNodeData extends Record<string, unknown> {
   toolList: string[];
   /** Called when the prompt-icon button on an agent node is clicked. */
   onOpenPromptSheet?: (nodeId: string) => void;
+  /** When set, names a field in this node's own schema whose live
+   * value drives the per-card instance-stamp row (e.g. members'
+   * `council_size` → N small avatar circles). Visual only — the
+   * stamps are NOT separately configurable nodes. */
+  instanceCountField?: string | null;
 }
 
 function layoutWithDagre(
@@ -323,6 +363,22 @@ function AgentNodeCard({ data }: NodeProps) {
       : defaults[fieldName];
   }
 
+  // Instance-count visualisation: when this node advertises an
+  // `instance_count_field`, render a small chip row of N stamps so
+  // the operator can SEE "council_size=3" as 3 thumbnails without
+  // reading the slider. Live override wins over schema default —
+  // bumping council_size in the inline form animates the stamps
+  // immediately. Cap at INSTANCE_STAMP_MAX with a +overflow chip.
+  const instanceField = d.instanceCountField;
+  const rawInstanceCount =
+    instanceField != null ? values[instanceField] : undefined;
+  const instanceCount =
+    typeof rawInstanceCount === "number" && Number.isFinite(rawInstanceCount)
+      ? Math.max(0, Math.floor(rawInstanceCount))
+      : 0;
+  const stampsToRender = Math.min(instanceCount, INSTANCE_STAMP_MAX);
+  const stampOverflow = Math.max(0, instanceCount - INSTANCE_STAMP_MAX);
+
   return (
     <div
       className={cn(
@@ -344,6 +400,28 @@ function AgentNodeCard({ data }: NodeProps) {
           </span>
         )}
       </div>
+      {instanceField && instanceCount > 0 && (
+        <div
+          className="flex items-center gap-1 rounded-sm border border-primary/30 bg-primary/5 px-1.5 py-1 text-[10px] font-mono"
+          title={`${instanceCount} instances (live ${instanceField})`}
+        >
+          <Users className="h-3 w-3 shrink-0 text-primary/80" aria-hidden="true" />
+          <span className="text-primary/90">{instanceCount}</span>
+          <div className="flex items-center gap-0.5 ml-1">
+            {Array.from({ length: stampsToRender }).map((_, i) => (
+              <span
+                key={i}
+                className="block h-2.5 w-2.5 rounded-full border border-primary/60 bg-primary/30"
+              />
+            ))}
+            {stampOverflow > 0 && (
+              <span className="ml-0.5 text-[9px] text-primary/70">
+                +{stampOverflow}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
       <NodeInlineConfig
         schema={d.schema}
         values={values}
@@ -364,11 +442,47 @@ function AgentNodeCard({ data }: NodeProps) {
 // and an infinite render loop.
 const EMPTY_OBJ: Record<string, unknown> = Object.freeze({});
 
+// ─── Group container ────────────────────────────────────────────────
+// Pure visual wrapper. Children's `parentId` points at this node, so
+// reactflow places them relative to its origin; this card just paints
+// the dashed border + label band. No handles — edges still run
+// between the original child node ids.
+
+interface GroupNodeData extends Record<string, unknown> {
+  groupType: GroupType;
+}
+
+function GroupContainerNode({ data }: NodeProps) {
+  const d = data as GroupNodeData;
+  const visual = GROUP_VISUAL[d.groupType];
+  return (
+    <div
+      // h/w come from the synthetic node's inline style (we size it to
+      // exactly enclose its children); this div just fills that box.
+      className={cn(
+        "relative h-full w-full rounded-lg border-2 border-dashed pointer-events-none",
+        visual.border,
+        visual.bg,
+      )}
+    >
+      <div
+        className={cn(
+          "absolute left-2 top-1 flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-wider",
+          visual.text,
+        )}
+      >
+        <span>{visual.label}</span>
+      </div>
+    </div>
+  );
+}
+
 const NODE_TYPES = {
   start: StartEndChip,
   end: StartEndChip,
   tools: ToolsNodeCard,
   agent: AgentNodeCard,
+  groupContainer: GroupContainerNode,
 };
 
 // Edge colors. The catalyst theme stores --accent / --foreground as
@@ -503,12 +617,106 @@ export function ReactFlowAgentTopology({
 }: ReactFlowAgentTopologyProps) {
   const positions = useMemo(() => layoutWithDagre(topology), [topology]);
 
-  const nodes: Node[] = useMemo(
-    () =>
-      topology.nodes.map((n) => ({
+  // ─── Group containers ─────────────────────────────────────────────
+  // Cluster topology.nodes by `group_id` and synthesise one container
+  // node per cluster. The container's bounding box is the axis-aligned
+  // hull of its children (plus padding + a label band on top); each
+  // grouped child gets `parentId` + a position translated to be
+  // relative to the container's origin.
+  //
+  // Dagre laid the nodes out absolutely before we did the grouping —
+  // so we keep dagre's positions for ungrouped nodes (and for edges
+  // which still target the original child ids) and only translate
+  // grouped children. Edges keep working because reactflow's
+  // FloatingEdge reads each node's resolved absolute position at
+  // render time.
+  const groupedLayout = useMemo(() => {
+    const groupBuckets = new Map<string, { type: GroupType; members: AgentTopologyNode[] }>();
+    for (const n of topology.nodes) {
+      if (n.group_id && n.group_type) {
+        let bucket = groupBuckets.get(n.group_id);
+        if (!bucket) {
+          bucket = { type: n.group_type, members: [] };
+          groupBuckets.set(n.group_id, bucket);
+        }
+        bucket.members.push(n);
+      }
+    }
+    type GroupBox = {
+      id: string;
+      type: GroupType;
+      position: { x: number; y: number };
+      size: { w: number; h: number };
+    };
+    const groups: GroupBox[] = [];
+    // map childId → { groupId, relPosition }
+    const childAdjustments = new Map<
+      string,
+      { groupId: string; relX: number; relY: number }
+    >();
+    for (const [gid, bucket] of groupBuckets) {
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (const m of bucket.members) {
+        const pos = positions[m.id] ?? { x: 0, y: 0 };
+        const sz = getNodeSize(m);
+        if (pos.x < minX) minX = pos.x;
+        if (pos.y < minY) minY = pos.y;
+        if (pos.x + sz.w > maxX) maxX = pos.x + sz.w;
+        if (pos.y + sz.h > maxY) maxY = pos.y + sz.h;
+      }
+      const groupOriginX = minX - GROUP_PADDING;
+      const groupOriginY = minY - GROUP_PADDING - GROUP_LABEL_BAND;
+      const groupW = maxX - minX + GROUP_PADDING * 2;
+      const groupH = maxY - minY + GROUP_PADDING * 2 + GROUP_LABEL_BAND;
+      const groupNodeId = `group:${gid}`;
+      groups.push({
+        id: groupNodeId,
+        type: bucket.type,
+        position: { x: groupOriginX, y: groupOriginY },
+        size: { w: groupW, h: groupH },
+      });
+      for (const m of bucket.members) {
+        const pos = positions[m.id] ?? { x: 0, y: 0 };
+        childAdjustments.set(m.id, {
+          groupId: groupNodeId,
+          relX: pos.x - groupOriginX,
+          relY: pos.y - groupOriginY,
+        });
+      }
+    }
+    return { groups, childAdjustments };
+  }, [topology.nodes, positions]);
+
+  const nodes: Node[] = useMemo(() => {
+    const out: Node[] = [];
+    // Emit group container nodes first so reactflow knows about them
+    // before it sees their children (reactflow accepts either order
+    // but ordering parent-first keeps things predictable in devtools).
+    for (const g of groupedLayout.groups) {
+      out.push({
+        id: g.id,
+        type: "groupContainer",
+        position: g.position,
+        // Sizing the synthetic node via `style.width/height` is the
+        // path reactflow's docs recommend for group/parent nodes; the
+        // GroupContainerNode div uses h-full/w-full to fill that box.
+        style: { width: g.size.w, height: g.size.h, zIndex: -1 },
+        data: { groupType: g.type } satisfies GroupNodeData,
+        draggable: false,
+        selectable: false,
+      });
+    }
+    for (const n of topology.nodes) {
+      const adj = groupedLayout.childAdjustments.get(n.id);
+      const base: Node = {
         id: n.id,
         type: n.type,
-        position: positions[n.id] ?? { x: 0, y: 0 },
+        position: adj
+          ? { x: adj.relX, y: adj.relY }
+          : (positions[n.id] ?? { x: 0, y: 0 }),
         data: {
           agentId,
           nodeId: n.id,
@@ -519,19 +727,30 @@ export function ReactFlowAgentTopology({
           size: getNodeSize(n),
           toolList: agentTools,
           onOpenPromptSheet,
+          instanceCountField: n.instance_count_field ?? null,
         } satisfies CommonNodeData,
         draggable: false,
         selectable: true,
-      })),
-    [
-      topology.nodes,
-      positions,
-      agentId,
-      selectedNodeId,
-      agentTools,
-      onOpenPromptSheet,
-    ],
-  );
+      };
+      if (adj) {
+        // parentId tells reactflow the child's position is relative
+        // to this node's origin. `extent: "parent"` would also clamp
+        // movement, but we already have draggable: false so the
+        // simpler parentId binding is enough.
+        (base as Node & { parentId: string }).parentId = adj.groupId;
+      }
+      out.push(base);
+    }
+    return out;
+  }, [
+    topology.nodes,
+    positions,
+    agentId,
+    selectedNodeId,
+    agentTools,
+    onOpenPromptSheet,
+    groupedLayout,
+  ]);
 
   const edges: Edge[] = useMemo(
     () =>
