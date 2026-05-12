@@ -74,6 +74,13 @@ tasks:
       - task: mac-node:test:full
       - task: sdk:test:full
 
+  # ─── Repo bootstrap ──────────────────────────────────────────────────
+  hooks:install:
+    desc: "Activate the repo's git hooks (run once after cloning)"
+    cmds:
+      - git config core.hooksPath .githooks
+      - echo "✓ git hooks active via .githooks/ ($(ls .githooks | tr '\n' ' '))"
+
   # ─── Snapshot regression gate (epic llm-doh) ─────────────────────────
   # Diff current k8s render + Tiltfile parse against committed baselines.
   # Used as the universal gate on every refactor PR. Update baselines via

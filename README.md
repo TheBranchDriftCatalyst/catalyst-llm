@@ -8,6 +8,9 @@ Self-hosted uncensored LLM stack running locally with web search, MCP tools, and
 For the repo's module layout, conventions, and deferred refactor decisions,
 see [`docs/STRUCTURE.md`](docs/STRUCTURE.md).
 
+After cloning, run `task hooks:install` to activate the repo's git hooks
+(ruff autofix on staged Python + litellm config sync).
+
 ---
 
 ## KUBERNETES DEPLOYMENT - NOT YET COMPLETE

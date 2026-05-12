@@ -5,6 +5,14 @@ This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get sta
 For the repository's module layout, conventions, and deferred decisions, see
 [`docs/STRUCTURE.md`](docs/STRUCTURE.md).
 
+### Fresh-clone setup
+
+```bash
+task hooks:install   # activates .githooks/pre-commit (ruff autofix + litellm sync)
+```
+
+Idempotent — safe to re-run.
+
 ### First-time `bd dolt` setup (per clone)
 
 `.beads/` is gitignored so each clone needs its dolt remote configured locally
