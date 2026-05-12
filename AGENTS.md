@@ -5,6 +5,18 @@ This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get sta
 For the repository's module layout, conventions, and deferred decisions, see
 [`docs/STRUCTURE.md`](docs/STRUCTURE.md).
 
+### First-time `bd dolt` setup (per clone)
+
+`.beads/` is gitignored so each clone needs its dolt remote configured locally
+before `bd dolt push|pull` works. One-time setup:
+
+```bash
+bd dolt remote add origin git+ssh://git@github.com/TheBranchDriftCatalyst/catalyst-llm.git
+bd dolt pull    # fetch the shared issue history
+```
+
+The remote pushes a `refs/dolt/data` ref alongside the normal git refs.
+
 ## Quick Reference
 
 ```bash
