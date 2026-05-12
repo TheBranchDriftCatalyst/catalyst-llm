@@ -23,3 +23,10 @@ markers = [
     "unit: tests with no external deps (currently none — every model test hits ollama)",
     "integration: tests that touch local services (chat/vision/embedding all qualify)",
 ]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["F"]

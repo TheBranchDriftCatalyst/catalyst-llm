@@ -34,3 +34,11 @@ markers = [
     "unit: tests with no external deps (no network, no spawned services)",
     "integration: tests that hit the live tool-host HTTP surface",
 ]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+# Pyflakes only (F) — see catalyst-langgraph for rationale.
+select = ["F"]

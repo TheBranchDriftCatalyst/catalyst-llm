@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import ToolMessage
 
 
 def _parse_sse(body: str) -> list[tuple[str, dict[str, Any]]]:

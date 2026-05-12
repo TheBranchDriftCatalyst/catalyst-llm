@@ -562,9 +562,9 @@ def skip_if_unavailable(
     litellm_models: set[str],
 ) -> None:
     if backend == "mac" and not mac_models:
-        pytest.skip(f"mac backend unreachable")
+        pytest.skip("mac backend unreachable")
     if backend == "litellm" and not litellm_models:
-        pytest.skip(f"litellm backend unreachable")
+        pytest.skip("litellm backend unreachable")
     if not is_pulled(backend, entry, mac_models, litellm_models):
         pytest.skip(f"{model_name_for(backend, entry)} not registered on {backend}")
 

@@ -234,9 +234,9 @@ tasks:
   #   cold-loads stay out of the per-request timeout (see beads llm-9ao).
 
   test:lint:
-    desc: "Static checks — no lint config yet, so a no-op"
+    desc: "ruff (Pyflakes — F rules) — config in pyproject.toml [tool.ruff]"
     cmds:
-      - 'uv run --project tests/python --with "ruff>=0.6" ruff check scripts/ tests/python/ 2>/dev/null || echo "  (ruff not configured — skipping)"'
+      - uv run --project tests/python --with "ruff>=0.6" ruff check scripts/ tests/python/
 
   test:unit:
     desc: "pytest --collect-only gate (no real unit tests today; ensures imports + parametrize are clean)"

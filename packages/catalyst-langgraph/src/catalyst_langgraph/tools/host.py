@@ -10,7 +10,6 @@ short (top-N, snippet only) so weak tool-callers don't drown in context.
 """
 from __future__ import annotations
 
-import json
 import os
 from typing import Optional
 

@@ -50,3 +50,13 @@ markers = [
     "unit: tests with no external deps (no network, no services)",
     "integration: tests that touch local services (litellm proxy, ollama)",
 ]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+# Pyflakes only (F) — unused imports, undefined names, unused vars.
+# Style rules (E/W) intentionally NOT enabled; we don't want a noisy
+# blackhole. Add rules later only with explicit consensus.
+select = ["F"]

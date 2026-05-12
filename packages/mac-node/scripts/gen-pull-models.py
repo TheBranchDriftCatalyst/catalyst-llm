@@ -8,7 +8,6 @@ Usage:
 """
 import argparse
 import os
-import textwrap
 from collections import defaultdict
 
 import yaml
@@ -68,7 +67,7 @@ def generate_script(cfg: dict, target: str) -> str:
 
     lines = [
         "#!/bin/bash",
-        f"# Auto-generated from models.yaml — do not edit manually.",
+        "# Auto-generated from models.yaml — do not edit manually.",
         f"# Regenerate with: python3 scripts/gen-pull-models.py --target {target}",
         f"# Target: {target}",
         "#",

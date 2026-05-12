@@ -10,9 +10,9 @@ includes:
 
 tasks:
   test:lint:
-    desc: "Static checks — no lint config yet, so a no-op import probe"
+    desc: "ruff (Pyflakes — F rules) — config in pyproject.toml [tool.ruff]"
     cmds:
-      - 'uv run --with "ruff>=0.6" ruff check src/ tests/ 2>/dev/null || echo "  (ruff not configured — skipping)"'
+      - uv run --with "ruff>=0.6" ruff check src/ tests/
 
   test:unit:
     desc: "pytest -m unit — no network, no services"

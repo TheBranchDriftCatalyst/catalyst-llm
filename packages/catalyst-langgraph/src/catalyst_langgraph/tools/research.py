@@ -51,8 +51,6 @@ from contextvars import ContextVar
 from typing import Any, Optional
 
 from langchain_core.messages import (
-    AIMessage,
-    BaseMessage,
     HumanMessage,
     SystemMessage,
 )
