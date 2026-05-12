@@ -1,9 +1,7 @@
 version: "3"
 
 # Shared commands for the catalyst-llm-sdk package + its example
-# playground + the tool-host sidecar. Mirrors the Taskfile UX of the
-# mac-node package so `task --list` from anywhere in the workspace
-# surfaces a consistent set of verbs.
+# playground + the tool-host sidecar.
 #
 #   cd packages/catalyst-llm-sdk
 #   task                            # list available tasks
@@ -11,6 +9,14 @@ version: "3"
 #   task dev                        # quickstart: tool-host + playground
 #   task build / test / typecheck   # SDK lifecycle
 #   task tools:up / tools:down      # docker compose for tool-host stack
+#
+# `default` + `test` alias + four-verb contract docs come from the
+# shared include (see taskfiles/test-contract.yml).
+
+includes:
+  contract:
+    taskfile: ../../taskfiles/test-contract.yml
+    flatten: true
 
 vars:
   REPO_ROOT:
@@ -21,11 +27,6 @@ vars:
   TOOL_HOST_URL: 'http://localhost:7077'
 
 tasks:
-  default:
-    desc: Show available tasks
-    cmds:
-      - task --list
-
   # ─── SDK lifecycle ────────────────────────────────────────────────
 
   install:
@@ -49,15 +50,7 @@ tasks:
     cmds:
       - yarn typecheck
 
-  # ─── Standard test contract (matches monorepo convention) ─────────
-  # Every package exposes test:lint / test:unit / test:smoke / test:full
-  # so the root Taskfile can fan out via `task test:unit` etc.
-  # `test` (no qualifier) aliases to `test:unit` — the fast default.
-
-  test:
-    desc: "Alias for test:unit (the fast default tier)"
-    cmds:
-      - task: test:unit
+  # ─── Test contract (see taskfiles/test-contract.yml) ─────────────
 
   test:lint:
     desc: "tsc --noEmit (typecheck) — no network, no services"

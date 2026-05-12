@@ -2,17 +2,20 @@ version: "3"
 
 # runpod sub-Taskfile was removed; pull-models.sh is the only remaining
 # artifact and gets invoked directly from scripts when needed.
+#
+# `default` + `test` alias + four-verb contract docs come from the
+# shared include (see taskfiles/test-contract.yml).
+
+includes:
+  contract:
+    taskfile: ../../taskfiles/test-contract.yml
+    flatten: true
 
 vars:
   MAC_IP:
     sh: echo "${MAC_NODE_IP:-$(ipconfig getifaddr en0 2>/dev/null || echo '192.168.1.33')}"
 
 tasks:
-  default:
-    desc: Show available tasks
-    cmds:
-      - task --list
-
   # ─── Setup ──────────────────────────────────────────────────────
 
   setup:
@@ -220,13 +223,7 @@ tasks:
       - ollama ps
 
   # ─── Testing ───────────────────────────────────────────────────
-  # Standard test contract for the monorepo. Every package exposes:
-  #   test:lint   — formatters / static checks (no services)
-  #   test:unit   — no network, no services         (default `task test`)
-  #   test:smoke  — quick integration               (Ollama up)
-  #   test:full   — full integration suite          (every model × cap)
-  # Root Taskfile fans out via `task mac-node:test:smoke` etc.
-  #
+  # Shared contract docs live in taskfiles/test-contract.yml.
   # mac-node specifics:
   # - There are no true unit tests here today (every test hits Ollama),
   #   so `test:unit` runs `pytest --collect-only` as a syntax/import gate.
@@ -235,11 +232,6 @@ tasks:
   #   is running.
   # - `test:full` = full back-to-back sweep with `--isolate-ollama` so
   #   cold-loads stay out of the per-request timeout (see beads llm-9ao).
-
-  test:
-    desc: "Alias for test:unit (the fast default tier)"
-    cmds:
-      - task: test:unit
 
   test:lint:
     desc: "Static checks — no lint config yet, so a no-op"

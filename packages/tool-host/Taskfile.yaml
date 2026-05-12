@@ -1,23 +1,14 @@
 version: "3"
 
-# Standard testing contract — see catalyst-langgraph/Taskfile.yaml
-# for the convention. Every package exposes:
-#   test:lint   — formatters + static checks
-#   test:unit   — no network, no services       (default `task test` tier)
-#   test:smoke  — quick integration             (live HTTP / FastAPI)
-#   test:full   — everything
+# Contract docs + default + test alias come from the shared include.
+# See taskfiles/test-contract.yml for the four-verb convention.
+
+includes:
+  contract:
+    taskfile: ../../taskfiles/test-contract.yml
+    flatten: true
 
 tasks:
-  default:
-    desc: Show available tasks
-    cmds:
-      - task --list
-
-  test:
-    desc: "Alias for test:unit (the fast default tier)"
-    cmds:
-      - task: test:unit
-
   test:lint:
     desc: "Static checks (ruff if available)"
     cmds:

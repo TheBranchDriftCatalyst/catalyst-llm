@@ -1,0 +1,27 @@
+version: "3"
+
+# Shared test-contract for every package in the catalyst-llm monorepo.
+# Per-package Taskfiles `include:` this with `flatten: true` to inherit
+# the conventions below for free; they then implement the verbs in their
+# own preferred toolchain (uv / pytest / yarn / vitest / bash).
+#
+# Standard four-verb contract — every package must expose:
+#
+#   test:lint   — formatters + static checks (no services, no network)
+#   test:unit   — pure unit tests           (no services, default `task test`)
+#   test:smoke  — quick integration         (live local services up)
+#   test:full   — full sweep                (every model × backend, slow)
+#
+# Root Taskfile fans out via `task <pkg>:test:<verb>` and the cross-package
+# aggregators (`task test:lint`, `task test:unit`, `task test:smoke`).
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  test:
+    desc: "Alias for test:unit (the fast default tier)"
+    cmds:
+      - task: test:unit
