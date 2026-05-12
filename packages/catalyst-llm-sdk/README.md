@@ -10,7 +10,7 @@ Three coordinated layers in one package:
 
 ## Auth (interim)
 
-Reads in this order: explicit constructor arg → `LITE_LLM_KEY` → `LITELLM_API_KEY` → `VITE_LITELLM_KEY` → `NEXT_PUBLIC_LITE_LLM_KEY`. For the base URL: `LITELLM_BASE_URL` → `VITE_LITELLM_URL` → `NEXT_PUBLIC_LITELLM_BASE_URL`. `envAliases` lets apps map their own var names without renaming `.env`.
+Reads in this order: explicit constructor arg → `LITELLM_API_KEY` → `VITE_LITELLM_KEY` → `NEXT_PUBLIC_LITELLM_API_KEY`. For the base URL: `LITELLM_BASE_URL` → `VITE_LITELLM_URL` → `NEXT_PUBLIC_LITELLM_BASE_URL`. The `VITE_`/`NEXT_PUBLIC_` variants are framework requirements (those bundlers only expose env vars with those prefixes to browser code) — set them = `LITELLM_API_KEY`'s value. `envAliases` lets apps map their own var names without renaming `.env`.
 
 Browser bundles will inline the key — acceptable for internal/homelab use; switch to a server proxy mount before any public-internet UI.
 

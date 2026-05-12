@@ -4,7 +4,6 @@ import { LLMConfig } from "../src/client/index.js";
 describe("LLMConfig", () => {
   const ENV_VARS = [
     "LITELLM_BASE_URL",
-    "LITE_LLM_KEY",
     "LITELLM_API_KEY",
     "VITE_LITELLM_URL",
     "VITE_LITELLM_KEY",
@@ -36,22 +35,22 @@ describe("LLMConfig", () => {
   });
 
   it("explicit constructor args win over env", () => {
-    process.env.LITE_LLM_KEY = "from-env";
+    process.env.LITELLM_API_KEY = "from-env";
     const c = new LLMConfig({ apiKey: "explicit" });
     expect(c.apiKey).toBe("explicit");
   });
 
-  it("LITE_LLM_KEY beats LITELLM_API_KEY", () => {
-    process.env.LITELLM_API_KEY = "old";
-    process.env.LITE_LLM_KEY = "new";
+  it("LITELLM_API_KEY beats VITE_LITELLM_KEY", () => {
+    process.env.LITELLM_API_KEY = "primary";
+    process.env.VITE_LITELLM_KEY = "framework-bridge";
     const c = new LLMConfig();
-    expect(c.apiKey).toBe("new");
+    expect(c.apiKey).toBe("primary");
   });
 
-  it("falls back to LITELLM_API_KEY when LITE_LLM_KEY is unset", () => {
-    process.env.LITELLM_API_KEY = "compat";
+  it("falls back to VITE_LITELLM_KEY when LITELLM_API_KEY is unset", () => {
+    process.env.VITE_LITELLM_KEY = "from-vite";
     const c = new LLMConfig();
-    expect(c.apiKey).toBe("compat");
+    expect(c.apiKey).toBe("from-vite");
   });
 
   it("envAliases prepend their lookup before defaults", () => {

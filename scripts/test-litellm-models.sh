@@ -7,8 +7,8 @@
 # - Reports pass/fail/timeout per model + summary
 #
 # Usage:
-#   LITELLM_MASTER_KEY=sk-... ./test-litellm-models.sh
-#   LITELLM_URL=http://litellm.talos00 LITELLM_MASTER_KEY=sk-... ./test-litellm-models.sh
+#   LITELLM_API_KEY=sk-... ./test-litellm-models.sh
+#   LITELLM_URL=http://litellm.talos00 LITELLM_API_KEY=sk-... ./test-litellm-models.sh
 #   ./test-litellm-models.sh --only claude-opus-4-20250514,gpt-4o
 #   ./test-litellm-models.sh --skip runpod-dolphin
 #   ./test-litellm-models.sh --json results.json
@@ -47,13 +47,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Accept either LITELLM_MASTER_KEY (admin key) or LLM_API_KEY (virtual key
-# issued by litellm — populated by direnv from ../catalyst-data/.envrc.cluster).
-LITELLM_KEY="${LITELLM_MASTER_KEY:-${LLM_API_KEY:-}}"
+# LITELLM_API_KEY is the canonical name (set by .envrc from .env).
+LITELLM_KEY="${LITELLM_API_KEY:-}"
 if [[ -z "$LITELLM_KEY" ]]; then
-  echo "ERROR: need LITELLM_MASTER_KEY or LLM_API_KEY in env" >&2
-  echo "  Try: cd ../catalyst-data && direnv allow   (then re-run from there)" >&2
-  echo "  Or:  export LITELLM_MASTER_KEY=\$(kubectl -n catalyst-llm get secret litellm-secrets -o jsonpath='{.data.LITELLM_MASTER_KEY}' | base64 -d)" >&2
+  echo "ERROR: need LITELLM_API_KEY in env" >&2
+  echo "  Try: source .envrc      (or 'direnv allow' if first time)" >&2
+  echo "  Or:  export LITELLM_API_KEY=\$(kubectl -n catalyst-llm get secret litellm-secrets -o jsonpath='{.data.master-key}' | base64 -d)" >&2
   exit 2
 fi
 

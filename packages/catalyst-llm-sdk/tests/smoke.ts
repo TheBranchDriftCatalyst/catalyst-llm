@@ -1,6 +1,6 @@
 // Node smoke script — run against a live LiteLLM proxy:
 //
-//   LITELLM_BASE_URL=http://localhost:4000 LITE_LLM_KEY=sk-…  yarn smoke
+//   LITELLM_BASE_URL=http://localhost:4000 LITELLM_API_KEY=sk-…  yarn smoke
 //
 // Exits non-zero on failure so it can gate a release. When the required
 // env vars are unset, exits 0 with a clear "skipped" message so the
@@ -9,7 +9,7 @@
 
 import { CatalystLLMClient } from "../src/client/index.js";
 
-const REQUIRED_ENV = ["LITELLM_BASE_URL", "LITE_LLM_KEY"] as const;
+const REQUIRED_ENV = ["LITELLM_BASE_URL", "LITELLM_API_KEY"] as const;
 
 async function main() {
   const missing = REQUIRED_ENV.filter((k) => !process.env[k]);

@@ -7,9 +7,7 @@ DEFAULT_BASE_URL = "http://localhost:4000"
 DEFAULT_API_KEY = "test-key"
 
 BASE_URL_ENV_ORDER = ("LITELLM_BASE_URL",)
-# LITE_LLM_KEY is the new convention shared with @catalyst/llm-sdk;
-# LITELLM_API_KEY remains supported for backward compat with 0.1.x.
-API_KEY_ENV_ORDER = ("LITE_LLM_KEY", "LITELLM_API_KEY")
+API_KEY_ENV_ORDER = ("LITELLM_API_KEY",)
 
 
 def _read_env(names: Iterable[str]) -> Optional[str]:

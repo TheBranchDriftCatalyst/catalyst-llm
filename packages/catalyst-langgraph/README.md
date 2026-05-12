@@ -50,7 +50,7 @@ Environment variables:
 
 ```bash
 export LITELLM_BASE_URL="http://litellm.talos00"   # or local proxy
-export LITELLM_API_KEY="sk-..."                    # LITE_LLM_KEY also accepted
+export LITELLM_API_KEY="sk-..."
 ```
 
 ## Naming history

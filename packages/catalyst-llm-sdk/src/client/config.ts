@@ -18,11 +18,13 @@ const DEFAULT_BASE_URL_ENV = [
   "NEXT_PUBLIC_LITELLM_BASE_URL",
 ];
 
+// LITELLM_API_KEY is canonical. VITE_/NEXT_PUBLIC_ variants are framework
+// requirements (Vite + Next only expose env vars with those prefixes to
+// browser bundles); app code should set them = LITELLM_API_KEY's value.
 const DEFAULT_API_KEY_ENV = [
-  "LITE_LLM_KEY",
   "LITELLM_API_KEY",
   "VITE_LITELLM_KEY",
-  "NEXT_PUBLIC_LITE_LLM_KEY",
+  "NEXT_PUBLIC_LITELLM_API_KEY",
 ];
 
 function readNodeEnv(names: string[]): string | undefined {

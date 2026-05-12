@@ -162,21 +162,21 @@ SDK_DIR = './packages/catalyst-llm-sdk'
 PLAYGROUND_DIR = SDK_DIR + '/examples/playground'
 LITELLM_URL = 'http://litellm.talos00'
 
-# Single source of truth for the LiteLLM master key:
-# k8s/local/litellm-secrets.env (gitignored, format `master-key=sk-...`).
-# kustomize's secretGenerator turns this into the in-cluster
-# `litellm-secrets` Secret AND the Tiltfile reads the same value to
-# inject VITE_LITELLM_KEY into the playground's vite process — so
-# users don't need direnv loaded for the playground to authenticate.
+# Source the LiteLLM key from k8s/local/litellm-secrets.env (gitignored,
+# format `master-key=sk-...`). That file already feeds kustomize's
+# secretGenerator for the in-cluster `litellm-secrets` Secret; reading
+# it here means the playground authenticates without requiring direnv
+# loaded in the user's shell. Same value as $LITELLM_API_KEY when .env
+# is wired correctly.
 SECRETS_ENV = './k8s/local/litellm-secrets.env'
-LITELLM_KEY = ''
+LITELLM_API_KEY_VALUE = ''
 if os.path.exists(SECRETS_ENV):
     for line in str(read_file(SECRETS_ENV)).splitlines():
         line = line.strip()
         if line.startswith('master-key='):
-            LITELLM_KEY = line.split('=', 1)[1].strip()
+            LITELLM_API_KEY_VALUE = line.split('=', 1)[1].strip()
             break
-if not LITELLM_KEY:
+if not LITELLM_API_KEY_VALUE:
     print('')
     print('!!  k8s/local/litellm-secrets.env missing or has no master-key.')
     print('!!  Playground will boot but /v1/models will 401.')
@@ -199,7 +199,7 @@ local_resource(
     labels=_labels('frontend'),
     serve_cmd=(
         'VITE_LITELLM_URL=' + LITELLM_URL + ' ' +
-        'VITE_LITELLM_KEY=' + LITELLM_KEY + ' ' +
+        'VITE_LITELLM_KEY=' + LITELLM_API_KEY_VALUE + ' ' +
         'VITE_AGENT_URL=http://localhost:7078 ' +
         'yarn --cwd ' + PLAYGROUND_DIR + ' dev --port 5174 --host'
     ),
@@ -218,5 +218,48 @@ local_resource(
     ],
 )
 add_open_browser_button('playground', 'http://localhost:5174')
+
+# ============================================
+# Unified test report rail.
+#
+#   test:run    — manual trigger, runs every package's test:unit and
+#                 collects junit XML into reports/junit/.
+#   test:render — re-renders reports/index.html via xunit-viewer when
+#                 any junit XML changes.
+#   test:serve  — serves reports/ over http://localhost:5180. Click
+#                 the link in the Tilt UI to open the unified report.
+#
+# Manual triggers keep tests from running on every file save.
+# ============================================
+local_resource(
+    name='test:run',
+    labels=_labels('test'),
+    cmd='task test:report',
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    auto_init=False,
+)
+
+local_resource(
+    name='test:render',
+    labels=_labels('test'),
+    cmd='npx --yes xunit-viewer -r reports/junit -o reports/index.html -t "Catalyst LLM — Test Report"',
+    deps=['reports/junit'],
+    auto_init=False,
+    trigger_mode=TRIGGER_MODE_MANUAL,
+)
+
+local_resource(
+    name='test:serve',
+    labels=_labels('test'),
+    serve_cmd='python3 -m http.server 5180 --directory reports',
+    readiness_probe=probe(
+        http_get=http_get_action(port=5180, path='/'),
+        initial_delay_secs=1,
+        period_secs=5,
+    ),
+    auto_init=False,
+    trigger_mode=TRIGGER_MODE_MANUAL,
+    links=[link('http://localhost:5180/index.html', 'Unified test report')],
+)
 
 print_dev_quickstart()

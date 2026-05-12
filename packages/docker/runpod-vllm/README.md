@@ -73,7 +73,7 @@ The LiteLLM gateway exposes the endpoint as `runpod/<alias>`:
 
 ```bash
 curl https://litellm.example.com/v1/chat/completions \
-  -H "Authorization: Bearer $LITELLM_KEY" \
+  -H "Authorization: Bearer $LITELLM_API_KEY" \
   -d '{
     "model": "runpod/qwen3.6-35b-a3b",
     "messages": [{"role": "user", "content": "hi"}],

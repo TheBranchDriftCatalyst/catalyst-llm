@@ -23,7 +23,7 @@ import pytest
 from langchain_core.messages import HumanMessage
 
 LITELLM_OK = bool(os.environ.get("LITELLM_BASE_URL")) and bool(
-    os.environ.get("LITELLM_API_KEY") or os.environ.get("LITE_LLM_KEY")
+    os.environ.get("LITELLM_API_KEY")
 )
 TOOL_HOST_OK = bool(os.environ.get("TOOL_HOST_URL"))
 
