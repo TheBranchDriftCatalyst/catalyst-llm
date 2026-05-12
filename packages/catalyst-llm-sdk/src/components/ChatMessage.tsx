@@ -1,4 +1,4 @@
-import { User, Bot, AlertTriangle } from "lucide-react";
+import { User, Bot, AlertTriangle, OctagonX } from "lucide-react";
 import type { ChatTurn } from "../react/chatStore.js";
 import { RenderedContent } from "./RenderedContent.js";
 import { ReasoningBlock, splitReasoning } from "./ReasoningBlock.js";
@@ -34,8 +34,33 @@ export function ChatMessage({ message, isStreaming }: ChatMessageProps) {
         {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
       </div>
       <div className="flex-1 space-y-1 overflow-hidden">
-        <div className="text-sm font-semibold">
-          {isUser ? "You" : "Assistant"}
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <span>{isUser ? "You" : "Assistant"}</span>
+          {/* Cooperative-stop indicator. When finish_reason="abort"
+              the server caught a STOP press and propagated cancel to
+              sub-agents (see Cancelled event in events.py). The badge
+              tells the user the stop was structured — not the
+              connection just dropping — and how many sub-agents
+              heard it. */}
+          {isAssistant && message.meta?.finish_reason === "abort" && (
+            <span
+              className="inline-flex items-center gap-1 rounded-md border border-muted-foreground/30 bg-muted/40 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground"
+              title={
+                message.meta.cancel_propagated_to?.length
+                  ? `stop propagated to ${message.meta.cancel_propagated_to.length} sub-agent${message.meta.cancel_propagated_to.length === 1 ? "" : "s"}`
+                  : "stopped"
+              }
+            >
+              <OctagonX className="h-2.5 w-2.5" aria-hidden="true" />
+              stopped
+              {message.meta.cancel_propagated_to &&
+                message.meta.cancel_propagated_to.length > 0 && (
+                  <span className="ml-0.5 font-mono normal-case tracking-normal tabular-nums">
+                    ×{message.meta.cancel_propagated_to.length}
+                  </span>
+                )}
+            </span>
+          )}
         </div>
         <div
           // Stream tokens are announced politely as they land. `aria-busy`

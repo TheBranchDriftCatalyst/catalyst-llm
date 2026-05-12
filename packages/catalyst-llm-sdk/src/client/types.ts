@@ -154,6 +154,16 @@ export interface StreamMeta {
   created?: number;
   finish_reason?: string | null;
   usage?: Partial<TokenUsage>;
+  /**
+   * Cancel-bus signalling (catalyst-langgraph). When `finish_reason`
+   * is "abort" and the server sent a structured `cancelled` event
+   * (rather than the connection just dropping), these carry the
+   * reason and the list of in-flight tool_call_ids the cancel was
+   * propagated to. UIs use them to render "stopped — N sub-agents
+   * heard it" instead of guessing.
+   */
+  cancel_reason?: string;
+  cancel_propagated_to?: string[];
 }
 
 export interface ChatChunk {

@@ -618,6 +618,21 @@ export const useChatStore = create<ChatStore>()(
             get().finishStreaming(chatId, { finish_reason: "error" });
             return;
           }
+          case "cancelled": {
+            // The server cooperatively stopped after a STOP press.
+            // Mark the turn finish_reason=abort so the bubble shows
+            // the "stopped" badge, and keep any partial content that
+            // already streamed before the abort. The list of
+            // propagated_to tool ids lives on the meta for any
+            // future "the council heard you" affordance.
+            const meta: StreamMeta = {
+              finish_reason: "abort",
+              cancel_reason: ev.reason,
+              cancel_propagated_to: ev.propagated_to ?? undefined,
+            };
+            get().finishStreaming(chatId, meta);
+            return;
+          }
         }
       }
       // Stream ended without a message_done (rare — backend should always

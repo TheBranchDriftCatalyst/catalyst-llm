@@ -73,6 +73,26 @@ export interface ErrorEvent {
   message: string;
 }
 
+/**
+ * Terminal event yielded when the run was cancelled cooperatively —
+ * the UI pressed STOP (or the client disconnected) and the server
+ * propagated the signal to sub-agents before closing the stream.
+ * Treat like `message_done` with `finish_reason="abort"` plus the
+ * extra signal that the cancel was structured (sub-agents heard it,
+ * tool_call_end events were synthesised for in-flight tools) rather
+ * than just-dropped-the-tcp-connection.
+ */
+export interface Cancelled {
+  type: "cancelled";
+  /** Why the run was cancelled. `client_abort` = the SSE consumer
+   * disconnected (UI pressed STOP / closed the tab). `timeout`
+   * reserved for future server-side caps. */
+  reason: string;
+  /** Best-effort list of in-flight tool_call_ids the cancel was
+   * signalled to. Empty / null when nothing was in flight. */
+  propagated_to?: string[] | null;
+}
+
 export type AgentEvent =
   | RunStarted
   | Token
@@ -81,7 +101,8 @@ export type AgentEvent =
   | ToolCallEnd
   | Iteration
   | MessageDone
-  | ErrorEvent;
+  | ErrorEvent
+  | Cancelled;
 
 /** All event-type discriminators in one place, useful for exhaustiveness checks. */
 export const AGENT_EVENT_TYPES = [
@@ -93,6 +114,7 @@ export const AGENT_EVENT_TYPES = [
   "iteration",
   "message_done",
   "error",
+  "cancelled",
 ] as const;
 export type AgentEventType = (typeof AGENT_EVENT_TYPES)[number];
 
