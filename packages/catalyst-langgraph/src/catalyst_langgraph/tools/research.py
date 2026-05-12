@@ -156,6 +156,29 @@ DEFAULT_CRITIC_SYSTEM_PROMPT = (
     "feedback as guidance."
 )
 
+DEFAULT_SHALLOW_SYSTEM_PROMPT = (
+    "You are a research assistant. Answer the user's question by "
+    "calling web_search once or twice, then synthesising a short, "
+    "well-cited reply using the Feynman technique: lead with the plain "
+    "answer, define jargon inline, mark uncertainty honestly.\n\n"
+    "Feynman steps:\n"
+    "  1. Lead with the plain-language answer in 1-2 sentences.\n"
+    "  2. Explain WHY / HOW simply. Define technical terms inline.\n"
+    "  3. End with a `Gaps:` list of what's still uncertain or "
+    "under-sourced.\n"
+    "  4. Reread + cut restatement / hedging / jargon-for-jargon's-sake.\n\n"
+    "HARD RULES:\n"
+    "- Make AT MOST 2 web_search calls. After your second search you "
+    "MUST stop calling tools and write the answer.\n"
+    "- If your first search returns useful results, write immediately. "
+    "Do not 'double-check' with a second search unless the first was "
+    "empty / off-topic.\n"
+    "- Pass time_range=\"month\" or \"year\" to web_search when the topic "
+    "is time-sensitive.\n"
+    "- Cite each claim inline as `(source: https://...)`.\n"
+    "- Keep the reply under 4 short paragraphs."
+)
+
 DEFAULT_FUSION_SYSTEM_PROMPT = (
     "You are the research fusion agent. You will see the user's "
     "original question and the approved drafts from N council members. "
@@ -555,6 +578,43 @@ async def _run_fusion(
         return max(drafts, key=len) if drafts else f"fusion failed: {exc}"
 
 
+async def _run_shallow_bypass(brief: str, cfg: ResearchAgentConfig) -> str:
+    """Single-agent bypass for `depth="shallow"`.
+
+    Per the multi-agent literature (arXiv 2604.02460 et al.), a single
+    strong model with a clean tool-calling loop often beats an N-member
+    council under equal compute on simple factual questions — the
+    council's diversity bonus is wasted when there isn't actually
+    contested ground to surface. So shallow queries skip the fan-out
+    entirely: one researcher, web_search bound, same Feynman writing
+    style, no fusion. Fast + cheap + usually-right.
+
+    The council path stays available via `depth="deep"` for questions
+    where multiple angles or adversarial review pay off.
+
+    Uses `cfg.model` — operators who want shallow to use a stronger
+    model than the council members can either override
+    `agent_config["research"]["model"]` per request, or just always
+    pick a stronger member model in the Engine tab (the council
+    benefits too).
+    """
+    compiled = _build_member_graph(
+        cfg.model, cfg.temperature, DEFAULT_SHALLOW_SYSTEM_PROMPT
+    )
+    try:
+        result = await compiled.ainvoke(
+            {"messages": [HumanMessage(content=brief)]},
+            config={"recursion_limit": cfg.recursion_limit},
+        )
+    except Exception as exc:
+        log.warning("research shallow bypass failed: %s", exc)
+        return f"research failed: {exc}"
+    msgs = result.get("messages") or []
+    if not msgs:
+        return "[research produced no draft]"
+    return _flatten_content(getattr(msgs[-1], "content", ""))
+
+
 # ───────────────────────────────────────────────────────────────────────
 # The tool itself.
 # ───────────────────────────────────────────────────────────────────────
@@ -566,23 +626,30 @@ async def research(
     depth: str = "shallow",
     context: str = "",
 ) -> str:
-    """Run a multi-step web research pass and return a synthesised answer.
+    """Run a web research pass and return a synthesised answer.
 
-    Use this for questions that need up-to-date information from the
-    web (current events, recent releases, prices, etc.). The research
-    sub-agent fans out across N parallel council members, optionally
-    runs an editorial critic to drive another round, then fuses the
-    approved drafts into a single cited markdown answer.
+    Two depth modes:
+
+      - `"shallow"` (default) → ONE researcher, one tool-loop, no
+        fusion. Fast + cheap. The single-agent path is the right
+        choice for most factual questions; multi-agent councils only
+        pay off when there's genuinely contested ground (see "deep").
+      - `"deep"` → full council of N parallel research members,
+        optional editorial critic that can request another round, and
+        a fusion agent that consolidates the approved drafts into one
+        cited answer. Use when the question is contested, has multiple
+        valid angles, or you want adversarial review to catch
+        single-model overconfidence.
 
     Args:
         query: The research question, phrased naturally.
-        depth: "shallow" (default, ~3-5 paragraphs) or "deep"
-            (more sources, longer answer).
+        depth: "shallow" (default — single-agent bypass) or "deep"
+            (full council + critic + fusion).
         context: Optional background from this conversation that should
             inform the search. Use this when the user's question only
             makes sense given prior context — e.g. "they're asking about
             recent WWDC; the chat is about Swift performance." When
-            omitted, the council automatically inherits the last few
+            omitted, the researcher automatically inherits the last few
             messages from the parent chat as implicit context.
 
     Returns:
@@ -599,13 +666,20 @@ async def research(
     effective_context = (context or "").strip() or implicit_context
 
     brief = query.strip()
-    if depth == "deep":
-        brief += "\n\nProvide a detailed answer drawing on multiple sources."
     if effective_context:
         brief = (
             f"## Context from the parent conversation\n{effective_context}\n\n"
             f"## Research question\n{brief}"
         )
+
+    # Shallow → single-agent bypass. Skip the council fan-out entirely.
+    # This is the right default for most factual queries; the council
+    # is only worth its cost when "deep" is explicitly requested.
+    if depth != "deep":
+        return await _run_shallow_bypass(brief, cfg)
+
+    # Deep → full council + critic + fusion path below.
+    brief += "\n\nProvide a detailed answer drawing on multiple sources."
 
     feedback = ""
     drafts: list[str] = []
