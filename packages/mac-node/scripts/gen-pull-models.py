@@ -154,9 +154,13 @@ def main():
 
     targets = ["mac", "runpod"] if args.target == "both" else [args.target]
 
+    workspace_root = os.path.dirname(os.path.dirname(REPO_DIR))
     for target in targets:
         if target == "runpod":
-            out_path = os.path.join(REPO_DIR, "runpod", "scripts", "pull-models.sh")
+            out_path = os.path.join(
+                workspace_root,
+                "packages", "docker", "runpod-ollama", "scripts", "pull-models.sh",
+            )
         else:
             out_path = os.path.join(REPO_DIR, "scripts", "pull-ollama-models.sh")
 

@@ -47,9 +47,9 @@ model_list:
   # ───────────────────────────────────────────────────────────────────
 
   # >>> runpod-vllm:auto-generated:start <<<
-  # DO NOT EDIT — managed by docker/runpod-vllm/scripts/gen-litellm.py
-  # Source of truth: docker/runpod-vllm/endpoints.yaml (0 deployed, 2 pending)
-  # Regenerate: cd docker/runpod-vllm && task generate
+  # DO NOT EDIT — managed by packages/docker/runpod-vllm/scripts/gen-litellm.py
+  # Source of truth: packages/docker/runpod-vllm/endpoints.yaml (0 deployed, 2 pending)
+  # Regenerate: cd packages/docker/runpod-vllm && task generate
 
   # TODO (endpoint not yet created: qwen3.6-35b-a3b) — uncomment after setting runpod_endpoint_id
   # - model_name: runpod/qwen3.6-35b-a3b
@@ -122,6 +122,8 @@ model_list:
         wall-clock close to a 14B dense at full quality. Agentic-generalist trained — strong tool calling under streaming=off.
         ChatML. - Mac M5 Max Metal
       supports_reasoning: true
+      max_input_tokens: 131072
+      max_tokens: 131072
 
   - model_name: mac/qwen3-coder-opus
     litellm_params:

@@ -1,9 +1,9 @@
-name: runpod-vllm
+name: runpod-ollama
 
 on:
   push:
     tags:
-      - 'runpod-vllm-v*'
+      - 'runpod-ollama-v*'
   workflow_dispatch:
     inputs:
       tag_override:
@@ -13,8 +13,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: thebranchdriftcatalyst/runpod-vllm
-  CACHE_REF: ghcr.io/thebranchdriftcatalyst/runpod-vllm:buildcache
+  IMAGE_NAME: thebranchdriftcatalyst/runpod-ollama
+  CACHE_REF: ghcr.io/thebranchdriftcatalyst/runpod-ollama:buildcache
 
 jobs:
   build-and-push:
@@ -30,8 +30,8 @@ jobs:
       - name: Extract version from tag
         id: version
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/runpod-vllm-v* ]]; then
-            echo "VERSION=${GITHUB_REF#refs/tags/runpod-vllm-v}" >> $GITHUB_OUTPUT
+          if [[ "${GITHUB_REF}" == refs/tags/runpod-ollama-v* ]]; then
+            echo "VERSION=${GITHUB_REF#refs/tags/runpod-ollama-v}" >> $GITHUB_OUTPUT
             echo "IS_RELEASE=true" >> $GITHUB_OUTPUT
           else
             echo "VERSION=${{ inputs.tag_override }}" >> $GITHUB_OUTPUT
@@ -66,8 +66,8 @@ jobs:
       - name: Build & push (linux/amd64) with registry cache
         uses: docker/build-push-action@v5
         with:
-          context: ./packages/docker/runpod-vllm
-          file: ./packages/docker/runpod-vllm/Dockerfile
+          context: ./packages/docker/runpod-ollama
+          file: ./packages/docker/runpod-ollama/Dockerfile
           platforms: linux/amd64
           push: true
           tags: ${{ steps.tags.outputs.tags }}
@@ -79,8 +79,8 @@ jobs:
         if: steps.version.outputs.IS_RELEASE == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          name: runpod-vllm v${{ steps.version.outputs.VERSION }}
-          tag_name: runpod-vllm-v${{ steps.version.outputs.VERSION }}
+          name: runpod-ollama v${{ steps.version.outputs.VERSION }}
+          tag_name: runpod-ollama-v${{ steps.version.outputs.VERSION }}
           body: |
             ## Image
 
@@ -89,5 +89,5 @@ jobs:
             ghcr.io/${{ env.IMAGE_NAME }}:latest
             ```
 
-            See `packages/docker/runpod-vllm/CHANGELOG.md` for details.
+            See `packages/docker/runpod-ollama/CHANGELOG.md` for details.
           generate_release_notes: true

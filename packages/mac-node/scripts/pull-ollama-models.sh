@@ -3,7 +3,7 @@
 # Regenerate with: python3 scripts/gen-pull-models.py --target mac
 # Target: mac
 #
-# Models: 18 total
+# Models: 20 total
 
 set -e
 
@@ -21,6 +21,8 @@ echo ""
 
 echo "--- Serving: primary mac-node models ---"
 ollama pull qwen3-coder:30b-a3b-q8_0                      # Qwen3-Coder 30B-A3B MoE @ Q8_0 (~33GB) — 256K ctx, ~Sonnet 4.5-class agentic coding, BFCL v3 top tier. Q8 over Q4 because MoE active path is small and we have the memory.
+ollama pull qwen3:8b                                      # Qwen3 8B (general chat) @ Q4_K_M (default) — small, fast, most-stable Ollama tool-caller in its size class (F1 0.933 on Docker's local-tool-use eval; rarely hallucinates calls). Ideal council member when council_size ≥ 2 — sub-second per turn on M5 Max, leaves headroom for parallel members.
+ollama pull glm-4.5-air:Q4_K_M                            # GLM-4.5 Air 106B-A12B MoE @ Q4_K_M (~62GB, 12B active) — top open-weight BFCL v3 tier (~76.7%). MoE keeps wall-clock close to a 14B dense at full quality. Agentic-generalist trained — strong tool calling under streaming=off. ChatML.
 ollama pull qwen3-coder-opus:Q6_K                         # Qwen3-Coder-Next (~80B base) + Opus-4.6 reasoning distill (samuelcardillo, full SFT) @ Q6_K (~65GB) — Opus-style multi-step planning. Reasoning distills benefit from higher quants (CoT noise compounds). ChatML; temp 0.6.
 ollama pull qwen3-coder-opus-uncensored:i1-Q6_K           # Huihui-Qwen3-Coder-Next-Opus-4.6 abliterated (mradermacher i1) @ Q6_K (~65GB) — uncensored sibling of qwen3-coder-opus. Same Opus-distilled reasoning, fewer refusals, imatrix-calibrated. ChatML; temp 0.6.
 ollama pull deepseek-r1:32b-qwen-distill-q8_0             # DeepSeek R1 Distill Qwen 32B @ Q8_0 (~34GB) — beats o1-mini on math/code reasoning. ~7-9 tok/s on M5 Max. Q8 over Q4 because CoT amplifies quant noise.

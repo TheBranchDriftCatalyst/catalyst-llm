@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Splice runpod-vllm endpoints into k8s/base/litellm/config.yaml.
 
-Source of truth: docker/runpod-vllm/endpoints.yaml
+Source of truth: packages/docker/runpod-vllm/endpoints.yaml
 Target: k8s/base/litellm/config.yaml (between anchor markers).
 
 Mirrors packages/mac-node/scripts/gen-litellm.py:
@@ -33,7 +33,8 @@ script_dir = Path(__file__).resolve().parent
 pkg_dir = script_dir.parent
 endpoints_path = pkg_dir / "endpoints.yaml"
 
-default_target = pkg_dir.parents[1] / "k8s" / "base" / "litellm" / "config.yaml"
+repo_root = pkg_dir.parents[2]
+default_target = repo_root / "k8s" / "base" / "litellm" / "config.yaml"
 target = Path(os.environ.get("LITELLM_CLUSTER_CONFIG", default_target))
 
 
@@ -114,10 +115,10 @@ def main() -> int:
 
     block_lines = [
         f"{INDENT}{START}",
-        f"{INDENT}# DO NOT EDIT — managed by docker/runpod-vllm/scripts/gen-litellm.py",
-        f"{INDENT}# Source of truth: docker/runpod-vllm/endpoints.yaml "
+        f"{INDENT}# DO NOT EDIT — managed by packages/docker/runpod-vllm/scripts/gen-litellm.py",
+        f"{INDENT}# Source of truth: packages/docker/runpod-vllm/endpoints.yaml "
         f"({deployed} deployed, {pending} pending)",
-        f"{INDENT}# Regenerate: cd docker/runpod-vllm && task generate",
+        f"{INDENT}# Regenerate: cd packages/docker/runpod-vllm && task generate",
         "",
         *_interleave_blank(entries),
         f"{INDENT}{END}",

@@ -19,10 +19,10 @@
 #   GET  /v1/models
 #
 # Build & push:
-#   task runpod:push
+#   task push      (from packages/docker/runpod-ollama)
 #
 # RunPod template settings:
-#   Image:            ghcr.io/thebranchdriftcatalyst/mac-node-runpod:latest
+#   Image:            ghcr.io/thebranchdriftcatalyst/runpod-ollama:latest
 #   Container disk:   50 GB
 #   Volume disk:      500 GB
 #   Volume mount:     /workspace

@@ -10,7 +10,7 @@ RunPod proxies `/openai/v1/*` directly to the vLLM HTTP server on port
 ## Layout
 
 ```
-docker/runpod-vllm/
+packages/docker/runpod-vllm/
 ├── Dockerfile               vllm/vllm-openai base + runpod SDK + hf_transfer
 ├── scripts/
 │   ├── run-vllm.sh          env → vllm.entrypoints.openai.api_server flags

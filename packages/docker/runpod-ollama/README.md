@@ -1,4 +1,4 @@
-# RunPod Inference Pod
+# runpod-ollama
 
 Single GPU pod running the full mac-node model stack on NVIDIA hardware.
 Ollama serves all models via OpenAI-compatible API. Whisper handles transcription.
@@ -24,9 +24,8 @@ RunPod GPU Pod
 ### 1. Build and push the image
 
 ```bash
-# From the mac-node repo root
-docker build -t ghcr.io/thebranchdriftcatalyst/mac-node-runpod:latest ./runpod
-docker push ghcr.io/thebranchdriftcatalyst/mac-node-runpod:latest
+cd packages/docker/runpod-ollama
+task push      # build + push to ghcr.io/thebranchdriftcatalyst/runpod-ollama:latest
 ```
 
 ### 2. Create the RunPod template
@@ -35,8 +34,8 @@ Go to [RunPod Templates](https://www.runpod.io/console/user/templates) and creat
 
 | Setting          | Value                                                       |
 |------------------|-------------------------------------------------------------|
-| Template Name    | `mac-node-inference`                                        |
-| Image Name       | `ghcr.io/thebranchdriftcatalyst/mac-node-runpod:latest`     |
+| Template Name    | `runpod-ollama`                                             |
+| Image Name       | `ghcr.io/thebranchdriftcatalyst/runpod-ollama:latest`       |
 | Container Disk   | `50 GB`                                                     |
 | Volume Disk      | `500 GB`                                                    |
 | Volume Mount     | `/workspace`                                                |
@@ -471,17 +470,23 @@ du -sh /workspace/whisper-models
 ## File Layout
 
 ```
-runpod/
+packages/docker/runpod-ollama/
 ├── Dockerfile              CUDA 12.4 + Ollama + Whisper + ComfyUI + SSH
 ├── supervisord.conf        Process manager (ollama, whisper, comfyui)
 ├── whisper_server.py       OpenAI-compatible /v1/audio/transcriptions
 ├── scripts/
 │   ├── start.sh            Entrypoint (env export, SSH, supervisord)
-│   ├── pull-models.sh      LLM model download (Ollama)
+│   ├── pull-models.sh      LLM model download (Ollama, generated from models.yaml)
 │   ├── pull-image-models.sh  Image gen model download (ComfyUI)
+│   ├── watchdog.sh         Idle-shutdown via SUICIDE_TTL
 │   └── run-comfyui.sh      ComfyUI bootstrap + launcher
+├── Taskfile.yaml           Build / push / release tasks
+├── cliff.toml              Changelog config (tag pattern: runpod-ollama-v*)
 └── README.md               This file
 ```
+
+`scripts/pull-models.sh` is generated from `packages/mac-node/models.yaml` via
+`python3 packages/mac-node/scripts/gen-pull-models.py --target runpod`.
 
 ## Cost Notes
 

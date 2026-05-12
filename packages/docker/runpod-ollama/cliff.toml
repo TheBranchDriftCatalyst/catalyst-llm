@@ -1,14 +1,14 @@
-# git-cliff config for RunPod releases
-# Only processes commits touching runpod/ files, tagged with runpod-v*
+# git-cliff config for runpod-ollama releases.
+# Tag pattern: runpod-ollama-v*
 
 [changelog]
 header = """
 # Changelog\n
-All notable changes to the RunPod inference pod.\n
+All notable changes to the runpod-ollama Docker image.\n
 """
 body = """
 {% if version %}\
-    ## [{{ version | trim_start_matches(pat="runpod-v") }}] — {{ timestamp | date(format="%Y-%m-%d") }}
+    ## [{{ version | trim_start_matches(pat="runpod-ollama-v") }}] — {{ timestamp | date(format="%Y-%m-%d") }}
 {% else %}\
     ## [Unreleased]
 {% endif %}\
@@ -38,4 +38,4 @@ commit_parsers = [
     { message = "^Initial", group = "Miscellaneous" },
     { body = ".*", group = "Other" },
 ]
-tag_pattern = "runpod-v[0-9].*"
+tag_pattern = "runpod-ollama-v[0-9].*"
