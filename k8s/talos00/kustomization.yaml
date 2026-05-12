@@ -24,3 +24,4 @@ patches:
     target:
       kind: ConfigMap
       name: catalyst-llm-config
+  - path: pvc-patch.yaml

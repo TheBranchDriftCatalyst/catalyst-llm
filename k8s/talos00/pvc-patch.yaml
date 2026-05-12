@@ -1,0 +1,21 @@
+---
+# Pin both catalyst-llm PVCs to fatboy-nfs-appdata on talos00.
+# The base PVC spec leaves storageClassName unset; live PVCs were
+# bound with this class on creation and PVC spec is immutable post-
+# binding — so the overlay must declare the class explicitly to keep
+# Argo from trying to revert it to null on every reconcile.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: catalyst-llm-config
+  namespace: catalyst-llm
+spec:
+  storageClassName: fatboy-nfs-appdata
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: catalyst-llm-data
+  namespace: catalyst-llm
+spec:
+  storageClassName: fatboy-nfs-appdata
