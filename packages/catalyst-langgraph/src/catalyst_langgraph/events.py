@@ -147,10 +147,10 @@ class ChatStreamRequest(BaseModel):
     """Body of POST /api/chat/stream — a single chat dispatch.
 
     The minimum viable request is `{model, messages}`; everything else
-    layers on top. For per-Agent config overrides (researcher model,
-    recursion limits, system prompts, …), use `agent_config` —
-    those values are validated against the matching Agent's Pydantic
-    config_model before they reach the graph.
+    layers on top. For per-node config overrides (researcher model,
+    recursion limits, system prompts, …), use `agent_config` — values
+    are validated against the matching node's Pydantic config_model
+    before they reach the graph.
     """
 
     model_config = {
@@ -167,10 +167,15 @@ class ChatStreamRequest(BaseModel):
                     ],
                     "tools": ["research"],
                     "agent_config": {
-                        "main": {"recursion_limit": 10},
+                        "main": {
+                            "agent": {"recursion_limit": 10, "temperature": 0.4}
+                        },
                         "research": {
-                            "model": "claude-haiku-4-5-20251001",
-                            "recursion_limit": 8,
+                            "members": {
+                                "model": "claude-haiku-4-5-20251001",
+                                "recursion_limit": 8,
+                            },
+                            "critic": {"enabled": True},
                         },
                     },
                 },
@@ -201,22 +206,27 @@ class ChatStreamRequest(BaseModel):
         default=None,
         description=(
             "Legacy main-Agent sampling params (temperature, max_tokens, "
-            "top_p, reasoning_effort, …). Prefer `agent_config[\"main\"]` "
-            "for new code; this stays supported for backward compat."
+            "top_p, reasoning_effort, …). Prefer "
+            "`agent_config['main']['agent']` for new code; this stays "
+            "supported for direct API callers that don't model nodes."
         ),
     )
-    agent_config: Optional[dict[str, dict[str, Any]]] = Field(
+    agent_config: Optional[dict[str, dict[str, dict[str, Any]]]] = Field(
         default=None,
         description=(
-            "Per-Agent overrides for tunables advertised on `GET /api/agents`. "
-            "Each inner dict is validated through that Agent's Pydantic "
-            "config_model; bogus fields raise. Backward compat: when "
-            "absent, request behaves identically to today's behaviour."
+            "Per-node overrides for tunables advertised on "
+            "`GET /api/agents`. Shape: "
+            "`{<agent_id>: {<node_id>: {field: value, ...}, ...}, ...}`. "
+            "Each innermost dict is validated through the matching "
+            "node's Pydantic config_model; bogus fields raise. Absent "
+            "or partial overrides fall back to the node's defaults."
         ),
         examples=[
             {
-                "main": {"recursion_limit": 10, "temperature": 0.4},
-                "research": {"model": "claude-haiku-4-5-20251001"},
+                "main": {"agent": {"recursion_limit": 10, "temperature": 0.4}},
+                "research": {
+                    "members": {"model": "claude-haiku-4-5-20251001"}
+                },
             }
         ],
     )

@@ -1,29 +1,37 @@
 """Agent registry — central source of truth for what the Engine tab sees.
 
-An "Agent" here is a compiled LangGraph state machine that owns an LLM
-and a loop. Today: the main chat agent (`main`) and the research
-sub-agent (`research`). Each module that defines an Agent calls
-`register_agent(...)` at import time; the playground's Engine tab
-fetches the merged registry via `GET /api/agents` and renders each
-Agent's topology + config form.
+An "Agent" here is a compiled LangGraph state machine — `main` (chat
+loop), `research` (council). Each module that defines an Agent calls
+`register_agent(...)` at import time; the playground's Engine tab fetches
+the merged registry via `GET /api/agents` and renders each Agent's
+topology with per-node config forms.
 
-Schema model: each Agent declares its own **Pydantic** config class.
-That single class owns three responsibilities:
-  1. *Schema* — `model_json_schema()` produces the JSON Schema the
-     Engine tab renders as a form.
-  2. *Validation* — the server runs incoming `agent_config[agent_id]`
-     through `model.model_validate(partial)` so the tool dispatcher
-     never has to defend against unknown fields or wrong types.
-  3. *Defaults* — fields with `Field(default=...)` materialise as the
-     "no override" baseline both in the form and in the request path.
+Schema model: **each LangGraph node owns its own Pydantic config class**.
+That keeps the wire shape, the UI form layout, and the runtime
+configuration aligned with the operator's mental model: when you click
+the `critic` node in the topology, you see the critic's tunables — not
+a flat `critic_*`-prefixed block on a single agent-wide form.
 
-UI affordances that JSON Schema doesn't natively carry (`widget="model"`
-to hook into ModelSelector, `widget="textarea"` for multiline strings,
-custom slider `step`, `secret` flags) ride along in
+Each `AgentTopologyNode` optionally carries `config_model: type[BaseModel]`.
+Nodes that don't take tunables (`__start__`, `__end__`, `tools` nodes)
+leave it `None`. The descriptor endpoint emits per-node
+`config_schema` (JSON Schema) + `config_defaults` (materialised
+no-arg instance dump) so the frontend can drive the form.
+
+UI affordances that JSON Schema doesn't natively carry (`widget="model"`,
+`widget="textarea"`, custom slider `step`, `secret` flags) ride along in
 `Field(..., json_schema_extra={"ui": {...}})`. The frontend renderer
-reads that `ui` extension key to pick a widget; standard JSON Schema
-keys (`type`, `minimum`/`maximum`, `enum`, `description`, `default`)
-drive the rest.
+reads that `ui` extension key to pick a widget.
+
+Wire shape for per-request overrides:
+
+  agent_config = {
+      "<agent_id>": {
+          "<node_id>": { field: value, ... },
+          ...
+      },
+      ...
+  }
 """
 from __future__ import annotations
 
@@ -38,10 +46,18 @@ NodeType = Literal["start", "end", "agent", "tools"]
 
 @dataclass
 class AgentTopologyNode:
-    """One node in an Agent's LangGraph topology."""
+    """One node in an Agent's LangGraph topology.
+
+    `config_model` is the Pydantic class owning *this node's* tunables —
+    only the nodes that actually consume operator-tweakable knobs declare
+    one. Leaf nodes (`__start__`, `__end__`) and inert dispatchers
+    (`tools`) leave it `None`; the descriptor emits `config_schema: null`
+    for those and the right-panel Config tab shows an empty state.
+    """
 
     id: str
     type: NodeType = "agent"
+    config_model: type[BaseModel] | None = None
 
 
 @dataclass
@@ -60,9 +76,6 @@ class AgentTopology:
     Populated at registration time rather than extracted dynamically
     from a built graph — graph shape doesn't depend on the LLM, and
     static descriptors avoid an HTTP roundtrip per /api/agents call.
-    If the graph topology drifts from the descriptor, the v2 live-
-    activity work will catch it (it subscribes to actual SSE events,
-    which name the active node).
     """
 
     nodes: list[AgentTopologyNode]
@@ -73,27 +86,17 @@ class AgentTopology:
 class AgentDescriptor:
     """Everything the Engine tab needs to surface an Agent.
 
-    `config_model` is the Pydantic class that owns this Agent's
-    tunables. /api/agents serialises it via model_json_schema() so the
-    frontend can render a form; /api/chat/stream's incoming
-    `agent_config[agent_id]` is validated through it before reaching
-    the build_graph / @tool dispatch path.
-
-    Make every field on the config_model optional (with `Field(default=...)`).
-    The Engine tab sends partial overrides — only the fields the
-    operator explicitly changed — so the validation path
-    `model.model_validate(partial)` needs to succeed even with one
-    key set.
+    Per-node config schemas live on `topology.nodes[].config_model`.
+    No Agent-level config_model — every tunable is owned by the node
+    that actually consumes it.
     """
 
     id: str
     description: str
-    config_model: type[BaseModel]
     topology: AgentTopology
     # Optional: list of tool names this Agent binds. Lets the UI render
     # "bound tools" chips on each Agent card and link Tools that wrap
-    # sub-Agents back to those Agents (e.g. `research` tool → Research
-    # Agent in the same tab).
+    # sub-Agents back to those Agents.
     tools: list[str] = field(default_factory=list)
 
 
@@ -116,35 +119,44 @@ def get_agent(agent_id: str) -> AgentDescriptor | None:
     return AGENTS.get(agent_id)
 
 
-def default_config(agent_id: str) -> dict[str, Any]:
-    """Materialise the default value of every field on an Agent.
-
-    Used by the server when no override is supplied for a given field,
-    and as the seed value for the frontend config form. The Pydantic
-    model owns its own defaults so this is just `model_dump()` on a
-    no-arg instance.
-    """
+def _get_node(agent_id: str, node_id: str) -> AgentTopologyNode | None:
     desc = AGENTS.get(agent_id)
     if not desc:
+        return None
+    return next((n for n in desc.topology.nodes if n.id == node_id), None)
+
+
+def node_default_config(agent_id: str, node_id: str) -> dict[str, Any]:
+    """Materialise the default value of every field on one node's config.
+
+    Returns `{}` for nodes with no `config_model` (start/end/tools).
+    """
+    node = _get_node(agent_id, node_id)
+    if not node or node.config_model is None:
         return {}
-    return desc.config_model().model_dump()
+    return node.config_model().model_dump()
 
 
-def validate_overrides(agent_id: str, partial: dict[str, Any]) -> dict[str, Any]:
-    """Validate an incoming partial config against an Agent's model.
+def validate_overrides(
+    agent_id: str, node_id: str, partial: dict[str, Any]
+) -> dict[str, Any]:
+    """Validate an incoming partial config against a node's Pydantic model.
 
     Returns only the keys the caller explicitly set (via
     `model_dump(exclude_unset=True)`) so we don't pin stale defaults
     into the override dict when the field schema later evolves.
-    Raises `pydantic.ValidationError` if the partial doesn't pass the
-    Agent's constraints — let the server map that to a 422.
+
+    Returns `{}` when the partial is empty OR when the node has no
+    `config_model` (leaf nodes, tools nodes). Raises
+    `pydantic.ValidationError` if the partial doesn't pass the node's
+    constraints — let the server map that to a 422.
     """
-    desc = AGENTS.get(agent_id)
-    if not desc:
-        return {}
     if not partial:
         return {}
-    validated = desc.config_model.model_validate(partial)
+    node = _get_node(agent_id, node_id)
+    if not node or node.config_model is None:
+        return {}
+    validated = node.config_model.model_validate(partial)
     return validated.model_dump(exclude_unset=True)
 
 
@@ -156,6 +168,6 @@ __all__ = [
     "AGENTS",
     "register_agent",
     "get_agent",
-    "default_config",
+    "node_default_config",
     "validate_overrides",
 ]

@@ -177,7 +177,9 @@ def test_research_shallow_dispatches_and_returns_content(model: str) -> None:
     result = _run_research(
         query=TEST_QUERY,
         depth="shallow",
-        overrides={"model": model, "recursion_limit": 20},
+        overrides={
+            "members": {"model": model, "recursion_limit": 20},
+        },
     )
 
     assert isinstance(result, str), f"expected str, got {type(result).__name__}"
@@ -223,11 +225,13 @@ def test_research_deep_council_consolidates(model: str) -> None:
         query=TEST_QUERY,
         depth="deep",
         overrides={
-            "model": model,
-            "fusion_model": model,
-            "council_size": 2,
-            "critic_enabled": False,
-            "recursion_limit": 20,
+            "members": {
+                "model": model,
+                "council_size": 2,
+                "recursion_limit": 20,
+            },
+            "critic": {"enabled": False},
+            "fusion": {"model": model},
         },
     )
 

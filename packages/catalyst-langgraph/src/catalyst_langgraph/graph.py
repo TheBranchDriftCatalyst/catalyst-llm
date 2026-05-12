@@ -128,12 +128,12 @@ def build_graph(
 # ───────────────────────────────────────────────────────────────────────
 # Agent registry entry — surfaced on the Engine tab.
 #
-# The Pydantic config class owns the schema, the validation, and the
-# defaults — /api/agents serialises it via model_json_schema() for the
-# frontend form, /api/chat/stream validates incoming `agent_config`
-# through it. Request-time graph construction still flows through
-# build_graph() above; this class describes WHAT can be overridden,
-# not HOW the graph is built.
+# Per-node Pydantic configs own their own schema, validation, and
+# defaults. /api/agents emits each node's `config_schema` (from
+# `node.config_model.model_json_schema()`) + `config_defaults` so the
+# right-panel form can render per node. /api/chat/stream's incoming
+# `agent_config[agent_id][node_id]` is validated against the matching
+# node's model before reaching build_graph.
 #
 # UI affordances ride in `json_schema_extra={"ui": {...}}`. The
 # `widget` hint picks a non-default renderer (e.g. ModelSelector for
@@ -148,15 +148,24 @@ def build_graph(
 # ───────────────────────────────────────────────────────────────────────
 
 
-class MainAgentConfig(BaseModel):
-    """Tunables for the main chat Agent.
+class MainAgentNodeConfig(BaseModel):
+    """Tunables for the `agent` node of the main chat loop.
+
+    Owns every operator-tweakable knob involved in the LLM call:
+    model id, sampling params, response cap, system prompt, and the
+    loop's recursion budget. The `tools` node has no config (it's a
+    pure dispatcher) and the `__start__`/`__end__` terminals don't
+    take tunables.
 
     Every field is optional with a baked-in default so the Engine tab
     can send partial overrides — `{"recursion_limit": 5}` validates
     just fine and the rest of the fields fall back to their defaults.
     """
 
-    model_config = {"extra": "forbid", "json_schema_extra": {"agent_id": "main"}}
+    model_config = {
+        "extra": "forbid",
+        "json_schema_extra": {"agent_id": "main", "node_id": "agent"},
+    }
 
     model: str = Field(
         default="",
@@ -208,11 +217,12 @@ register_agent(
     AgentDescriptor(
         id="main",
         description="Top-level chat agent loop. Dispatches tools, threads results back, and continues until the model stops emitting tool_calls.",
-        config_model=MainAgentConfig,
         topology=AgentTopology(
             nodes=[
                 AgentTopologyNode(id="__start__", type="start"),
-                AgentTopologyNode(id="agent", type="agent"),
+                AgentTopologyNode(
+                    id="agent", type="agent", config_model=MainAgentNodeConfig
+                ),
                 AgentTopologyNode(id="tools", type="tools"),
                 AgentTopologyNode(id="__end__", type="end"),
             ],

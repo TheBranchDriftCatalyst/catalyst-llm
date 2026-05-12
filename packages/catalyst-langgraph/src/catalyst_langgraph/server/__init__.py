@@ -237,26 +237,37 @@ async def _produce_agent_events(
     run_id = uuid.uuid4().hex[:12]
     yield RunStarted(run_id=run_id, model=request.model)
 
-    # Merge the new agent_config["main"] override channel over the
-    # legacy `params` channel. Precedence: agent_config["main"] ⊃
-    # params ⊃ defaults. Both stay supported so older clients without
-    # agent_config still work.
+    # agent_config carries per-node overrides:
+    #   { "<agent_id>": { "<node_id>": {field: value, ...}, ... }, ... }
+    # Each inner-most dict is validated through the matching node's
+    # Pydantic config_model so bogus fields and wrong types are
+    # rejected here instead of bubbling into LangGraph as silent type
+    # errors. validate_overrides returns only the keys the operator
+    # explicitly set (model_dump(exclude_unset=True)) — we never pin
+    # defaults into the override dict.
     #
-    # Per-agent values are validated through the Agent's Pydantic
-    # config_model (`MainAgentConfig`, `ResearchAgentConfig`, …) so
-    # bogus fields and wrong types are rejected here instead of
-    # bubbling into LangGraph as silent type errors. validate_overrides
-    # returns only the keys the operator explicitly set
-    # (model_dump(exclude_unset=True)) — we never pin defaults into the
-    # override dict.
+    # The `agent` node of the main loop owns every LLM-call tunable
+    # (model, temperature, max_tokens, top_p, recursion_limit,
+    # system_prompt) — those merge over the legacy `params` channel
+    # below.
     agent_config_raw = request.agent_config or {}
+    main_raw = agent_config_raw.get("main") or {}
+    research_raw = agent_config_raw.get("research") or {}
     try:
         main_overrides = validate_overrides(
-            "main", agent_config_raw.get("main") or {}
+            "main", "agent", main_raw.get("agent") or {}
         )
-        validated_research = validate_overrides(
-            "research", agent_config_raw.get("research") or {}
-        )
+        validated_research = {
+            "members": validate_overrides(
+                "research", "members", research_raw.get("members") or {}
+            ),
+            "critic": validate_overrides(
+                "research", "critic", research_raw.get("critic") or {}
+            ),
+            "fusion": validate_overrides(
+                "research", "fusion", research_raw.get("fusion") or {}
+            ),
+        }
     except Exception as exc:
         log.warning("agent_config validation failed: %s", exc)
         yield ErrorEvent(message=f"agent_config validation failed: {exc}")
@@ -687,6 +698,24 @@ class AgentTopologyNodeOut(BaseModel):
     type: Literal["start", "end", "agent", "tools"] = Field(
         description="Node kind. `agent` runs the LLM; `tools` dispatches tool calls; `start`/`end` are LangGraph terminals.",
     )
+    config_schema: Optional[dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "JSON Schema for this node's tunables (output of "
+            "`config_model.model_json_schema()`). `null` for nodes "
+            "without operator-tweakable knobs (start/end/tools). UI "
+            'affordances ride in `properties.<field>.ui` (e.g. '
+            '`{"widget": "model"}` or `{"step": 0.05}`).'
+        ),
+    )
+    config_defaults: Optional[dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "Materialised default values for this node's config (output "
+            "of `config_model().model_dump()`). `null` when the node "
+            "has no config_schema."
+        ),
+    )
 
 
 class AgentTopologyEdgeOut(BaseModel):
@@ -706,23 +735,20 @@ class AgentTopologyOut(BaseModel):
 
 
 class AgentDescriptorOut(BaseModel):
-    """One Agent in the registry — Engine tab consumes a list of these."""
+    """One Agent in the registry — Engine tab consumes a list of these.
 
-    id: str = Field(description="Stable id used as the key in `agent_config` overrides.")
+    Per-node config schemas live on `topology.nodes[].config_schema`
+    (and `.config_defaults`). There is no Agent-level schema — every
+    tunable is owned by the node that consumes it.
+    """
+
+    id: str = Field(description="Stable id used as the outer key in `agent_config` overrides.")
     description: str
     tools: list[str] = Field(
         default_factory=list,
         description="Tool names this Agent binds (cross-reference into /api/tools).",
     )
     topology: AgentTopologyOut
-    config_schema: dict[str, Any] = Field(
-        description=(
-            "JSON Schema for this Agent's tunables (output of "
-            "`config_model.model_json_schema()`). UI affordances ride "
-            'in `properties.<field>.ui` (e.g. `{"widget": "model"}` or '
-            '`{"step": 0.05}`).'
-        ),
-    )
 
 
 class ListAgentsResponse(BaseModel):
@@ -737,13 +763,14 @@ class ListAgentsResponse(BaseModel):
     description=(
         "Returns every Agent (compiled LangGraph state machine with its "
         "own LLM + loop) registered with the engine. Each entry carries:\n"
-        "- `topology` — static node + edge snapshot for the Engine tab "
-        "to render.\n"
-        "- `config_schema` — JSON Schema of the Agent's tunables, "
-        "produced by the Agent's Pydantic config class. UI hints ride "
-        "in the `ui` extension key on each property.\n\n"
+        "- `topology.nodes[]` — static node + edge snapshot for the "
+        "Engine tab to render. Each node carries its own "
+        "`config_schema` (JSON Schema from the node's Pydantic class) "
+        "and `config_defaults` (materialised no-arg instance). Nodes "
+        "without tunables (start/end/tools) have both fields null.\n\n"
         "Per-request overrides flow back via the `agent_config` field "
-        "on `POST /api/chat/stream`."
+        "on `POST /api/chat/stream` — shape is "
+        "`{<agent_id>: {<node_id>: {field: value, ...}, ...}, ...}`."
     ),
 )
 async def list_agents() -> ListAgentsResponse:
@@ -770,7 +797,20 @@ async def list_agents() -> ListAgentsResponse:
                 tools=list(desc.tools),
                 topology=AgentTopologyOut(
                     nodes=[
-                        AgentTopologyNodeOut(id=n.id, type=n.type)
+                        AgentTopologyNodeOut(
+                            id=n.id,
+                            type=n.type,
+                            config_schema=(
+                                n.config_model.model_json_schema()
+                                if n.config_model is not None
+                                else None
+                            ),
+                            config_defaults=(
+                                n.config_model().model_dump()
+                                if n.config_model is not None
+                                else None
+                            ),
+                        )
                         for n in desc.topology.nodes
                     ],
                     edges=[
@@ -782,7 +822,6 @@ async def list_agents() -> ListAgentsResponse:
                         for e in desc.topology.edges
                     ],
                 ),
-                config_schema=desc.config_model.model_json_schema(),
             )
         )
     return ListAgentsResponse(agents=out)

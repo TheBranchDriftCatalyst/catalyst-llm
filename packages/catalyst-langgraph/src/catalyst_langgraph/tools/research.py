@@ -221,17 +221,18 @@ class Critique(BaseModel):
     )
 
 
-class ResearchAgentConfig(BaseModel):
-    """Tunables for the research council.
+class ResearchMembersConfig(BaseModel):
+    """Tunables for the `members` node — the parallel council researchers.
 
-    Existing member-level field names (`model`, `temperature`,
-    `recursion_limit`, `system_prompt`) are preserved so engineStore
-    entries from the pre-council schema keep working. Extra fields are
-    ignored on load (not forbidden) — that keeps stale keys from a
-    schema-drift roll-back from rejecting the whole config.
+    `council_size` lives here (not on `__start__`) because the count
+    is conceptually a member-population knob; the fan-out shape is part
+    of how a member is dispatched.
     """
 
-    model_config = {"extra": "ignore", "json_schema_extra": {"agent_id": "research"}}
+    model_config = {
+        "extra": "ignore",
+        "json_schema_extra": {"agent_id": "research", "node_id": "members"},
+    }
 
     # Council ensemble. N=1 is the base case — single researcher, no
     # fusion. Cap at 8 because cloud rate limits + we rarely need more
@@ -248,11 +249,9 @@ class ResearchAgentConfig(BaseModel):
         ),
         json_schema_extra={"ui": {"step": 1}},
     )
-
-    # Member fields (per-researcher).
     model: str = Field(
         default=DEFAULT_RESEARCH_MODEL,
-        title="Member model",
+        title="Model",
         description="LLM each council member uses. Cheap+fast is usually right.",
         json_schema_extra={"ui": {"widget": "model"}},
     )
@@ -260,7 +259,7 @@ class ResearchAgentConfig(BaseModel):
         default=DEFAULT_TEMPERATURE,
         ge=0,
         le=2,
-        title="Member temperature",
+        title="Temperature",
         description="Council members run with this temperature — slight diversity helps.",
         json_schema_extra={"ui": {"step": 0.05}},
     )
@@ -268,44 +267,55 @@ class ResearchAgentConfig(BaseModel):
         default=DEFAULT_MAX_RECURSION,
         ge=2,
         le=100,
-        title="Member recursion limit",
+        title="Recursion limit",
         description="Hard cap on each member's internal graph steps (≈2 per search round-trip).",
         json_schema_extra={"ui": {"step": 1}},
     )
     system_prompt: str = Field(
         default=DEFAULT_RESEARCH_SYSTEM_PROMPT,
-        title="Member system prompt",
+        title="System prompt",
         description="Instructions every council member follows.",
         json_schema_extra={"ui": {"widget": "textarea"}},
     )
 
-    # Critic loop. Disabled by default — opt-in for adaptive refinement.
-    critic_enabled: bool = Field(
+
+class ResearchCriticConfig(BaseModel):
+    """Tunables for the `critic` node — the editorial review pass.
+
+    Disabled by default; opt-in for adaptive refinement.
+    """
+
+    model_config = {
+        "extra": "ignore",
+        "json_schema_extra": {"agent_id": "research", "node_id": "critic"},
+    }
+
+    enabled: bool = Field(
         default=False,
-        title="Critic enabled",
+        title="Enabled",
         description=(
             "When on, an editorial critic reviews the council's drafts and "
             "can request another round with concrete feedback. Adds rounds "
             "until approved or max_critique_rounds."
         ),
     )
-    critic_model: str = Field(
+    model: str = Field(
         default="",
-        title="Critic model",
+        title="Model",
         description="LLM the critic uses. Empty = falls back to the member model.",
         json_schema_extra={"ui": {"widget": "model"}},
     )
-    critic_temperature: float = Field(
+    temperature: float = Field(
         default=0.2,
         ge=0,
         le=2,
-        title="Critic temperature",
+        title="Temperature",
         description="Lower = more deterministic approval decisions.",
         json_schema_extra={"ui": {"step": 0.05}},
     )
-    critic_system_prompt: str = Field(
+    system_prompt: str = Field(
         default=DEFAULT_CRITIC_SYSTEM_PROMPT,
-        title="Critic system prompt",
+        title="System prompt",
         description="What the critic looks for. Adjust to weight different quality signals.",
         json_schema_extra={"ui": {"widget": "textarea"}},
     )
@@ -318,24 +328,36 @@ class ResearchAgentConfig(BaseModel):
         json_schema_extra={"ui": {"step": 1}},
     )
 
-    # Fusion (only used when council_size > 1).
-    fusion_model: str = Field(
+
+class ResearchFusionConfig(BaseModel):
+    """Tunables for the `fusion` node — consolidates approved drafts.
+
+    Only used when council_size > 1 (single-member runs return the lone
+    draft directly).
+    """
+
+    model_config = {
+        "extra": "ignore",
+        "json_schema_extra": {"agent_id": "research", "node_id": "fusion"},
+    }
+
+    model: str = Field(
         default="",
-        title="Fusion model",
+        title="Model",
         description="LLM the fusion agent uses. Empty = falls back to the member model.",
         json_schema_extra={"ui": {"widget": "model"}},
     )
-    fusion_temperature: float = Field(
+    temperature: float = Field(
         default=0.2,
         ge=0,
         le=2,
-        title="Fusion temperature",
+        title="Temperature",
         description="Lower = more conservative synthesis.",
         json_schema_extra={"ui": {"step": 0.05}},
     )
-    fusion_system_prompt: str = Field(
+    system_prompt: str = Field(
         default=DEFAULT_FUSION_SYSTEM_PROMPT,
-        title="Fusion system prompt",
+        title="System prompt",
         description="Instructions the fusion agent follows when consolidating drafts.",
         json_schema_extra={"ui": {"widget": "textarea"}},
     )
@@ -362,7 +384,11 @@ class ResearchAgentConfig(BaseModel):
 # state can't leak between requests on the same worker.
 # ───────────────────────────────────────────────────────────────────────
 
-research_overrides: ContextVar[dict[str, Any]] = ContextVar(
+# ContextVar shape: { "members": {...}, "critic": {...}, "fusion": {...} }
+# Mirrors the per-node nesting that /api/chat/stream's agent_config
+# field expects, so the server can hand it straight through after
+# validation without flattening.
+research_overrides: ContextVar[dict[str, dict[str, Any]]] = ContextVar(
     "research_overrides", default={}
 )
 
@@ -371,22 +397,33 @@ caller_context: ContextVar[str] = ContextVar(
 )
 
 
-def _load_config() -> ResearchAgentConfig:
-    """Merge overrides + defaults into a fully-validated config."""
-    overrides = dict(research_overrides.get() or {})
-    # Env-var fallbacks for the two oldest knobs (kept for ops parity).
-    if "model" not in overrides:
+def _load_configs() -> tuple[
+    ResearchMembersConfig, ResearchCriticConfig, ResearchFusionConfig
+]:
+    """Merge per-node overrides + defaults into three validated configs.
+
+    Env-var fallbacks for the two oldest member-level knobs
+    (CATALYST_RESEARCH_MODEL, CATALYST_RESEARCH_MAX_RECURSION) stay
+    available so existing ops scripts keep working.
+    """
+    raw = research_overrides.get() or {}
+    members_raw = dict(raw.get("members") or {})
+    if "model" not in members_raw:
         env_model = os.environ.get("CATALYST_RESEARCH_MODEL")
         if env_model:
-            overrides["model"] = env_model
-    if "recursion_limit" not in overrides:
+            members_raw["model"] = env_model
+    if "recursion_limit" not in members_raw:
         env_limit = os.environ.get("CATALYST_RESEARCH_MAX_RECURSION")
         if env_limit:
             try:
-                overrides["recursion_limit"] = int(env_limit)
+                members_raw["recursion_limit"] = int(env_limit)
             except ValueError:
                 pass
-    return ResearchAgentConfig.model_validate(overrides)
+    return (
+        ResearchMembersConfig.model_validate(members_raw),
+        ResearchCriticConfig.model_validate(raw.get("critic") or {}),
+        ResearchFusionConfig.model_validate(raw.get("fusion") or {}),
+    )
 
 
 # ───────────────────────────────────────────────────────────────────────
@@ -466,17 +503,19 @@ def _build_member_graph(model: str, temperature: float, system_prompt: str):
 async def _run_member(
     member_id: int,
     brief: str,
-    cfg: ResearchAgentConfig,
+    members_cfg: ResearchMembersConfig,
 ) -> str:
     """Dispatch one council member. Each member sees its 1-based id in
     the brief so the model can stamp the draft (useful for the critic
     to reference "member #2 said X")."""
     annotated = f"You are council member #{member_id + 1}.\n\n{brief}"
-    compiled = _build_member_graph(cfg.model, cfg.temperature, cfg.system_prompt)
+    compiled = _build_member_graph(
+        members_cfg.model, members_cfg.temperature, members_cfg.system_prompt
+    )
     try:
         result = await compiled.ainvoke(
             {"messages": [HumanMessage(content=annotated)]},
-            config={"recursion_limit": cfg.recursion_limit},
+            config={"recursion_limit": members_cfg.recursion_limit},
         )
     except Exception as exc:
         log.warning("research member #%d failed: %s", member_id + 1, exc)
@@ -490,16 +529,17 @@ async def _run_member(
 async def _run_critic(
     query: str,
     drafts: list[str],
-    cfg: ResearchAgentConfig,
+    critic_cfg: ResearchCriticConfig,
+    members_cfg: ResearchMembersConfig,
 ) -> Critique:
     """One critic pass over the council's current drafts. Returns a
     structured Critique. Falls back to "approved + no feedback" on any
     failure rather than blocking the run forever."""
-    model = cfg.critic_model or cfg.model
+    model = critic_cfg.model or members_cfg.model
     client = CatalystLiteLLMClient()
     llm = client.get_chat_model(
         model=model,
-        temperature=cfg.critic_temperature,
+        temperature=critic_cfg.temperature,
         # `with_structured_output` is doubly Ollama-fragile under
         # streaming (it uses tool-calling under the hood). Force
         # non-streaming when routed there.
@@ -520,7 +560,7 @@ async def _run_critic(
     try:
         critique = await structured.ainvoke(
             [
-                SystemMessage(content=cfg.critic_system_prompt),
+                SystemMessage(content=critic_cfg.system_prompt),
                 HumanMessage(content=body),
             ]
         )
@@ -540,15 +580,16 @@ async def _run_critic(
 async def _run_fusion(
     query: str,
     drafts: list[str],
-    cfg: ResearchAgentConfig,
+    fusion_cfg: ResearchFusionConfig,
+    members_cfg: ResearchMembersConfig,
 ) -> str:
     """Single LLM call that synthesises the council's approved drafts
     into one final markdown answer."""
-    model = cfg.fusion_model or cfg.model
+    model = fusion_cfg.model or members_cfg.model
     client = CatalystLiteLLMClient()
     llm = client.get_chat_model(
         model=model,
-        temperature=cfg.fusion_temperature,
+        temperature=fusion_cfg.temperature,
         # No tools bound, but force non-streaming when routed to
         # Ollama anyway — keeps fusion's output a single chat-model-
         # end event at the parent's astream_events, which makes the
@@ -566,7 +607,7 @@ async def _run_fusion(
     try:
         response = await llm.ainvoke(
             [
-                SystemMessage(content=cfg.fusion_system_prompt),
+                SystemMessage(content=fusion_cfg.system_prompt),
                 HumanMessage(content=body),
             ]
         )
@@ -576,7 +617,9 @@ async def _run_fusion(
         return max(drafts, key=len) if drafts else f"fusion failed: {exc}"
 
 
-async def _run_shallow_bypass(brief: str, cfg: ResearchAgentConfig) -> str:
+async def _run_shallow_bypass(
+    brief: str, members_cfg: ResearchMembersConfig
+) -> str:
     """Single-agent bypass for `depth="shallow"`.
 
     Per the multi-agent literature (arXiv 2604.02460 et al.), a single
@@ -590,19 +633,21 @@ async def _run_shallow_bypass(brief: str, cfg: ResearchAgentConfig) -> str:
     The council path stays available via `depth="deep"` for questions
     where multiple angles or adversarial review pay off.
 
-    Uses `cfg.model` — operators who want shallow to use a stronger
-    model than the council members can either override
-    `agent_config["research"]["model"]` per request, or just always
-    pick a stronger member model in the Engine tab (the council
+    Uses the members node's model — operators who want shallow to use
+    a stronger model than the council members can override
+    `agent_config["research"]["members"]["model"]` per request, or
+    just pick a stronger member model in the Engine tab (the council
     benefits too).
     """
     compiled = _build_member_graph(
-        cfg.model, cfg.temperature, DEFAULT_SHALLOW_SYSTEM_PROMPT
+        members_cfg.model,
+        members_cfg.temperature,
+        DEFAULT_SHALLOW_SYSTEM_PROMPT,
     )
     try:
         result = await compiled.ainvoke(
             {"messages": [HumanMessage(content=brief)]},
-            config={"recursion_limit": cfg.recursion_limit},
+            config={"recursion_limit": members_cfg.recursion_limit},
         )
     except Exception as exc:
         log.warning("research shallow bypass failed: %s", exc)
@@ -653,7 +698,7 @@ async def research(
     Returns:
         Markdown-formatted answer with inline source citations.
     """
-    cfg = _load_config()
+    members_cfg, critic_cfg, fusion_cfg = _load_configs()
 
     # Caller context: prefer the explicit `context` arg (parent model
     # chose to be deliberate); fall back to the ContextVar the server
@@ -674,7 +719,7 @@ async def research(
     # This is the right default for most factual queries; the council
     # is only worth its cost when "deep" is explicitly requested.
     if depth != "deep":
-        return await _run_shallow_bypass(brief, cfg)
+        return await _run_shallow_bypass(brief, members_cfg)
 
     # Deep → full council + critic + fusion path below.
     brief += "\n\nProvide a detailed answer drawing on multiple sources."
@@ -683,7 +728,7 @@ async def research(
     drafts: list[str] = []
     critique: Optional[Critique] = None
 
-    rounds = cfg.max_critique_rounds if cfg.critic_enabled else 1
+    rounds = critic_cfg.max_critique_rounds if critic_cfg.enabled else 1
     for round_n in range(rounds):
         round_brief = brief
         if feedback:
@@ -693,13 +738,16 @@ async def research(
             )
 
         # Fan-out: N members in parallel.
-        tasks = [_run_member(i, round_brief, cfg) for i in range(cfg.council_size)]
+        tasks = [
+            _run_member(i, round_brief, members_cfg)
+            for i in range(members_cfg.council_size)
+        ]
         drafts = await asyncio.gather(*tasks)
 
-        if not cfg.critic_enabled:
+        if not critic_cfg.enabled:
             break
 
-        critique = await _run_critic(brief, drafts, cfg)
+        critique = await _run_critic(brief, drafts, critic_cfg, members_cfg)
         if critique.approved:
             break
         feedback = critique.feedback or ""
@@ -708,11 +756,11 @@ async def research(
             break
 
     # N = 1 base case: nothing to fuse — return the lone draft.
-    if cfg.council_size == 1:
+    if members_cfg.council_size == 1:
         return drafts[0] if drafts else "[research produced no draft]"
 
     # N > 1: fusion pass.
-    return await _run_fusion(brief, drafts, cfg)
+    return await _run_fusion(brief, drafts, fusion_cfg, members_cfg)
 
 
 # ───────────────────────────────────────────────────────────────────────
@@ -726,16 +774,27 @@ register_agent(
             "Web-research council: N parallel members loop over web_search; "
             "an optional adaptive critic drives revision rounds; a fusion agent "
             "consolidates the approved drafts into one cited markdown answer. "
-            "Set council_size=1 + critic_enabled=False for the simplest base case."
+            "Set members.council_size=1 + critic.enabled=False for the simplest base case."
         ),
-        config_model=ResearchAgentConfig,
         topology=AgentTopology(
             nodes=[
                 AgentTopologyNode(id="__start__", type="start"),
-                AgentTopologyNode(id="members", type="agent"),
+                AgentTopologyNode(
+                    id="members",
+                    type="agent",
+                    config_model=ResearchMembersConfig,
+                ),
                 AgentTopologyNode(id="web_search", type="tools"),
-                AgentTopologyNode(id="critic", type="agent"),
-                AgentTopologyNode(id="fusion", type="agent"),
+                AgentTopologyNode(
+                    id="critic",
+                    type="agent",
+                    config_model=ResearchCriticConfig,
+                ),
+                AgentTopologyNode(
+                    id="fusion",
+                    type="agent",
+                    config_model=ResearchFusionConfig,
+                ),
                 AgentTopologyNode(id="__end__", type="end"),
             ],
             edges=[
