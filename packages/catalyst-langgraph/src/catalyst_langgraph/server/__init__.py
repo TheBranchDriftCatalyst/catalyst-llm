@@ -312,10 +312,16 @@ async def _produce_agent_events(
     # as a graph-build kwarg. Default 25 matches LangGraph's own.
     recursion_limit = int(params.pop("recursion_limit", 25))
 
+    # `model` is handled out-of-band — it becomes the build_graph
+    # `model=` kwarg below, NOT a member of extra_kwargs (which would
+    # collide with the explicit `model=` arg and crash
+    # CatalystLiteLLMClient.get_chat_model with "multiple values for
+    # keyword argument 'model'"). Excluding it here also prevents the
+    # raw `model` key from sneaking into the OpenAI-compat call.
     extra_kwargs = {
         k: v
         for k, v in params.items()
-        if k not in ("temperature", "max_tokens", "system_prompt")
+        if k not in ("model", "temperature", "max_tokens", "system_prompt")
     }
     # Anthropic rejects requests that set both `temperature` and `top_p`.
     # top_p=1.0 is a no-op (no nucleus sampling), so drop it before it
@@ -323,6 +329,14 @@ async def _produce_agent_events(
     # default, but the user hasn't actually opted into it.
     if extra_kwargs.get("top_p") in (1, 1.0):
         extra_kwargs.pop("top_p", None)
+
+    # The agent_config["main"]["agent"].model override (set via the
+    # Engine tab's node card) wins over request.model. That matches the
+    # operator's mental model: "I set the model on the node card, so
+    # this run should use it." When no engine-side override is present
+    # we fall back to request.model (what the chat panel / test-run
+    # sheet's top-level model field passed in).
+    effective_model = main_overrides.get("model") or request.model
 
     # Per-request research overrides flow through a ContextVar so the
     # @tool function picks them up without changing its signature
@@ -374,7 +388,7 @@ async def _produce_agent_events(
 
     try:
         app_graph = build_graph(
-            model=request.model,
+            model=effective_model,
             tool_names=request.tools or None,
             system_prompt=effective_system_prompt,
             temperature=params.get("temperature", 0.7),

@@ -35,6 +35,7 @@ import type {
   AgentDescriptor,
   AgentEvent,
 } from "../../agent/events.js";
+import { ModelMicroSwitcher } from "../ModelMicroSwitcher.js";
 import { cn } from "../utils.js";
 
 export interface TestRunSheetProps {
@@ -111,6 +112,7 @@ export function TestRunSheet({
   className,
 }: TestRunSheetProps) {
   const { agentClient } = useLLMContext();
+  const setField = useEngineStore((s) => s.setField);
 
   // Resolve which topology node id is the LLM-call node — for the
   // main agent it's "agent"; for research it's "members" (the
@@ -137,22 +139,30 @@ export function TestRunSheet({
     [agent],
   );
 
-  // The model the test run uses defaults to the live `agent` node's
-  // model override (or schema default). Operator can override per-run
-  // by editing the input below the prompt.
-  const liveAgentNodeOverrides = useEngineStore(
-    (s) => s.configs[agent.id]?.["agent"],
+  // The model picker writes directly through to engineStore on the
+  // LLM node — same state the node card's model chip reads from. This
+  // is the source of truth for "what model will this agent dispatch
+  // to" across the entire Engine tab; the picker here and the picker
+  // on the node card always agree.
+  const liveLLMNodeOverrides = useEngineStore(
+    (s) => (llmNodeId ? s.configs[agent.id]?.[llmNodeId] : undefined),
   );
-  const defaultModel = useMemo(() => {
-    const liveModel = liveAgentNodeOverrides?.model;
+  const effectiveModel = useMemo(() => {
+    const liveModel = liveLLMNodeOverrides?.model;
     if (typeof liveModel === "string" && liveModel.length > 0) return liveModel;
-    const agentNode = agent.topology.nodes.find((n) => n.id === "agent");
-    const defModel = agentNode?.config_defaults?.model;
+    const llmNode = llmNodeId
+      ? agent.topology.nodes.find((n) => n.id === llmNodeId)
+      : undefined;
+    const defModel = llmNode?.config_defaults?.model;
     return typeof defModel === "string" ? defModel : "";
-  }, [agent, liveAgentNodeOverrides]);
+  }, [agent, liveLLMNodeOverrides, llmNodeId]);
+
+  function setEffectiveModel(modelId: string) {
+    if (!llmNodeId) return;
+    setField(agent.id, llmNodeId, "model", modelId);
+  }
 
   const [prompt, setPrompt] = useState("");
-  const [modelOverride, setModelOverride] = useState("");
   const [display, setDisplay] = useState<DisplayState>(EMPTY_DISPLAY);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -171,10 +181,12 @@ export function TestRunSheet({
     onActiveNodeChange?.("__start__");
 
     // Wire shape mirrors chatStore.sendMessage — same backend code path,
-    // so per-node overrides + prompt refs Just Work.
+    // so per-node overrides + prompt refs Just Work. The model is set
+    // via engineStore (same picker as the node card), so it flows
+    // through agent_config; request.model is a backstop default the
+    // server only falls back to if no node override is present.
     const agentConfig = useEngineStore.getState().asRequestPayload();
     const promptOverrides = buildPromptOverrides(agentConfig);
-    const effectiveModel = modelOverride.trim() || defaultModel;
 
     try {
       const stream = agentClient.streamAgent(
@@ -212,9 +224,8 @@ export function TestRunSheet({
     agent,
     agentClient,
     canRun,
-    defaultModel,
+    effectiveModel,
     llmNodeId,
-    modelOverride,
     nodeIds,
     onActiveNodeChange,
     prompt,
@@ -256,12 +267,18 @@ export function TestRunSheet({
           <label className="text-[10px] uppercase tracking-wider text-muted-foreground">
             model
           </label>
-          <input
-            value={modelOverride}
-            onChange={(e) => setModelOverride(e.target.value)}
-            placeholder={defaultModel || "model id"}
-            className="h-7 flex-1 rounded border border-border bg-background px-2 font-mono text-[11px]"
-          />
+          {/* Same picker the node cards use — writes through to the
+           * SAME engineStore field, so the picker on this sheet and
+           * the picker on the agent node card always read the same
+           * value. No separate "test-run model" concept; changing
+           * the model here changes it everywhere this Agent is used
+           * (including the Chat tab's main agent dispatches). */}
+          <div className="flex-1">
+            <ModelMicroSwitcher
+              value={effectiveModel}
+              onChange={(v) => setEffectiveModel(v)}
+            />
+          </div>
           {isRunning ? (
             <Button
               type="button"
