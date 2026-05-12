@@ -74,6 +74,27 @@ tasks:
       - task: mac-node:test:full
       - task: sdk:test:full
 
+  # ─── Snapshot regression gate (epic llm-doh) ─────────────────────────
+  # Diff current k8s render + Tiltfile parse against committed baselines.
+  # Used as the universal gate on every refactor PR. Update baselines via
+  # `task snapshots:render` only when manifests are *intentionally* changing.
+  test:snapshots:
+    desc: "Regression gate: k8s render diff + Tiltfile parse"
+    cmds:
+      - kubectl kustomize {{.K8S_LOCAL}}   > /tmp/catalyst-k8s-local.rendered.yaml
+      - kubectl kustomize {{.K8S_TALOS00}} > /tmp/catalyst-k8s-talos00.rendered.yaml
+      - diff -u tests/snapshots/k8s-local.yaml   /tmp/catalyst-k8s-local.rendered.yaml
+      - diff -u tests/snapshots/k8s-talos00.yaml /tmp/catalyst-k8s-talos00.rendered.yaml
+      - task: parse
+      - echo "snapshot gate clean"
+
+  snapshots:render:
+    desc: "Refresh committed k8s snapshots (run only when manifests intentionally change)"
+    cmds:
+      - kubectl kustomize {{.K8S_LOCAL}}   > tests/snapshots/k8s-local.yaml
+      - kubectl kustomize {{.K8S_TALOS00}} > tests/snapshots/k8s-talos00.yaml
+      - echo "snapshots refreshed; commit tests/snapshots/"
+
   # ─── Tilt ────────────────────────────────────────────────────────────
   up:
     desc: Bring up the dev stack (k3d + native Ollama + UIs)
