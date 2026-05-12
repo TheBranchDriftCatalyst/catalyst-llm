@@ -74,6 +74,13 @@ export function EngineView({ className }: EngineViewProps) {
     undefined,
   );
   const [sheetContext, setSheetContext] = useState<SheetContext>(null);
+  // The node id currently executing during a test run (Phase B of
+  // llm-0mp). Set by TestRunSheet on every streamed event; read by
+  // ReactFlowAgentTopology so the active node pulses on the canvas.
+  // Distinct from operator-clicked selection.
+  const [activeNodeId, setActiveNodeId] = useState<string | undefined>(
+    undefined,
+  );
 
   const selected = useMemo(() => {
     if (!agents.length) return undefined;
@@ -163,6 +170,7 @@ export function EngineView({ className }: EngineViewProps) {
             onStartTestRun={() =>
               setSheetContext({ kind: "test-run", agentId: selected.id })
             }
+            activeNodeId={activeNodeId}
           />
         ) : (
           <div className="flex h-full items-center justify-center text-muted-foreground">
@@ -216,7 +224,10 @@ export function EngineView({ className }: EngineViewProps) {
               />
             )}
             {sheetContext?.kind === "test-run" && selected && (
-              <TestRunSheet agent={selected} />
+              <TestRunSheet
+                agent={selected}
+                onActiveNodeChange={setActiveNodeId}
+              />
             )}
             {sheetContext?.kind === "runs" && (
               <NodeRunsList
@@ -286,11 +297,13 @@ function AgentDetail({
   onOpenPromptSheet,
   onOpenRunsSheet,
   onStartTestRun,
+  activeNodeId,
 }: {
   agent: AgentDescriptor;
   onOpenPromptSheet: (nodeId: string) => void;
   onOpenRunsSheet: (nodeId: string) => void;
   onStartTestRun: () => void;
+  activeNodeId: string | undefined;
 }) {
   const agentCfg = useEngineStore((s) => s.configs[agent.id]);
   const resetAgent = useEngineStore((s) => s.resetAgent);
@@ -361,6 +374,7 @@ function AgentDetail({
           onOpenPromptSheet={onOpenPromptSheet}
           onOpenRunsSheet={onOpenRunsSheet}
           onStartTestRun={onStartTestRun}
+          activeNodeId={activeNodeId}
           // Override the rounded card framing — at viewport scale
           // the inner border becomes redundant with the header
           // divider above and the page chrome around it.

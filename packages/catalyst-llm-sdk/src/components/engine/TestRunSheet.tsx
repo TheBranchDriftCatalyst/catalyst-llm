@@ -39,6 +39,11 @@ import { cn } from "../utils.js";
 
 export interface TestRunSheetProps {
   agent: AgentDescriptor;
+  /** Called on every streamed event with the inferred active node id
+   * (or `undefined` when idle). EngineView wires this into
+   * ReactFlowAgentTopology.activeNodeId so the executing node pulses
+   * live in the topology view. */
+  onActiveNodeChange?: (nodeId: string | undefined) => void;
   className?: string;
 }
 
@@ -100,8 +105,37 @@ function buildPromptOverrides(
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-export function TestRunSheet({ agent, className }: TestRunSheetProps) {
+export function TestRunSheet({
+  agent,
+  onActiveNodeChange,
+  className,
+}: TestRunSheetProps) {
   const { agentClient } = useLLMContext();
+
+  // Resolve which topology node id is the LLM-call node — for the
+  // main agent it's "agent"; for research it's "members" (the
+  // researcher node). Picked once per agent by scanning the topology
+  // for the first `agent`-typed node that isn't a critic/fusion.
+  // Used to attribute Token events to the right node when the wire
+  // event doesn't carry explicit attribution.
+  const llmNodeId = useMemo(() => {
+    const agentNodes = agent.topology.nodes.filter((n) => n.type === "agent");
+    // Heuristic: prefer "agent" (main), else "members" (research),
+    // else the first agent-typed node.
+    return (
+      agentNodes.find((n) => n.id === "agent")?.id ??
+      agentNodes.find((n) => n.id === "members")?.id ??
+      agentNodes[0]?.id
+    );
+  }, [agent]);
+
+  // Set of node ids that exist on this topology (lets us match
+  // tool-call names like "web_search" to a topology node when one
+  // exists with that id, instead of falling back to "tools").
+  const nodeIds = useMemo(
+    () => new Set(agent.topology.nodes.map((n) => n.id)),
+    [agent],
+  );
 
   // The model the test run uses defaults to the live `agent` node's
   // model override (or schema default). Operator can override per-run
@@ -134,6 +168,7 @@ export function TestRunSheet({ agent, className }: TestRunSheetProps) {
       ...EMPTY_DISPLAY,
       status: "streaming",
     });
+    onActiveNodeChange?.("__start__");
 
     // Wire shape mirrors chatStore.sendMessage — same backend code path,
     // so per-node overrides + prompt refs Just Work.
@@ -155,6 +190,8 @@ export function TestRunSheet({ agent, className }: TestRunSheetProps) {
 
       for await (const ev of stream) {
         applyEvent(setDisplay, ev);
+        const active = deriveActiveNode(ev, llmNodeId, nodeIds);
+        if (active !== undefined) onActiveNodeChange?.(active);
         if (ctrl.signal.aborted) break;
       }
     } catch (err) {
@@ -166,8 +203,22 @@ export function TestRunSheet({ agent, className }: TestRunSheetProps) {
       }));
     } finally {
       abortRef.current = null;
+      // Land on __end__ once the stream is fully drained — gives the
+      // visual a "this is where we stopped" anchor instead of just
+      // freezing on whatever the last event happened to be.
+      onActiveNodeChange?.("__end__");
     }
-  }, [agent, agentClient, canRun, defaultModel, modelOverride, prompt]);
+  }, [
+    agent,
+    agentClient,
+    canRun,
+    defaultModel,
+    llmNodeId,
+    modelOverride,
+    nodeIds,
+    onActiveNodeChange,
+    prompt,
+  ]);
 
   function stop() {
     abortRef.current?.abort();
@@ -175,6 +226,7 @@ export function TestRunSheet({ agent, className }: TestRunSheetProps) {
 
   function reset() {
     setDisplay(EMPTY_DISPLAY);
+    onActiveNodeChange?.(undefined);
   }
 
   return (
@@ -266,6 +318,57 @@ export function TestRunSheet({ agent, className }: TestRunSheetProps) {
       </div>
     </div>
   );
+}
+
+/**
+ * Map a streamed AgentEvent to the topology node that's "currently
+ * active" right now. Used for the live-highlight on the topology
+ * (Phase B). The server doesn't emit explicit node attribution on
+ * every event, so we infer:
+ *
+ *   - run_started     → __start__ (handled at dispatch entry, not here)
+ *   - token           → the LLM node (e.g. "agent" for main, "members"
+ *                       for research). Identified by topology type at
+ *                       caller time.
+ *   - tool_call_start → either the exact node id matching the tool name
+ *                       (e.g. research's "web_search" node), or the
+ *                       generic "tools" dispatcher if no exact match.
+ *   - tool_call_end   → back to the LLM node (we're about to feed the
+ *                       tool result back into the model).
+ *   - iteration       → also the LLM node (one more loop entry).
+ *   - message_done /
+ *     error /
+ *     cancelled       → __end__ (handled at exit, not here).
+ *
+ * Returns `undefined` for events we don't care to highlight on.
+ */
+function deriveActiveNode(
+  ev: AgentEvent,
+  llmNodeId: string | undefined,
+  nodeIds: Set<string>,
+): string | undefined {
+  switch (ev.type) {
+    case "run_started":
+      return "__start__";
+    case "token":
+    case "iteration":
+      return llmNodeId;
+    case "tool_call_start":
+      // Prefer the exact node-id match (e.g. research has a "web_search"
+      // node that IS the tool). Fall back to a generic "tools"
+      // dispatcher node if one exists on the topology.
+      if (nodeIds.has(ev.name)) return ev.name;
+      if (nodeIds.has("tools")) return "tools";
+      return undefined;
+    case "tool_call_end":
+      return llmNodeId;
+    case "message_done":
+    case "cancelled":
+    case "error":
+      return "__end__";
+    default:
+      return undefined;
+  }
 }
 
 function applyEvent(

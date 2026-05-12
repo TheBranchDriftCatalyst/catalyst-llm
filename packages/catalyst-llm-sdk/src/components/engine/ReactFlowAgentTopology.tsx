@@ -63,6 +63,11 @@ export interface ReactFlowAgentTopologyProps {
   agentTools?: string[];
   /** Node id to render selected; `undefined` = nothing selected. */
   selectedNodeId?: string;
+  /** Node id currently executing during a live run. Renders as a
+   * pulsing brighter ring; distinct from `selectedNodeId` (which is
+   * operator-clicked, static). Driven by TestRunSheet's streamed
+   * event attribution. */
+  activeNodeId?: string;
   /** Fires on node click (with node id) AND on pane click (with `undefined`). */
   onNodeSelect?: (nodeId: string | undefined) => void;
   /** Called when a node's prompt-icon button is clicked. Lets the
@@ -194,6 +199,9 @@ interface CommonNodeData extends Record<string, unknown> {
   schema: AgentConfigSchema | null;
   defaults: Record<string, unknown> | null;
   selectedNodeId: string | undefined;
+  /** See ReactFlowAgentTopologyProps.activeNodeId — node cards
+   * render a pulsing ring when their id matches. */
+  activeNodeId: string | undefined;
   /** Computed pixel size — also fed to dagre. Cards style themselves
    * with these explicit width/height values to match. */
   size: { w: number; h: number };
@@ -252,11 +260,13 @@ function StartEndChip({ data }: NodeProps) {
   const visual = NODE_VISUAL[d.type];
   const Icon = visual.icon;
   const selected = d.selectedNodeId === d.nodeId;
+  const active = d.activeNodeId === d.nodeId;
   const runnable = d.type === "start" && typeof d.onStartTestRun === "function";
   const className = cn(
     "flex h-[44px] w-[140px] items-center gap-2 rounded-full border-2 px-4 text-sm font-mono shadow-sm transition-all",
     visual.tone,
     selected && "ring-2 ring-primary/60 ring-offset-1 ring-offset-background",
+    active && "ring-2 ring-primary animate-pulse",
     runnable && "cursor-pointer hover:ring-2 hover:ring-primary/40",
   );
   const handles = (
@@ -300,6 +310,7 @@ function ToolsNodeCard({ data }: NodeProps) {
   const visual = NODE_VISUAL.tools;
   const Icon = visual.icon;
   const selected = d.selectedNodeId === d.nodeId;
+  const active = d.activeNodeId === d.nodeId;
   // If the node's id matches one of the agent's registered tools, this
   // node IS that specific tool (e.g. research.web_search) — show just
   // that one chip. Otherwise it's the generic dispatcher (main.tools)
@@ -312,6 +323,7 @@ function ToolsNodeCard({ data }: NodeProps) {
         "flex h-[96px] w-[220px] flex-col gap-1.5 rounded-md border-2 p-2 shadow-sm transition-all",
         visual.tone,
         selected && "ring-2 ring-primary/60 ring-offset-1 ring-offset-background",
+    active && "ring-2 ring-primary animate-pulse",
       )}
       title={`tools dispatcher: ${d.nodeId}`}
     >
@@ -393,6 +405,7 @@ function AgentNodeCard({ data }: NodeProps) {
   const visual = NODE_VISUAL.agent;
   const Icon = visual.icon;
   const selected = d.selectedNodeId === d.nodeId;
+  const active = d.activeNodeId === d.nodeId;
 
   // Subscribe to the whole per-node override dict so any field edit
   // re-renders this card (and the NodeInlineConfig inside it reads
@@ -701,6 +714,7 @@ export function ReactFlowAgentTopology({
   agentId,
   agentTools = [],
   selectedNodeId,
+  activeNodeId,
   onNodeSelect,
   onOpenPromptSheet,
   onOpenRunsSheet,
@@ -816,6 +830,7 @@ export function ReactFlowAgentTopology({
           schema: n.config_schema,
           defaults: n.config_defaults,
           selectedNodeId,
+          activeNodeId,
           size: getNodeSize(n),
           toolList: agentTools,
           onOpenPromptSheet,
@@ -845,6 +860,7 @@ export function ReactFlowAgentTopology({
     positions,
     agentId,
     selectedNodeId,
+    activeNodeId,
     agentTools,
     onOpenPromptSheet,
     onOpenRunsSheet,
