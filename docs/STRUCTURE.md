@@ -53,11 +53,13 @@ tests/snapshots/ Committed kustomize renders — regression gate
 
 These were considered by the SDLC council and intentionally pushed out:
 
-| Decision | Why deferred |
-|---|---|
-| Promote `mac-node/services/*` (comfyui-shim, mflux-shim) to first-class `packages/*` | Only 2 services today — Red Team correctly flagged it as taxonomy churn. Revisit when a 3rd mac-only service emerges. |
-| Add SSE replay test for `/api/chat/stream` | Cheap to add but not blocking. File a follow-up bd issue if/when SSE wire shape drifts. |
-| Further split `catalyst-langgraph/server/__init__.py` (still ~925 lines) | Most of the remaining size is `_produce_agent_events` + Pydantic response models — touching either risks the cancel signal bus / depth-aware routing / OpenAPI shape. Defer until a concrete need surfaces. |
-| Shared `catalyst-core` Python package for FastAPI boilerplate | Rejected outright. 4 services × ~30 LOC of boilerplate each isn't enough duplication to justify the maintenance overhead. |
+| Decision | Tracking | Why deferred |
+|---|---|---|
+| Promote `mac-node/services/*` (comfyui-shim, mflux-shim) to first-class `packages/*` | `llm-5pn` | Only 2 services today — Red Team correctly flagged it as taxonomy churn. Revisit when a 3rd mac-only service emerges. |
+| Add SSE replay test for `/api/chat/stream` | `llm-8i8` | Cheap to add but not blocking. Land if/when SSE wire shape drifts. |
+| Further split `catalyst-langgraph/server/__init__.py` (still ~925 lines) | — | Most of the remaining size is `_produce_agent_events` + Pydantic response models — touching either risks the cancel signal bus / depth-aware routing / OpenAPI shape. File when a concrete need surfaces. |
+| Shared `catalyst-core` Python package for FastAPI boilerplate | — | Rejected outright. 4 services × ~30 LOC of boilerplate each isn't enough duplication to justify the maintenance overhead. |
+| Re-audit `catalyst-langgraph/server/` subpackage at 60 days | `llm-dkz` | Red Team safeguard — verify the helper modules don't become a junk drawer. |
+| Harden `test:lint` (currently soft-passes — masks ~10 F401 violations) | `llm-516` | Observed during the epic; not in original scope. |
 
 See `bd show llm-doh` for the full council deliberation transcript.
