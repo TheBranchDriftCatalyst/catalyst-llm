@@ -1,0 +1,76 @@
+[
+  {
+    "event": "run_started",
+    "data": {
+      "type": "run_started",
+      "run_id": "<run_id>",
+      "model": "fake/model"
+    }
+  },
+  {
+    "event": "iteration",
+    "data": {
+      "type": "iteration",
+      "n": 1
+    }
+  },
+  {
+    "event": "token",
+    "data": {
+      "type": "token",
+      "content": "hello "
+    }
+  },
+  {
+    "event": "token",
+    "data": {
+      "type": "token",
+      "content": "world"
+    }
+  },
+  {
+    "event": "tool_call_start",
+    "data": {
+      "type": "tool_call_start",
+      "id": "tc1",
+      "name": "web_search",
+      "args": {
+        "query": "anything"
+      }
+    }
+  },
+  {
+    "event": "tool_call_end",
+    "data": {
+      "type": "tool_call_end",
+      "id": "tc1",
+      "result": "result",
+      "duration_ms": "<duration_ms>"
+    }
+  },
+  {
+    "event": "token",
+    "data": {
+      "type": "token",
+      "content": "final "
+    }
+  },
+  {
+    "event": "token",
+    "data": {
+      "type": "token",
+      "content": "answer"
+    }
+  },
+  {
+    "event": "message_done",
+    "data": {
+      "type": "message_done",
+      "finish_reason": "stop",
+      "usage": {
+        "input_tokens": 10,
+        "output_tokens": 5
+      }
+    }
+  }
+]
