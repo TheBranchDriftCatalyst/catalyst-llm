@@ -133,19 +133,33 @@ export interface ChatStreamRequest {
   /** Sampling params: temperature, max_tokens, top_p, reasoning_effort, … */
   params?: Record<string, unknown>;
   /**
-   * Per-Agent overrides for tunables advertised on GET /api/agents.
-   * Shape: `{ "main": { "recursion_limit": 30 }, "research": { "model": "..." } }`.
-   * Falls back to defaults / env vars when absent.
+   * Per-node overrides for tunables advertised on GET /api/agents.
+   * Shape: `{ "<agent_id>": { "<node_id>": { field: value, ... }, ... }, ... }`.
+   * Each innermost dict is validated server-side against the matching
+   * node's Pydantic config_model. Falls back to defaults when absent.
+   *
+   * Example:
+   *   { main: { agent: { recursion_limit: 30, temperature: 0.5 } },
+   *     research: { members: { model: "claude-haiku-4-5-20251001" },
+   *                 critic:  { enabled: true } } }
    */
-  agent_config?: Record<string, Record<string, unknown>>;
+  agent_config?: Record<string, Record<string, Record<string, unknown>>>;
 }
 
 // ─── Agent registry types (mirror /api/agents schema) ─────────────────
 
-/** One node in an Agent's topology graph. */
+/** One node in an Agent's topology graph.
+ *
+ * `config_schema` (JSON Schema from the node's Pydantic class) and
+ * `config_defaults` (no-arg instance dump) are non-null only for nodes
+ * that actually consume operator-tweakable knobs — start/end terminals
+ * and pure-dispatch tools nodes leave both as null.
+ */
 export interface AgentTopologyNode {
   id: string;
   type: "start" | "end" | "agent" | "tools";
+  config_schema: AgentConfigSchema | null;
+  config_defaults: Record<string, unknown> | null;
 }
 
 /** One edge between two topology nodes. */
@@ -209,13 +223,17 @@ export interface AgentConfigSchema {
   required?: string[];
 }
 
-/** One Agent in the registry — everything the Engine tab needs to render it. */
+/** One Agent in the registry — everything the Engine tab needs to render it.
+ *
+ * Per-node config schemas live on `topology.nodes[].config_schema` (and
+ * `.config_defaults`). There is no Agent-level config_schema — every
+ * tunable is owned by the node that consumes it.
+ */
 export interface AgentDescriptor {
   id: string;
   description: string;
   tools: string[];
   topology: AgentTopology;
-  config_schema: AgentConfigSchema;
 }
 
 /** Response shape for GET /api/agents. */

@@ -24,7 +24,10 @@ import {
   CardTitle,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/card";
 import { Activity, RefreshCw, RotateCcw, Wrench } from "lucide-react";
-import type { AgentDescriptor } from "../../agent/events.js";
+import type {
+  AgentDescriptor,
+  AgentTopologyNode,
+} from "../../agent/events.js";
 import { useAgents } from "../../react/hooks.js";
 import { useEngineStore } from "../../react/engineStore.js";
 import { cn } from "../utils.js";
@@ -37,6 +40,17 @@ import { AgentTopologyView } from "./AgentTopology.js";
 // Module-level constants keep the reference identity stable across
 // renders for the no-override case.
 const EMPTY_OVERRIDES: Record<string, unknown> = Object.freeze({});
+
+function countAgentOverrides(
+  agentCfg: Record<string, Record<string, unknown>> | undefined,
+): number {
+  if (!agentCfg) return 0;
+  let n = 0;
+  for (const nodeCfg of Object.values(agentCfg)) {
+    if (nodeCfg) n += Object.keys(nodeCfg).length;
+  }
+  return n;
+}
 
 export interface EngineViewProps {
   className?: string;
@@ -129,12 +143,11 @@ function AgentCard({
   onClick: () => void;
 }) {
   // Select the underlying (stable-by-reference) inner config object,
-  // then derive the count outside the selector. Returning
-  // `Object.keys(...)` directly from the selector creates a new array
-  // each render and triggers the getSnapshot-cached-warning + infinite
-  // loop (see EMPTY_OVERRIDES rationale above).
-  const overrides = useEngineStore((s) => s.configs[agent.id]);
-  const overrideCount = overrides ? Object.keys(overrides).length : 0;
+  // then derive the count outside the selector. Returning a freshly
+  // computed sum from the selector triggers the getSnapshot-cached
+  // warning + infinite loop (see EMPTY_OVERRIDES rationale above).
+  const agentCfg = useEngineStore((s) => s.configs[agent.id]);
+  const overrideCount = countAgentOverrides(agentCfg);
   return (
     <button
       type="button"
@@ -175,14 +188,16 @@ function AgentCard({
 }
 
 function AgentDetail({ agent }: { agent: AgentDescriptor }) {
-  // Select the inner config object directly (stable-by-reference) and
-  // coalesce to the frozen empty constant outside the selector — see
-  // EMPTY_OVERRIDES rationale at the top of this file.
-  const overridesOrNull = useEngineStore((s) => s.configs[agent.id]);
-  const overrides = overridesOrNull ?? EMPTY_OVERRIDES;
-  const setField = useEngineStore((s) => s.setField);
+  // Select the inner per-Agent config object directly
+  // (stable-by-reference) — see EMPTY_OVERRIDES rationale at top.
+  const agentCfg = useEngineStore((s) => s.configs[agent.id]);
   const resetAgent = useEngineStore((s) => s.resetAgent);
-  const editedCount = Object.keys(overrides).length;
+  const editedCount = countAgentOverrides(agentCfg);
+
+  const configurableNodes = useMemo(
+    () => agent.topology.nodes.filter((n) => n.config_schema !== null),
+    [agent.topology.nodes],
+  );
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6 p-6">
@@ -237,30 +252,77 @@ function AgentDetail({ agent }: { agent: AgentDescriptor }) {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Config</CardTitle>
-          <CardDescription>
-            Per-Agent tunables advertised by{" "}
-            <code className="rounded bg-muted/40 px-1 py-0.5 text-xs">
-              GET /api/agents
-            </code>
-            . Edits persist in localStorage and ride along on every chat
+      {configurableNodes.length === 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Config</CardTitle>
+            <CardDescription>
+              No tunable nodes on this Agent.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      ) : (
+        configurableNodes.map((node) => (
+          <NodeConfigCard key={node.id} agentId={agent.id} node={node} />
+        ))
+      )}
+    </div>
+  );
+}
+
+function NodeConfigCard({
+  agentId,
+  node,
+}: {
+  agentId: string;
+  node: AgentTopologyNode;
+}) {
+  const overridesOrNull = useEngineStore((s) => s.configs[agentId]?.[node.id]);
+  const overrides = overridesOrNull ?? EMPTY_OVERRIDES;
+  const setField = useEngineStore((s) => s.setField);
+  const resetNode = useEngineStore((s) => s.resetNode);
+  const editedCount = Object.keys(overrides).length;
+  // Narrowed by configurableNodes filter, but TS doesn't know.
+  if (node.config_schema === null) return null;
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+        <div>
+          <CardTitle className="text-base">
+            <span className="font-mono">{node.id}</span>
+            <span className="ml-2 rounded-md border border-border/60 bg-muted/30 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+              {node.type}
+            </span>
+          </CardTitle>
+          <CardDescription className="mt-1">
+            Edits persist in localStorage and ride along on every chat
             dispatch via the request's{" "}
             <code className="rounded bg-muted/40 px-1 py-0.5 text-xs">
-              agent_config
+              agent_config[{agentId}][{node.id}]
             </code>{" "}
             field.
           </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <AgentConfigForm
-            schema={agent.config_schema}
-            overrides={overrides}
-            onChange={(name, value) => setField(agent.id, name, value)}
-          />
-        </CardContent>
-      </Card>
-    </div>
+        </div>
+        {editedCount > 0 && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => resetNode(agentId, node.id)}
+            title={`Clear overrides for ${node.id}`}
+          >
+            <RotateCcw className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+            Reset {node.id}
+          </Button>
+        )}
+      </CardHeader>
+      <CardContent>
+        <AgentConfigForm
+          schema={node.config_schema}
+          overrides={overrides}
+          onChange={(name, value) => setField(agentId, node.id, name, value)}
+        />
+      </CardContent>
+    </Card>
   );
 }

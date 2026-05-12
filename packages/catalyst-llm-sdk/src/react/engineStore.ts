@@ -1,49 +1,93 @@
 /**
- * Engine config store — per-Agent tunable overrides.
+ * Engine config store — per-node tunable overrides.
  *
- * Each Agent registered with catalyst-langgraph (see /api/agents)
- * advertises a config_schema. The Engine tab lets the operator edit
- * those values; this store persists the edits in localStorage and the
- * chat dispatch path reads them on every `streamAgent()` send,
- * passing them as `agent_config` in the request body. When a field
- * is unset (no override stored), the backend falls back to env vars
- * → built-in defaults.
+ * Each LangGraph node registered with catalyst-langgraph (see
+ * /api/agents → topology.nodes[]) optionally advertises a
+ * `config_schema`. The Engine tab lets the operator edit those values
+ * per-node; this store persists the edits in localStorage and the chat
+ * dispatch path reads them on every `streamAgent()` send, passing them
+ * as `agent_config` in the request body.
  *
- * v1 = a single global config (per-user, per-device, per-browser).
- * v2 will layer per-chat overrides on top — each chat can opt to use
- * a custom engine config, and the store grows an `overridesByChatId`
- * dict. The default-resolution helper stays the same.
+ * Shape: `{ [agentId]: { [nodeId]: { [field]: value, ... }, ... }, ... }`.
+ * Only fields the operator explicitly overrode are stored — missing
+ * keys fall back to defaults server-side. Empty inner dicts are
+ * pruned on every mutation so the persisted payload stays small.
  *
- * Why a separate store (vs folding into chatStore): the engine config
- * is orthogonal to conversational state — multiple chats share the
- * same engine. Keeping it standalone matches usePromptStore /
- * useCompareStore conventions.
+ * v2 — re-keyed by node to match the per-node Pydantic config layout
+ * the backend now ships. v1 (flat per-Agent) data is dropped on
+ * rehydrate; per the project's roll-forward convention, no migration
+ * shim. Operators who had edits in v1 get the defaults back and
+ * re-set what they care about in the new per-node form.
  */
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 
 /**
- * `Record<agentId, partialConfig>`. The partialConfig only carries
- * keys the operator has explicitly overridden — missing keys fall back
- * to defaults. This keeps the persisted payload small and avoids
+ * `Record<agentId, Record<nodeId, partialConfig>>`. The innermost
+ * partialConfig only carries keys the operator has explicitly
+ * overridden — missing keys fall back to defaults. Avoids
  * stale-default-pinning when we add new fields to a schema.
  */
-export type EngineConfigs = Record<string, Record<string, unknown>>;
+export type NodeOverrides = Record<string, unknown>;
+export type AgentNodeOverrides = Record<string, NodeOverrides>;
+export type EngineConfigs = Record<string, AgentNodeOverrides>;
 
 export interface EngineStore {
   configs: EngineConfigs;
-  /** Replace a single field on an Agent's config. Pass `undefined` to
-   * clear a previously-set override (so the backend default re-applies). */
-  setField: (agentId: string, fieldName: string, value: unknown) => void;
-  /** Replace the whole partial config for an Agent (used by "Reset to defaults"). */
-  setAgentConfig: (agentId: string, config: Record<string, unknown>) => void;
-  /** Clear every override for an Agent. */
+  /** Replace a single field on one node of one Agent. Pass `undefined`
+   * to clear a previously-set override (so the backend default re-applies). */
+  setField: (
+    agentId: string,
+    nodeId: string,
+    fieldName: string,
+    value: unknown,
+  ) => void;
+  /** Replace the whole partial config for one node. Used by "Reset to
+   * defaults" on a single node, and by bulk-set flows. */
+  setNodeConfig: (
+    agentId: string,
+    nodeId: string,
+    config: NodeOverrides,
+  ) => void;
+  /** Clear every override for an Agent (all nodes). */
   resetAgent: (agentId: string) => void;
+  /** Clear every override for one node of an Agent. */
+  resetNode: (agentId: string, nodeId: string) => void;
   /** Compute the wire payload for `streamAgent`'s `agent_config` field.
-   * Returns `undefined` when no overrides are set so the request stays
-   * byte-identical to today's traffic for users who never touch the
-   * Engine tab. */
-  asRequestPayload: () => Record<string, Record<string, unknown>> | undefined;
+   * Returns `undefined` when no overrides are set, so the request
+   * stays byte-identical to today's traffic for users who never touch
+   * the Engine tab. */
+  asRequestPayload: () =>
+    | Record<string, Record<string, Record<string, unknown>>>
+    | undefined;
+}
+
+function pruneEmptyNode(
+  agentCfg: AgentNodeOverrides,
+  nodeId: string,
+  nodeCfg: NodeOverrides,
+): AgentNodeOverrides {
+  const next = { ...agentCfg };
+  if (Object.keys(nodeCfg).length === 0) {
+    delete next[nodeId];
+  } else {
+    next[nodeId] = nodeCfg;
+  }
+  return next;
+}
+
+function pruneEmptyAgent(
+  configs: EngineConfigs,
+  agentId: string,
+  agentCfg: AgentNodeOverrides,
+): EngineConfigs {
+  const next = { ...configs };
+  if (Object.keys(agentCfg).length === 0) {
+    delete next[agentId];
+  } else {
+    next[agentId] = agentCfg;
+  }
+  return next;
 }
 
 export const useEngineStore = create<EngineStore>()(
@@ -51,32 +95,24 @@ export const useEngineStore = create<EngineStore>()(
     (set, get) => ({
       configs: {},
 
-      setField: (agentId, fieldName, value) =>
+      setField: (agentId, nodeId, fieldName, value) =>
         set((state) => {
-          const next = { ...state.configs };
-          const agentCfg = { ...(next[agentId] ?? {}) };
+          const agentCfg = { ...(state.configs[agentId] ?? {}) };
+          const nodeCfg = { ...(agentCfg[nodeId] ?? {}) };
           if (value === undefined) {
-            delete agentCfg[fieldName];
+            delete nodeCfg[fieldName];
           } else {
-            agentCfg[fieldName] = value;
+            nodeCfg[fieldName] = value;
           }
-          if (Object.keys(agentCfg).length === 0) {
-            delete next[agentId];
-          } else {
-            next[agentId] = agentCfg;
-          }
-          return { configs: next };
+          const nextAgent = pruneEmptyNode(agentCfg, nodeId, nodeCfg);
+          return { configs: pruneEmptyAgent(state.configs, agentId, nextAgent) };
         }),
 
-      setAgentConfig: (agentId, config) =>
+      setNodeConfig: (agentId, nodeId, config) =>
         set((state) => {
-          const next = { ...state.configs };
-          if (Object.keys(config).length === 0) {
-            delete next[agentId];
-          } else {
-            next[agentId] = { ...config };
-          }
-          return { configs: next };
+          const agentCfg = { ...(state.configs[agentId] ?? {}) };
+          const nextAgent = pruneEmptyNode(agentCfg, nodeId, { ...config });
+          return { configs: pruneEmptyAgent(state.configs, agentId, nextAgent) };
         }),
 
       resetAgent: (agentId) =>
@@ -87,22 +123,45 @@ export const useEngineStore = create<EngineStore>()(
           return { configs: next };
         }),
 
+      resetNode: (agentId, nodeId) =>
+        set((state) => {
+          const agentCfg = state.configs[agentId];
+          if (!agentCfg || !(nodeId in agentCfg)) return state;
+          const nextAgent = { ...agentCfg };
+          delete nextAgent[nodeId];
+          return {
+            configs: pruneEmptyAgent(state.configs, agentId, nextAgent),
+          };
+        }),
+
       asRequestPayload: () => {
         const { configs } = get();
-        const keys = Object.keys(configs);
-        if (keys.length === 0) return undefined;
-        // Strip empty inner objects defensively — they'd be no-ops
-        // server-side, but sending them adds noise to debugging.
-        const out: Record<string, Record<string, unknown>> = {};
-        for (const k of keys) {
-          const c = configs[k];
-          if (c && Object.keys(c).length > 0) out[k] = c;
+        const agentKeys = Object.keys(configs);
+        if (agentKeys.length === 0) return undefined;
+        // Re-prune defensively — if anything ever wrote an empty inner
+        // dict it'd be a server-side no-op, but trimming keeps the
+        // debug logs honest.
+        const out: Record<string, Record<string, Record<string, unknown>>> = {};
+        for (const aid of agentKeys) {
+          const inner = configs[aid];
+          if (!inner) continue;
+          const cleaned: Record<string, Record<string, unknown>> = {};
+          for (const nid of Object.keys(inner)) {
+            const node = inner[nid];
+            if (node && Object.keys(node).length > 0) cleaned[nid] = node;
+          }
+          if (Object.keys(cleaned).length > 0) out[aid] = cleaned;
         }
         return Object.keys(out).length > 0 ? out : undefined;
       },
     }),
     {
-      name: "catalyst-llm-sdk:engine",
+      // v2 = per-node nested shape. The v1 key (without the suffix)
+      // is intentionally left in localStorage; if an operator rolls
+      // back the bundle, their old edits are still there. Forward
+      // rollout reads only this v2 key, so v1 data is effectively
+      // dropped without a migration shim.
+      name: "catalyst-llm-sdk:engine:v2",
       storage: createJSONStorage(() => localStorage),
       // Only `configs` is meaningful state; the methods are recreated
       // on every mount.
