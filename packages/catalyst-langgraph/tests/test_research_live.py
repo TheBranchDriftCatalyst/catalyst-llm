@@ -53,6 +53,12 @@ TOOL_HOST_OK = bool(os.environ.get("TOOL_HOST_URL"))
 #   RESEARCH_TEST_MODELS=mac/qwen3-8b,mac/glm-4.5-air pytest -m integration tests/test_research_live.py
 _DEFAULT_MODELS = [
     "claude-haiku-4-5-20251001",
+    # Local Ollama row. Currently mac/qwen3-coder because it's what
+    # talos00's LiteLLM advertises today; once the proxy is
+    # redeployed with the new entries, prefer mac/qwen3-8b (smaller,
+    # BFCL-stable, recommended council-member pick from our research
+    # write-up). Override with RESEARCH_TEST_MODELS to pin a
+    # different local model.
     "mac/qwen3-coder",
 ]
 TEST_MODELS = [
@@ -136,7 +142,7 @@ def test_research_shallow_dispatches_and_returns_content(model: str) -> None:
     result = _run_research(
         query=TEST_QUERY,
         depth="shallow",
-        overrides={"model": model, "recursion_limit": 12},
+        overrides={"model": model, "recursion_limit": 20},
     )
 
     assert isinstance(result, str), f"expected str, got {type(result).__name__}"
@@ -186,7 +192,7 @@ def test_research_deep_council_consolidates(model: str) -> None:
             "fusion_model": model,
             "council_size": 2,
             "critic_enabled": False,
-            "recursion_limit": 12,
+            "recursion_limit": 20,
         },
     )
 
