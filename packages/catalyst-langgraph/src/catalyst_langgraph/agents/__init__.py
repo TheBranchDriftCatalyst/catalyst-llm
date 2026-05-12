@@ -36,12 +36,13 @@ Wire shape for per-request overrides:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel
 
 
 NodeType = Literal["start", "end", "agent", "tools"]
+GroupType = Literal["ensemble", "actor_critic_loop"]
 
 
 @dataclass
@@ -53,11 +54,29 @@ class AgentTopologyNode:
     one. Leaf nodes (`__start__`, `__end__`) and inert dispatchers
     (`tools`) leave it `None`; the descriptor emits `config_schema: null`
     for those and the right-panel Config tab shows an empty state.
+
+    Structural grouping (optional, UI-only):
+
+      `group_id` — nodes sharing the same group_id render inside the
+        same compound container on the Engine tab. Purely visual; the
+        underlying LangGraph state machine is unchanged.
+      `group_type` — sets the container's visual style. `ensemble`
+        renders as a faint container suggesting parallel copies;
+        `actor_critic_loop` renders with critic-feedback semantics
+        (dashed border around the loop's participants).
+      `instance_count_field` — names a field in *this* node's own
+        config_model whose live value determines how many "instance"
+        sub-cards to stamp inside the node card. Lets a single
+        `members` node visualise `council_size=N` as N stamps without
+        introducing N separately-configurable nodes.
     """
 
     id: str
     type: NodeType = "agent"
     config_model: type[BaseModel] | None = None
+    group_type: Optional[GroupType] = None
+    group_id: Optional[str] = None
+    instance_count_field: Optional[str] = None
 
 
 @dataclass

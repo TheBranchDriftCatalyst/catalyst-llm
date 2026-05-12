@@ -833,21 +833,38 @@ register_agent(
         topology=AgentTopology(
             nodes=[
                 AgentTopologyNode(id="__start__", type="start"),
+                # members + critic + fusion together form an
+                # actor-critic loop: members generate, critic reviews,
+                # fusion consolidates. They render inside a single
+                # dashed compound container on the Engine tab.
+                #
+                # members ALSO carries `instance_count_field="council_size"`
+                # so the UI can stamp N small "member" thumbnails inside
+                # the members card when the operator dials council_size
+                # up — visualising the ensemble fan-out without
+                # introducing N independently-configurable nodes.
                 AgentTopologyNode(
                     id="members",
                     type="agent",
                     config_model=ResearchMembersConfig,
+                    group_id="research_loop",
+                    group_type="actor_critic_loop",
+                    instance_count_field="council_size",
                 ),
                 AgentTopologyNode(id="web_search", type="tools"),
                 AgentTopologyNode(
                     id="critic",
                     type="agent",
                     config_model=ResearchCriticConfig,
+                    group_id="research_loop",
+                    group_type="actor_critic_loop",
                 ),
                 AgentTopologyNode(
                     id="fusion",
                     type="agent",
                     config_model=ResearchFusionConfig,
+                    group_id="research_loop",
+                    group_type="actor_critic_loop",
                 ),
                 AgentTopologyNode(id="__end__", type="end"),
             ],

@@ -743,6 +743,33 @@ class AgentTopologyNodeOut(BaseModel):
             "has no config_schema."
         ),
     )
+    group_type: Optional[Literal["ensemble", "actor_critic_loop"]] = Field(
+        default=None,
+        description=(
+            "Visual grouping style. When set together with `group_id`, "
+            "the UI renders all nodes sharing this `group_id` inside a "
+            "compound container styled per `group_type`. Purely visual; "
+            "the LangGraph topology is unchanged."
+        ),
+    )
+    group_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Identifier shared by nodes that should render inside the "
+            "same compound container on the Engine tab. `null` for "
+            "ungrouped nodes (start/end/standalone tools)."
+        ),
+    )
+    instance_count_field: Optional[str] = Field(
+        default=None,
+        description=(
+            "When set, names a field in this node's own `config_schema` "
+            "whose live value drives how many 'instance' sub-cards the "
+            "UI stamps inside the node — e.g. `council_size` on `members` "
+            "for the research ensemble. Visual only; sub-cards are not "
+            "separately configurable."
+        ),
+    )
 
 
 class AgentTopologyEdgeOut(BaseModel):
@@ -837,6 +864,9 @@ async def list_agents() -> ListAgentsResponse:
                                 if n.config_model is not None
                                 else None
                             ),
+                            group_type=n.group_type,
+                            group_id=n.group_id,
+                            instance_count_field=n.instance_count_field,
                         )
                         for n in desc.topology.nodes
                     ],
