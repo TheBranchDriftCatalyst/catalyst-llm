@@ -58,7 +58,7 @@ import {
   type CommonNodeData,
   type EnsembleGroupData,
   type GroupNodeData,
-} from "./nodes.js";
+} from "./nodes/index.js";
 
 export interface ReactFlowAgentTopologyProps {
   topology: AgentTopology;
