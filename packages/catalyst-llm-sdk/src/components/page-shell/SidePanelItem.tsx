@@ -108,9 +108,12 @@ export function SidePanelItem({
   return (
     <section
       className={cn(
-        // Section fills whatever box the parent gave it. No flex-1 here
-        // — SidePanel decides which item is the grower.
-        "flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-border/60 bg-card/30",
+        // Section fills whatever flex-column box the parent gave it.
+        // `flex-1` + `min-h-0` makes it claim the wrapper's main-axis
+        // size via flex algorithm — more reliable than `h-full` (%-based)
+        // which intermittently fails to resolve inside nested flex
+        // chains (the bottom-rail "tiny terminal" bug was this).
+        "flex flex-1 min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-border/60 bg-card/30",
         className,
       )}
       data-collapsed={collapsed || undefined}

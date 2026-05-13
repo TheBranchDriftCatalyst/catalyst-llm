@@ -75,10 +75,9 @@ function discoverItems(children: ReactNode): DiscoveredItem[] {
 export interface SidePanelProps {
   /** Stack of SidePanelItem children. */
   children: ReactNode;
-  /** Side affects layout direction + splitter orientation:
-   *   left/right → vertical stack, horizontal splitters
-   *   bottom     → horizontal stack, vertical splitters
-   */
+  /** Which rail of the PageShell this panel sits in. All rails stack
+   * items vertically internally; `side` is informational and used as
+   * the namespace for per-item size CSS vars + localStorage keys. */
   side?: Side;
   className?: string;
 }
@@ -111,6 +110,7 @@ export function SidePanel({
         setCollapsedById((prev) =>
           prev[id] === collapsed ? prev : { ...prev, [id]: collapsed },
         ),
+      draggable: false,
     }),
     [side],
   );
@@ -126,9 +126,16 @@ export function SidePanel({
   );
   const firstExpandedId = expandedIds[0];
 
-  const isHorizontal = side === "bottom";
+  // All rails stack VERTICALLY inside the panel — items collapse
+  // upward (header on top, content folds away below). The bottom rail
+  // is just a short rail at the bottom of the page; its items still
+  // stack top→bottom inside it. Horizontal item stacking turned out
+  // weird (collapsed items became thin vertical strips with a
+  // sideways header) and the operator's mental model is "drawers
+  // stack". The grid template still places the bottom rail as a
+  // bottom-row landscape; only its INTERNAL layout changes.
   const cssVarBase = `--sp-${side}`;
-  const sizeFallback = isHorizontal ? 300 : 200;
+  const sizeFallback = 200;
 
   // Build the rendered sequence: each item, optionally followed by a
   // Splitter that controls the NEXT expanded item's size. The splitter
@@ -171,18 +178,14 @@ export function SidePanel({
         segments.push(
           <Splitter
             key={`split:${it.id}->${nextExpandedId}`}
-            orientation={isHorizontal ? "vertical" : "horizontal"}
+            orientation="horizontal"
             cssVar={`${cssVarBase}-${nextExpandedId}-px`}
             storageKey={`catalyst-llm-sdk:sidepanel:${side}:${nextExpandedId}:size`}
             defaultPx={sizeFallback}
-            minPx={isHorizontal ? 200 : 80}
-            maxPx={isHorizontal ? 1200 : 800}
+            minPx={80}
+            maxPx={800}
             invert
-            style={
-              isHorizontal
-                ? { width: 6, flex: "0 0 6px", alignSelf: "stretch" }
-                : { height: 6, flex: "0 0 6px", alignSelf: "stretch" }
-            }
+            style={{ height: 6, flex: "0 0 6px", alignSelf: "stretch" }}
           />,
         );
       }
@@ -193,8 +196,7 @@ export function SidePanel({
     <SidePanelCtx.Provider value={ctxValue}>
       <div
         className={cn(
-          "flex h-full min-h-0 min-w-0 gap-1 p-2",
-          isHorizontal ? "flex-row overflow-x-auto" : "flex-col overflow-y-auto",
+          "flex h-full min-h-0 min-w-0 flex-col gap-1 overflow-y-auto p-2",
           className,
         )}
         data-side={side}

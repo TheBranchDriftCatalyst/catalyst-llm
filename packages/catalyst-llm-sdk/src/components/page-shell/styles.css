@@ -34,27 +34,26 @@
   grid-template-rows: minmax(0, 1fr);
 }
 
-/* Left rail present → columns: [left] 6px [splitter] 1fr */
+/* Splitter columns/rows are 4px in the grid template — the splitter
+ * element itself sits on top with a wider hover hit area so the operator
+ * doesn't need pixel-perfect aim to grab it. */
 .page-shell[data-has-left] > .page-shell-grid {
-  grid-template-columns: var(--page-col-left, 320px) 6px minmax(0, 1fr);
+  grid-template-columns: var(--page-col-left, 320px) 4px minmax(0, 1fr);
 }
-/* Right rail present (no left) → 1fr 6px [right] */
 .page-shell[data-has-right]:not([data-has-left]) > .page-shell-grid {
-  grid-template-columns: minmax(0, 1fr) 6px var(--page-col-right, 360px);
+  grid-template-columns: minmax(0, 1fr) 4px var(--page-col-right, 360px);
 }
-/* Both rails present → 5-col template */
 .page-shell[data-has-left][data-has-right] > .page-shell-grid {
   grid-template-columns:
     var(--page-col-left, 320px)
-    6px
+    4px
     minmax(0, 1fr)
-    6px
+    4px
     var(--page-col-right, 360px);
 }
 
-/* Bottom rail present → add splitter row + panel row */
 .page-shell[data-has-bottom] > .page-shell-grid {
-  grid-template-rows: minmax(0, 1fr) 6px var(--page-row-bottom, 220px);
+  grid-template-rows: minmax(0, 1fr) 4px var(--page-row-bottom, 220px);
 }
 
 /* Region placement — the splitters are positioned inline via style

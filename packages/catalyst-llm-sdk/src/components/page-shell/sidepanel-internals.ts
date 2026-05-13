@@ -8,9 +8,17 @@ import { createContext, useContext } from "react";
 
 export type Side = "left" | "right" | "bottom";
 
+/** MIME-ish type id we use for HTML5 drag-and-drop of SidePanelItems
+ * between rails. Lowercase per the DataTransfer convention. */
+export const SIDEPANEL_ITEM_DND_TYPE =
+  "application/x-catalyst-sidepanel-item";
+
 export interface SidePanelCtxValue {
   side: Side;
   reportCollapsed: (id: string, collapsed: boolean) => void;
+  /** True when this SidePanel parent accepts cross-rail moves — gates
+   * the drag handle's visibility on the item header. */
+  draggable: boolean;
 }
 
 export const SidePanelCtx = createContext<SidePanelCtxValue | null>(null);
@@ -22,6 +30,13 @@ const noop = () => {};
 export function useSidePanelReport(): (id: string, collapsed: boolean) => void {
   const ctx = useContext(SidePanelCtx);
   return ctx?.reportCollapsed ?? noop;
+}
+
+/** Whether the parent SidePanel has cross-rail drag enabled. False when
+ * SidePanelItem is used outside of a SidePanel (storybook / tests). */
+export function useSidePanelDraggable(): boolean {
+  const ctx = useContext(SidePanelCtx);
+  return ctx?.draggable ?? false;
 }
 
 export function itemCollapsedStorageKey(id: string): string {
