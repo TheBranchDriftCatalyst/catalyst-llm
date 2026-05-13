@@ -62,14 +62,16 @@ export { ContextMeter, type ContextMeterProps } from "./ContextMeter.js";
 export {
   PromptPresets,
   SystemPromptPresets,
+  type PromptPresetsProps,
+  type SystemPromptPresetsProps,
+} from "./PromptPresets.js";
+export {
   DEFAULT_PRESETS,
   SYSTEM_PRESETS,
   BUILTIN_SEEDS,
   getPresetsForModel,
-  type PromptPresetsProps,
-  type SystemPromptPresetsProps,
   type PromptPreset,
-} from "./PromptPresets.js";
+} from "./prompt-seeds.js";
 export {
   PromptEditor,
   PromptPickerList,

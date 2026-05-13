@@ -26,8 +26,8 @@ import { ResponseViewer } from "./ResponseViewer.js";
 import {
   PromptPresets,
   SystemPromptPresets,
-  getPresetsForModel,
 } from "./PromptPresets.js";
+import { getPresetsForModel } from "./prompt-seeds.js";
 import { useModels, useAvailableTools, type AvailableTool } from "../react/hooks.js";
 import { useFocusTrap } from "./useFocusTrap.js";
 import { cn } from "./utils.js";

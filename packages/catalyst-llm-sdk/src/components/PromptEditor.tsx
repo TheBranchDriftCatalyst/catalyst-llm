@@ -28,7 +28,7 @@ import {
   parsePromptFile,
   serializePromptFile,
 } from "../react/promptFile.js";
-import { BUILTIN_SEEDS } from "./PromptPresets.js";
+import { BUILTIN_SEEDS } from "./prompt-seeds.js";
 import { cn } from "./utils.js";
 
 export interface PromptEditorProps {
