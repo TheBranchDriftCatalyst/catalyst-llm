@@ -24,6 +24,7 @@ import {
   useMemo,
   useState,
   type CSSProperties,
+  type DragEvent,
   type ReactElement,
   type ReactNode,
 } from "react";
@@ -31,6 +32,7 @@ import { Splitter } from "../engine-panel/Splitter.js";
 import { cn } from "../utils.js";
 import { SidePanelItem, type SidePanelItemProps } from "./SidePanelItem.js";
 import {
+  SIDEPANEL_ITEM_DND_TYPE,
   SidePanelCtx,
   itemCollapsedStorageKey,
   type Side,
@@ -79,12 +81,20 @@ export interface SidePanelProps {
    * items vertically internally; `side` is informational and used as
    * the namespace for per-item size CSS vars + localStorage keys. */
   side?: Side;
+  /** Optional cross-rail move handler. When provided, SidePanelItem
+   * headers render a grip drag handle and this panel accepts drops
+   * from sibling rails. On drop, the panel calls onItemMove with the
+   * dropped item id; the host (typically the page-level consumer)
+   * updates its rail-assignment state. When undefined, items are
+   * read-only with respect to cross-rail movement. */
+  onItemMove?: (itemId: string, toSide: Side) => void;
   className?: string;
 }
 
 export function SidePanel({
   children,
   side = "left",
+  onItemMove,
   className,
 }: SidePanelProps) {
   const items = useMemo(() => discoverItems(children), [children]);
@@ -103,6 +113,7 @@ export function SidePanel({
     },
   );
 
+  const draggable = Boolean(onItemMove);
   const ctxValue = useMemo<SidePanelCtxValue>(
     () => ({
       side,
@@ -110,10 +121,42 @@ export function SidePanel({
         setCollapsedById((prev) =>
           prev[id] === collapsed ? prev : { ...prev, [id]: collapsed },
         ),
-      draggable: false,
+      draggable,
     }),
-    [side],
+    [side, draggable],
   );
+
+  // ─ Cross-rail drag/drop wiring ───────────────────────────────────
+  // Operator drags a SidePanelItem header from one rail and drops it
+  // anywhere on a sibling rail. We use HTML5 DnD with a custom MIME
+  // type so unrelated content drags (text, files) don't trigger a move.
+  const [dragOver, setDragOver] = useState(false);
+  const handleDragOver = onItemMove
+    ? (e: DragEvent<HTMLDivElement>) => {
+        if (!e.dataTransfer.types.includes(SIDEPANEL_ITEM_DND_TYPE)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        if (!dragOver) setDragOver(true);
+      }
+    : undefined;
+  const handleDragLeave = onItemMove
+    ? (e: DragEvent<HTMLDivElement>) => {
+        // Only clear when truly leaving the panel — ignore moves between
+        // child elements (each child fires dragleave when the pointer
+        // crosses its edge, even within the same panel).
+        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+        setDragOver(false);
+      }
+    : undefined;
+  const handleDrop = onItemMove
+    ? (e: DragEvent<HTMLDivElement>) => {
+        setDragOver(false);
+        const itemId = e.dataTransfer.getData(SIDEPANEL_ITEM_DND_TYPE);
+        if (!itemId) return;
+        e.preventDefault();
+        onItemMove(itemId, side);
+      }
+    : undefined;
 
   // Compute which items are expanded + which one is the FIRST expanded
   // (the grower). All other expanded items are explicitly sized via
@@ -197,9 +240,15 @@ export function SidePanel({
       <div
         className={cn(
           "flex h-full min-h-0 min-w-0 flex-col gap-1 overflow-y-auto p-2",
+          // Faint inset ring during a hover-while-dragging an item from
+          // another rail — telegraphs "drop here works".
+          dragOver && "ring-2 ring-inset ring-primary/60",
           className,
         )}
         data-side={side}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
       >
         {segments}
       </div>

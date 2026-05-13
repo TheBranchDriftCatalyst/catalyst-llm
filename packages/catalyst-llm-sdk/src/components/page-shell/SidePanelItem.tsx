@@ -10,11 +10,19 @@
  * between adjacent expanded items. SidePanelItem itself is intentionally
  * size-agnostic — it just fills whatever box the parent gives it.
  */
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type DragEvent,
+  type ReactNode,
+} from "react";
+import { ChevronDown, ChevronRight, GripVertical } from "lucide-react";
 import { cn } from "../utils.js";
 import {
+  SIDEPANEL_ITEM_DND_TYPE,
   itemCollapsedStorageKey as itemCollapsedStorageKeyInternal,
+  useSidePanelDraggable,
   useSidePanelReport,
 } from "./sidepanel-internals.js";
 
@@ -105,6 +113,18 @@ export function SidePanelItem({
     setCollapsed(false);
   }, [openSignal]);
 
+  // Cross-rail drag — only enabled when the parent SidePanel has
+  // wired up `onItemMove`. The handle (and the section's dragging
+  // visual state) are both gated on this.
+  const draggable = useSidePanelDraggable();
+  const [dragging, setDragging] = useState(false);
+  const handleDragStart = (e: DragEvent<HTMLElement>) => {
+    e.dataTransfer.setData(SIDEPANEL_ITEM_DND_TYPE, id);
+    e.dataTransfer.effectAllowed = "move";
+    setDragging(true);
+  };
+  const handleDragEnd = () => setDragging(false);
+
   return (
     <section
       className={cn(
@@ -114,6 +134,7 @@ export function SidePanelItem({
         // which intermittently fails to resolve inside nested flex
         // chains (the bottom-rail "tiny terminal" bug was this).
         "flex flex-1 min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-border/60 bg-card/30",
+        dragging && "opacity-40",
         className,
       )}
       data-collapsed={collapsed || undefined}
@@ -125,6 +146,24 @@ export function SidePanelItem({
         aria-expanded={!collapsed}
         title={collapsed ? "Expand" : "Collapse"}
       >
+        {/* Drag handle — only renders when the parent SidePanel allows
+         * cross-rail moves. The handle (NOT the header) carries
+         * draggable=true so a normal header click still toggles
+         * collapse without starting a drag. Stops click propagation so
+         * grabbing the grip doesn't ALSO toggle collapse. */}
+        {draggable && (
+          <span
+            draggable
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onClick={(e) => e.stopPropagation()}
+            className="-ml-1 flex h-5 w-3 cursor-grab items-center justify-center text-muted-foreground/60 hover:text-foreground active:cursor-grabbing"
+            title="Drag to move to another rail"
+            aria-label="Drag handle"
+          >
+            <GripVertical className="h-3 w-3" aria-hidden="true" />
+          </span>
+        )}
         {collapsed ? (
           <ChevronRight className="h-3 w-3" aria-hidden="true" />
         ) : (

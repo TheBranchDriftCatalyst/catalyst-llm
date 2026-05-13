@@ -22,7 +22,7 @@
  * explorer + runs list stay as right-edge Sheet overlays because
  * they're transient workbench surfaces, not persistent operator state.
  */
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import {
   Sheet,
@@ -53,6 +53,21 @@ import { useEngineRunStore } from "../../react/engineRunStore.js";
 import { PageShell } from "../page-shell/PageShell.js";
 import { SidePanel } from "../page-shell/SidePanel.js";
 import { SidePanelItem } from "../page-shell/SidePanelItem.js";
+import {
+  useItemRails,
+  type RailMap,
+} from "../page-shell/useItemRails.js";
+
+/** Default rail assignments for Engine SidePanelItems. The operator
+ * can re-arrange them at runtime via drag-and-drop; assignments
+ * persist to localStorage. Adding a new id here makes it appear in
+ * the named rail on first visit; the persistence layer preserves any
+ * existing customisations. */
+const ENGINE_DEFAULT_RAILS: RailMap = {
+  left: ["engine.agents", "engine.events"],
+  right: ["engine.test-run", "engine.node-detail"],
+  bottom: ["engine.terminal"],
+};
 
 function countAgentOverrides(
   agentCfg: Record<string, Record<string, unknown>> | undefined,
@@ -106,145 +121,170 @@ export function EngineView({ className }: EngineViewProps) {
     (s) => (selected ? s.runs[selected.id]?.panelEvents : undefined) ?? EMPTY_PANEL_EVENTS,
   );
 
+  // Rail assignments — operator can drag SidePanelItems between rails
+  // and the assignments persist to localStorage.
+  const { rails, moveItem } = useItemRails("engine", ENGINE_DEFAULT_RAILS);
+
+  // Each rail item rendered by id so the rail loop below can stamp
+  // them in whatever order the assignment hook returned. Doing it as
+  // a switch keeps the JSX inline + closures over local state simple.
+  const renderItemById = (id: string): ReactNode => {
+    switch (id) {
+      case "engine.agents":
+        return (
+          <SidePanelItem
+            id="engine.agents"
+            title="Agents"
+            icon={<Bot className="h-3 w-3" />}
+            headerRight={
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void refresh();
+                }}
+                title="Refresh /api/agents"
+                className="h-5 w-5 p-0"
+              >
+                <RefreshCw className="h-3 w-3" aria-hidden="true" />
+              </Button>
+            }
+          >
+            <div className="p-2 space-y-1.5">
+              {error && (
+                <div
+                  role="alert"
+                  className="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive"
+                >
+                  Failed to load agents: {error}
+                </div>
+              )}
+              {loading && agents.length === 0 ? (
+                <div className="text-xs text-muted-foreground">Loading…</div>
+              ) : agents.length === 0 ? (
+                <div className="text-xs text-muted-foreground">
+                  No agents registered. Configure VITE_AGENT_URL and start
+                  catalyst-langgraph.
+                </div>
+              ) : (
+                agents.map((a) => (
+                  <AgentCard
+                    key={a.id}
+                    agent={a}
+                    active={selected?.id === a.id}
+                    onClick={() => setSelectedAgentId(a.id)}
+                  />
+                ))
+              )}
+            </div>
+          </SidePanelItem>
+        );
+      case "engine.events":
+        return (
+          <SidePanelItem
+            id="engine.events"
+            title="Events"
+            icon={<Layers className="h-3 w-3" />}
+            defaultCollapsed
+            headerRight={
+              <span className="text-[10px] text-muted-foreground">
+                {panelEvents.length}
+              </span>
+            }
+          >
+            <div className="p-2 text-[11px] text-muted-foreground">
+              <p>
+                EventStream — chronological + filterable. Sub-component
+                lands next.
+              </p>
+              <p className="mt-1 italic">
+                {panelEvents.length} buffered events for{" "}
+                <span className="font-mono">{selected?.id ?? "—"}</span>
+              </p>
+            </div>
+          </SidePanelItem>
+        );
+      case "engine.test-run":
+        return (
+          <SidePanelItem
+            id="engine.test-run"
+            title="Test run"
+            icon={<Play className="h-3 w-3" />}
+            openSignal={testRunOpenSignal}
+            headerRight={
+              selected ? (
+                <span className="font-mono text-[10px] normal-case tracking-normal text-foreground">
+                  {selected.id}
+                </span>
+              ) : undefined
+            }
+          >
+            {selected ? (
+              <div className="flex h-full min-h-0 flex-col p-2">
+                <TestRunSheet agent={selected} />
+              </div>
+            ) : (
+              <div className="p-2 text-[11px] text-muted-foreground">
+                Select an agent to dispatch a test run.
+              </div>
+            )}
+          </SidePanelItem>
+        );
+      case "engine.node-detail":
+        return (
+          <SidePanelItem
+            id="engine.node-detail"
+            title="Node detail"
+            icon={<Activity className="h-3 w-3" />}
+            defaultCollapsed
+          >
+            <div className="p-2 text-[11px] text-muted-foreground">
+              NodePanel — click a topology node to inspect its last
+              events + drill into payload. Lands next.
+            </div>
+          </SidePanelItem>
+        );
+      case "engine.terminal":
+        return (
+          <SidePanelItem
+            id="engine.terminal"
+            title="Terminal"
+            icon={<TerminalIcon className="h-3 w-3" />}
+            headerRight={
+              <span className="text-[10px] text-muted-foreground">
+                {panelEvents.length} total
+              </span>
+            }
+          >
+            <div className="p-2 font-mono text-[11px] text-muted-foreground">
+              Terminal — live token stream + reasoning. Lands next.
+            </div>
+          </SidePanelItem>
+        );
+      default:
+        return null;
+    }
+  };
+
+  const renderRail = (side: "left" | "right" | "bottom"): ReactNode => (
+    <SidePanel side={side} onItemMove={moveItem}>
+      {rails[side].map((id) => (
+        <Fragment key={id}>{renderItemById(id)}</Fragment>
+      ))}
+    </SidePanel>
+  );
+
   return (
     <div
       className={cn("flex h-full w-full overflow-hidden bg-background text-foreground", className)}
     >
       <PageShell
         storageNamespace="engine"
-        left={
-          <SidePanel side="left">
-            <SidePanelItem
-              id="engine.agents"
-              title="Agents"
-              icon={<Bot className="h-3 w-3" />}
-              defaultGrow
-              headerRight={
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void refresh();
-                  }}
-                  title="Refresh /api/agents"
-                  className="h-5 w-5 p-0"
-                >
-                  <RefreshCw className="h-3 w-3" aria-hidden="true" />
-                </Button>
-              }
-            >
-              <div className="p-2 space-y-1.5">
-                {error && (
-                  <div
-                    role="alert"
-                    className="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive"
-                  >
-                    Failed to load agents: {error}
-                  </div>
-                )}
-                {loading && agents.length === 0 ? (
-                  <div className="text-xs text-muted-foreground">Loading…</div>
-                ) : agents.length === 0 ? (
-                  <div className="text-xs text-muted-foreground">
-                    No agents registered. Configure VITE_AGENT_URL and start
-                    catalyst-langgraph.
-                  </div>
-                ) : (
-                  agents.map((a) => (
-                    <AgentCard
-                      key={a.id}
-                      agent={a}
-                      active={selected?.id === a.id}
-                      onClick={() => setSelectedAgentId(a.id)}
-                    />
-                  ))
-                )}
-              </div>
-            </SidePanelItem>
-            <SidePanelItem
-              id="engine.events"
-              title="Events"
-              icon={<Layers className="h-3 w-3" />}
-              defaultCollapsed
-              headerRight={
-                <span className="text-[10px] text-muted-foreground">
-                  {panelEvents.length}
-                </span>
-              }
-            >
-              <div className="p-2 text-[11px] text-muted-foreground">
-                <p>
-                  EventStream — chronological + filterable. Sub-component
-                  lands next.
-                </p>
-                <p className="mt-1 italic">
-                  {panelEvents.length} buffered events for{" "}
-                  <span className="font-mono">{selected?.id ?? "—"}</span>
-                </p>
-              </div>
-            </SidePanelItem>
-          </SidePanel>
-        }
-        right={
-          <SidePanel side="right">
-            <SidePanelItem
-              id="engine.test-run"
-              title="Test run"
-              icon={<Play className="h-3 w-3" />}
-              defaultGrow
-              openSignal={testRunOpenSignal}
-              headerRight={
-                selected ? (
-                  <span className="font-mono text-[10px] normal-case tracking-normal text-foreground">
-                    {selected.id}
-                  </span>
-                ) : undefined
-              }
-            >
-              {selected ? (
-                <div className="flex h-full min-h-0 flex-col p-2">
-                  <TestRunSheet agent={selected} />
-                </div>
-              ) : (
-                <div className="p-2 text-[11px] text-muted-foreground">
-                  Select an agent to dispatch a test run.
-                </div>
-              )}
-            </SidePanelItem>
-            <SidePanelItem
-              id="engine.node-detail"
-              title="Node detail"
-              icon={<Activity className="h-3 w-3" />}
-              defaultCollapsed
-            >
-              <div className="p-2 text-[11px] text-muted-foreground">
-                NodePanel — click a topology node to inspect its last
-                events + drill into payload. Lands next.
-              </div>
-            </SidePanelItem>
-          </SidePanel>
-        }
-        bottom={
-          <SidePanel side="bottom">
-            <SidePanelItem
-              id="engine.terminal"
-              title="Terminal"
-              icon={<TerminalIcon className="h-3 w-3" />}
-              defaultGrow
-              headerRight={
-                <span className="text-[10px] text-muted-foreground">
-                  {panelEvents.length} total
-                </span>
-              }
-            >
-              <div className="p-2 font-mono text-[11px] text-muted-foreground">
-                Terminal — live token stream + reasoning. Lands next.
-              </div>
-            </SidePanelItem>
-          </SidePanel>
-        }
+        left={renderRail("left")}
+        right={renderRail("right")}
+        bottom={renderRail("bottom")}
       >
         {selected ? (
           <AgentDetail
