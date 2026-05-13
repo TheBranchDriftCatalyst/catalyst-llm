@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "catalyst-exgraph"
+version = "0.1.0"
+description = "Generic composable extraction graphs with MCP validation, ensemble support, and full provenance"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "langgraph>=0.6",
+    "langchain-core>=0.3",
+    "pydantic>=2.9",
+    "mcp>=1.0",
+    "httpx>=0.24",
+    "pyyaml>=6.0",
+    # Path-source dep on catalyst-langgraph for the client + prompts
+    # abstractions (clients/{llm,gliner,nuextract,...}, prompts.py).
+    # Wheel-install consumers (catalyst-data codespaces) will get this
+    # via the same path or via a published wheel when we set up a
+    # private PyPI.
+    "catalyst-langgraph",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
+# Optional Dagster integration — only install when the consumer is a
+# Dagster code location (catalyst-data/packages/*). Avoids forcing
+# dagster's heavy dep tree on standalone exgraph users.
+dagster = ["dagster>=1.8"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/catalyst_exgraph"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.uv.sources]
+catalyst-langgraph = { path = "../catalyst-langgraph", editable = true }
