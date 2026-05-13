@@ -12,7 +12,7 @@ playground UI consumes the resulting event stream via
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from langchain_core.messages import SystemMessage
 from langchain_core.runnables import Runnable
@@ -44,7 +44,7 @@ def build_graph(
     model: str,
     tool_names: Optional[list[str]] = None,
     system_prompt: Optional[str] = None,
-    temperature: float = 0.7,
+    temperature: Optional[float] = None,
     max_tokens: Optional[int] = None,
     config: Optional[LiteLLMConfig] = None,
     extra_model_kwargs: Optional[dict] = None,
@@ -91,13 +91,21 @@ def build_graph(
         ).lower()
         if underlying.startswith("ollama/"):
             streaming_ok = False
-    llm = client.get_chat_model(
-        model=model,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        streaming=streaming_ok,
+    # Build the kwargs dict and only include knobs we actually have —
+    # passing `temperature=None` would land at the OpenAI-compat layer
+    # and either cause a 400 (reasoning-class models that deprecated
+    # temperature) or get sent as the literal sampling-default the
+    # caller didn't actually ask for.
+    chat_model_kwargs: dict[str, Any] = {
+        "model": model,
+        "streaming": streaming_ok,
         **(extra_model_kwargs or {}),
-    )
+    }
+    if temperature is not None:
+        chat_model_kwargs["temperature"] = temperature
+    if max_tokens is not None:
+        chat_model_kwargs["max_tokens"] = max_tokens
+    llm = client.get_chat_model(**chat_model_kwargs)
 
     if tools:
         llm = llm.bind_tools(tools)

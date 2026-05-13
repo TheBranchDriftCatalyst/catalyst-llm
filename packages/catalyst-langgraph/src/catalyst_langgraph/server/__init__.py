@@ -338,6 +338,41 @@ async def _produce_agent_events(
     # sheet's top-level model field passed in).
     effective_model = main_overrides.get("model") or request.model
 
+    # Reasoning-class models (Anthropic Opus 4.5+, OpenAI o1/o3/o4,
+    # gpt-5-thinking, DeepSeek r1) deprecate the `temperature` and
+    # `top_p` knobs — they use deterministic sampling + a separate
+    # reasoning_effort dial. Sending temperature anyway makes the
+    # provider 400 ("`temperature` is deprecated for this model").
+    # The schema defaults on our per-node configs send 0.7 by default,
+    # so we have to strip these here for affected models or every
+    # fresh Opus-4 / o1 dispatch crashes. Operators can also disable
+    # the field via the label-click affordance in the UI (next commit)
+    # — that's the per-field opt-out — this is the type-aware
+    # opt-out for known-incompatible model families.
+    lower_model = (effective_model or "").lower()
+    is_reasoning_class = any(
+        marker in lower_model
+        for marker in (
+            "opus-4-5",
+            "opus-4-6",
+            "opus-4-7",
+            "o1-",
+            "o3-",
+            "o4-",
+            "gpt-5-thinking",
+            "deepseek-r1",
+            "deepseek/r1",
+        )
+    )
+    if is_reasoning_class:
+        params.pop("temperature", None)
+        params.pop("top_p", None)
+        extra_kwargs.pop("top_p", None)
+        log.info(
+            "stripped temperature/top_p for reasoning-class model %s",
+            effective_model,
+        )
+
     # Per-request research overrides flow through a ContextVar so the
     # @tool function picks them up without changing its signature
     # (which would break the parent's tool-calling contract). The

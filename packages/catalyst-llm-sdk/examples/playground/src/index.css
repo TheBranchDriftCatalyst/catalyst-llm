@@ -7,6 +7,12 @@
 /* Catalyst-UI theme (CSS variables only — applied via .theme-catalyst.dark on <html>) */
 @import "../node_modules/@thebranchdriftcatalyst/catalyst-ui/dist/themes/catalyst.css";
 
+/* LangGraphEnginePanel grid + splitter styles. tsup emits these into
+ * dist/components/index.css but the JS chunk doesn't auto-import them
+ * (tsup strips CSS imports from the JS without bundling), so the
+ * consumer pulls them in explicitly here. */
+@import "../../../dist/components/index.css" layer(components);
+
 /* Scan symlinked SDK dist + catalyst-ui dist so utility classes used in their compiled JS are emitted. */
 @source "../../../dist";
 @source "../../../src";
