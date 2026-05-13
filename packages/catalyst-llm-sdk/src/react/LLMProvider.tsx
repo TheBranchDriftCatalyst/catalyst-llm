@@ -13,7 +13,7 @@ import {
   type LLMConfigInit,
 } from "../client/index.js";
 import { CatalystAgentClient } from "../agent/index.js";
-import { useChatStore } from "./chatStore.js";
+import { useChatStore } from "./chat/index.js";
 import { usePromptStore } from "./promptStore.js";
 
 interface LLMContextValue {

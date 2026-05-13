@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { Chat } from "./chatStore.js";
+import type { Chat } from "./chat/index.js";
 import type { ModelWithRouting } from "../client/index.js";
 
 export interface ChatCostStats {

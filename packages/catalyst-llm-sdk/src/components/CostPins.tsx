@@ -8,7 +8,7 @@ import {
   Timer,
   Zap,
 } from "lucide-react";
-import type { Chat } from "../react/chatStore.js";
+import type { Chat } from "../react/chat/index.js";
 import {
   useChatCost,
   formatUsd,

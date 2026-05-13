@@ -33,7 +33,7 @@ export type {
   ChatTurn,
   ChatToolCallRecord,
   ToolSubEvent,
-} from "./chatStore.js";
+} from "./chat/index.js";
 export {
   useChatCost,
   formatUsd,

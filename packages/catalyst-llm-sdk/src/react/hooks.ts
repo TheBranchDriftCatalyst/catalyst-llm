@@ -10,7 +10,7 @@ import type {
   ModelWithRouting,
 } from "../client/index.js";
 import { useLLMContext } from "./LLMProvider.js";
-import { useChatStore } from "./chatStore.js";
+import { useChatStore } from "./chat/index.js";
 
 export function useLLM() {
   const { client } = useLLMContext();
@@ -321,4 +321,4 @@ export function useEmbed(model: string): UseEmbedResult {
 }
 
 /** Re-export the chat store for components that need the multi-chat surface. */
-export { useChatStore } from "./chatStore.js";
+export { useChatStore } from "./chat/index.js";

@@ -13,7 +13,7 @@ import {
   Check,
   ChevronDown,
 } from "lucide-react";
-import { useChatStore, type Chat } from "../react/chatStore.js";
+import { useChatStore, type Chat } from "../react/chat/index.js";
 import { ChatMessage } from "./ChatMessage.js";
 import { ModelSelector } from "./ModelSelector.js";
 import { ModelSelectorRich } from "./ModelSelectorRich.js";

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import type { Chat } from "../react/chatStore.js";
+import type { Chat } from "../react/chat/index.js";
 
 export interface ResponseViewerProps {
   chat: Chat;
