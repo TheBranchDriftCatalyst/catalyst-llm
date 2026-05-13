@@ -31,7 +31,7 @@ import { useAgents } from "../../react/hooks.js";
 import { useEngineStore } from "../../react/engineStore.js";
 import { useEngineRunStore } from "../../react/engineRunStore.js";
 import { cn } from "../utils.js";
-import { PromptExplorerSheet } from "../PromptExplorerSheet.js";
+import { PromptExplorerSheet } from "../prompts/PromptExplorerSheet.js";
 import { PageShell } from "../page-shell/PageShell.js";
 import { SidePanel } from "../page-shell/SidePanel.js";
 import {

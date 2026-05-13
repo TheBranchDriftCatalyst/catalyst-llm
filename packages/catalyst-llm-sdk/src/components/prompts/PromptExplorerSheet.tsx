@@ -39,8 +39,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
 import { Link2, Plus, Search, X as XIcon } from "lucide-react";
-import { useEngineStore } from "../react/engineStore.js";
-import { usePromptStore } from "../react/promptStore.js";
+import { useEngineStore } from "../../react/engineStore.js";
+import { usePromptStore } from "../../react/promptStore.js";
 import {
   EMPTY_PROMPT_DRAFT,
   PromptEditForm,
@@ -48,7 +48,7 @@ import {
   presetToDraft,
   type PromptDraft,
 } from "./prompt-edit-form.js";
-import { cn } from "./utils.js";
+import { cn } from "../utils.js";
 
 export interface PromptExplorerSheetProps {
   agentId: string;

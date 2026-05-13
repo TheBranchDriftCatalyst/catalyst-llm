@@ -24,7 +24,7 @@ import {
 import {
   usePromptStore,
   type CustomPreset,
-} from "../react/promptStore.js";
+} from "../../react/promptStore.js";
 
 /**
  * Lucide icon registry — keys are the lowercased `iconName` strings

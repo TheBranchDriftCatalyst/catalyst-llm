@@ -39,7 +39,7 @@ import {
 } from "../../react/useChatCost.js";
 import { ModelMultiSelect } from "../ModelMultiSelect.js";
 import { ModelInfoCard } from "../ModelInfoCard.js";
-import { PromptPresets, SystemPromptPresets } from "../PromptPresets.js";
+import { PromptPresets, SystemPromptPresets } from "../prompts/PromptPresets.js";
 import { CompareGraphs } from "./CompareGraphs.js";
 import { RenderedContent } from "../RenderedContent.js";
 import { cn } from "../utils.js";

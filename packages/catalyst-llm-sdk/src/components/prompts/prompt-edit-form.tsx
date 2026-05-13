@@ -25,8 +25,8 @@ import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
 import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
 import { Textarea } from "@thebranchdriftcatalyst/catalyst-ui/ui/textarea";
-import type { CustomPreset } from "../react/promptStore.js";
-import { cn } from "./utils.js";
+import type { CustomPreset } from "../../react/promptStore.js";
+import { cn } from "../utils.js";
 import { CATEGORY_META } from "./prompt-picker-list.js";
 
 export type PromptDraft = {

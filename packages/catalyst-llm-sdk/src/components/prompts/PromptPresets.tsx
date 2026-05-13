@@ -8,11 +8,11 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
-import { usePromptStore } from "../react/promptStore.js";
-import { fuzzyFilter } from "./fuzzy.js";
-import { useFocusTrap } from "./useFocusTrap.js";
-import { useListboxKeyboard } from "./useListboxKeyboard.js";
-import { cn } from "./utils.js";
+import { usePromptStore } from "../../react/promptStore.js";
+import { fuzzyFilter } from "../fuzzy.js";
+import { useFocusTrap } from "../useFocusTrap.js";
+import { useListboxKeyboard } from "../useListboxKeyboard.js";
+import { cn } from "../utils.js";
 import {
   DEFAULT_PRESETS,
   SYSTEM_PRESETS,

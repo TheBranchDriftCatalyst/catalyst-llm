@@ -94,7 +94,7 @@ export function LLMProvider({
   // host actually mounts an LLMProvider.
   useEffect(() => {
     let cancelled = false;
-    void import("../components/prompt-seeds.js").then((m) => {
+    void import("../components/prompts/prompt-seeds.js").then((m) => {
       if (cancelled) return;
       usePromptStore.getState().seedBuiltins(m.BUILTIN_SEEDS);
     });

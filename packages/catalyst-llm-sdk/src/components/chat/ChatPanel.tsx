@@ -21,13 +21,13 @@ import { ModelInfoCard } from "../ModelInfoCard.js";
 import { CostPins } from "../CostPins.js";
 import { ContextMeter } from "../ContextMeter.js";
 import { ParameterControls } from "../ParameterControls.js";
-import { SystemPromptEditor } from "../SystemPromptEditor.js";
+import { SystemPromptEditor } from "../prompts/SystemPromptEditor.js";
 import { ResponseViewer } from "../ResponseViewer.js";
 import {
   PromptPresets,
   SystemPromptPresets,
-} from "../PromptPresets.js";
-import { getPresetsForModel } from "../prompt-seeds.js";
+} from "../prompts/PromptPresets.js";
+import { getPresetsForModel } from "../prompts/prompt-seeds.js";
 import { useModels, useAvailableTools, type AvailableTool } from "../../react/hooks.js";
 import { useFocusTrap } from "../useFocusTrap.js";
 import { cn } from "../utils.js";

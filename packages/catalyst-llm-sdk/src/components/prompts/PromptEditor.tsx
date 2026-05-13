@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Plus, Download, Upload, RotateCcw, Sparkles } from "lucide-react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
-import { usePromptStore } from "../react/promptStore.js";
+import { usePromptStore } from "../../react/promptStore.js";
 import {
   parsePromptFile,
   serializePromptFile,
-} from "../react/promptFile.js";
+} from "../../react/promptFile.js";
 import { BUILTIN_SEEDS } from "./prompt-seeds.js";
-import { cn } from "./utils.js";
+import { cn } from "../utils.js";
 import { PromptPickerList, EmptyState } from "./prompt-picker-list.js";
 import {
   EMPTY_PROMPT_DRAFT,

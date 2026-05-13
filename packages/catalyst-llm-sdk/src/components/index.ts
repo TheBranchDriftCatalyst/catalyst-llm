@@ -64,23 +64,23 @@ export {
   SystemPromptPresets,
   type PromptPresetsProps,
   type SystemPromptPresetsProps,
-} from "./PromptPresets.js";
+} from "./prompts/PromptPresets.js";
 export {
   DEFAULT_PRESETS,
   SYSTEM_PRESETS,
   BUILTIN_SEEDS,
   getPresetsForModel,
   type PromptPreset,
-} from "./prompt-seeds.js";
+} from "./prompts/prompt-seeds.js";
 export {
   PromptEditor,
   type PromptEditorProps,
-} from "./PromptEditor.js";
+} from "./prompts/PromptEditor.js";
 export {
   PromptPickerList,
   type PromptPickerListProps,
   type PromptPickerGroupAxis,
-} from "./prompt-picker-list.js";
+} from "./prompts/prompt-picker-list.js";
 export {
   PromptEditForm,
   EMPTY_PROMPT_DRAFT,
@@ -88,16 +88,16 @@ export {
   draftToPayload,
   type PromptEditFormProps,
   type PromptDraft,
-} from "./prompt-edit-form.js";
+} from "./prompts/prompt-edit-form.js";
 export {
   PromptExplorerSheet,
   type PromptExplorerSheetProps,
-} from "./PromptExplorerSheet.js";
+} from "./prompts/PromptExplorerSheet.js";
 export { CompareView, type CompareViewProps } from "./compare/CompareView.js";
 export { CompareGraphs, type CompareGraphsProps } from "./compare/CompareGraphs.js";
 export { lineDiff, wordDiff, type Change as DiffChange } from "./compare/diff.js";
 export { ParameterControls, type ParameterControlsProps } from "./ParameterControls.js";
 export { ResponseViewer, type ResponseViewerProps } from "./ResponseViewer.js";
-export { SystemPromptEditor, type SystemPromptEditorProps } from "./SystemPromptEditor.js";
+export { SystemPromptEditor, type SystemPromptEditorProps } from "./prompts/SystemPromptEditor.js";
 export { ConnectionStatus, type ConnectionStatusProps } from "./chat/ConnectionStatus.js";
 export { fuzzyScore, fuzzyFilter } from "./fuzzy.js";
