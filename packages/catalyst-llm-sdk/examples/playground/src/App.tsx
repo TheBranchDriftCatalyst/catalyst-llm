@@ -1,22 +1,12 @@
-import { Suspense, lazy, useEffect, useState } from "react";
-import {
-  ExternalLink,
-  MessageSquare,
-  Columns3,
-  Wand2,
-  Database,
-  Cpu,
-} from "lucide-react";
+import { Suspense, lazy, useEffect } from "react";
 import {
   CatalystAgentClient,
   CatalystLLMClient,
   ChatPanel,
   ChatTabs,
   CompareView,
-  ConnectionStatus,
   EnginePage,
   LLMProvider,
-  ModelMicroSwitcher,
   PromptEditor,
   useChatStore,
   useCompareStore,
@@ -25,6 +15,8 @@ import {
 // line ships zero unload code. Vite tree-shakes since `unloadModel` is
 // only used inside the `import.meta.env.DEV` branch.
 import { unloadModel, recordMetric, shortHash } from "@catalyst/llm-sdk/dev";
+import { Header } from "./nav/Header.js";
+import { useRoute } from "./nav/useRoute.js";
 
 // StatsView is gated behind a lazy import + the import.meta.env.DEV
 // flag so the DuckDB-WASM payload (~10 MB) only lands when a dev
@@ -34,9 +26,6 @@ const StatsView = import.meta.env.DEV
       import("@catalyst/llm-sdk/dev").then((m) => ({ default: m.StatsView })),
     )
   : null;
-
-const MAC_NODE_IP = "192.168.1.33";
-
 const baseUrl =
   (import.meta.env.VITE_LITELLM_URL as string | undefined) ??
   "http://litellm.talos00";
@@ -55,219 +44,6 @@ const agentClient = new CatalystAgentClient({ baseUrl: agentBaseUrl });
 // Tool dispatch lives entirely server-side now (catalyst-langgraph +
 // tool-host). The available tool catalog is fetched at runtime via
 // `useAvailableTools()` (→ /api/tools); nothing to construct here.
-
-type Page = "chat" | "compare" | "prompts" | "engine" | "stats";
-
-const PATH_TO_PAGE: Record<string, Page> = {
-  "/": "chat",
-  "/chat": "chat",
-  "/compare": "compare",
-  "/prompts": "prompts",
-  "/engine": "engine",
-  "/stats": "stats",
-};
-
-function pageFromPath(path: string): Page {
-  const p = PATH_TO_PAGE[path] ?? "chat";
-  // Defensive: if someone deep-links to /stats in a prod build that
-  // doesn't ship StatsView, fall back to chat instead of a blank page.
-  if (p === "stats" && !import.meta.env.DEV) return "chat";
-  return p;
-}
-
-function pathFromPage(page: Page): string {
-  if (page === "compare") return "/compare";
-  if (page === "prompts") return "/prompts";
-  if (page === "engine") return "/engine";
-  if (page === "stats") return "/stats";
-  return "/chat";
-}
-
-/**
- * Tiny pushState router — two routes, zero deps. Listens for back/forward
- * via popstate and reflects tab switches into the URL bar so links and
- * refreshes are deep-linkable.
- */
-function useRoute(): [Page, (p: Page) => void] {
-  const [path, setPath] = useState(() => window.location.pathname);
-
-  useEffect(() => {
-    const onPop = () => setPath(window.location.pathname);
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
-  }, []);
-
-  // Normalize "/" → "/chat" once on mount so future refreshes deep-link cleanly.
-  useEffect(() => {
-    if (path === "/") {
-      const url = "/chat";
-      window.history.replaceState({}, "", url);
-      setPath(url);
-    }
-  }, [path]);
-
-  const navigate = (p: Page) => {
-    const url = pathFromPage(p);
-    if (window.location.pathname !== url) {
-      window.history.pushState({}, "", url);
-      setPath(url);
-    }
-  };
-
-  return [pageFromPath(path), navigate];
-}
-
-function Header({ page, setPage }: { page: Page; setPage: (p: Page) => void }) {
-  const { chats, activeChat, setModel } = useChatStore();
-  const current = chats.find((c) => c.id === activeChat);
-  // Cross-tab streaming indicators — even when the user is on the Chat tab,
-  // they can see at a glance that a Compare run is still in flight (and vice
-  // versa). The runs themselves live in their respective Zustand stores and
-  // continue updating across navigations.
-  const chatStreaming = chats.some((c) => c.isStreaming);
-  const compareStreaming = useCompareStore((s) =>
-    Object.values(s.runs).some((r) => r.isStreaming),
-  );
-  const stopAllChats = useChatStore((s) => s.stopStreaming);
-  const stopAllCompare = useCompareStore((s) => s.stopAll);
-  return (
-    <header className="border-b border-border px-4 py-3 flex items-center justify-between shrink-0 bg-card">
-      <div className="flex items-center gap-4">
-        <h1 className="text-lg font-bold tracking-wider">
-          Catalyst LLM SDK · Playground
-        </h1>
-        <nav className="flex items-center gap-1 rounded-md border border-border bg-muted/20 p-0.5">
-          <PageTab
-            active={page === "chat"}
-            onClick={() => setPage("chat")}
-            icon={MessageSquare}
-            label="Chat"
-            streaming={chatStreaming}
-          />
-          <PageTab
-            active={page === "compare"}
-            onClick={() => setPage("compare")}
-            icon={Columns3}
-            label="Compare"
-            streaming={compareStreaming}
-          />
-          <PageTab
-            active={page === "prompts"}
-            onClick={() => setPage("prompts")}
-            icon={Wand2}
-            label="Prompts"
-          />
-          <PageTab
-            active={page === "engine"}
-            onClick={() => setPage("engine")}
-            icon={Cpu}
-            label="Engine"
-          />
-          {/* /stats is dev-only — prod builds drop the tab entirely
-              along with the entire DuckDB-WASM payload. */}
-          {import.meta.env.DEV && (
-            <PageTab
-              active={page === "stats"}
-              onClick={() => setPage("stats")}
-              icon={Database}
-              label="Stats"
-            />
-          )}
-        </nav>
-        {(chatStreaming || compareStreaming) && (
-          <button
-            type="button"
-            onClick={() => {
-              if (chatStreaming) {
-                for (const c of chats) if (c.isStreaming) stopAllChats(c.id);
-              }
-              if (compareStreaming) stopAllCompare();
-            }}
-            title="Abort every in-flight stream across both tabs (kills any orphans)"
-            className="inline-flex items-center gap-1 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1 text-[11px] font-medium uppercase tracking-wider text-destructive hover:border-destructive hover:bg-destructive/20"
-          >
-            stop all
-          </button>
-        )}
-      </div>
-      <div className="flex items-center gap-4">
-        <span
-          title="Mac inference node (Ollama + vLLM-MLX) — proxied via the LiteLLM ingress"
-          className="hidden md:inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-muted/30 px-2 py-1 font-mono text-[11px] text-muted-foreground"
-        >
-          <span className="text-primary">mac</span>
-          <span className="opacity-60">{MAC_NODE_IP}</span>
-        </span>
-        {page === "chat" && current && (
-          <ModelMicroSwitcher
-            value={current.model}
-            onChange={(m) => setModel(current.id, m)}
-          />
-        )}
-        <nav className="flex items-center gap-3 text-sm">
-          <a
-            href={`${baseUrl}/ui`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <span>LiteLLM UI</span>
-            <ExternalLink className="h-3 w-3" />
-          </a>
-          <a
-            href={`${baseUrl}/docs`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <span>API Docs</span>
-            <ExternalLink className="h-3 w-3" />
-          </a>
-        </nav>
-        <div className="h-4 w-px bg-border" />
-        <ConnectionStatus />
-      </div>
-    </header>
-  );
-}
-
-function PageTab({
-  active,
-  onClick,
-  icon: Icon,
-  label,
-  streaming,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: React.ElementType;
-  label: string;
-  streaming?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      aria-current={active ? "page" : undefined}
-      onClick={onClick}
-      className={`relative flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-        active
-          ? "bg-primary text-primary-foreground"
-          : "text-muted-foreground hover:text-foreground"
-      }`}
-    >
-      <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-      {label}
-      {streaming && (
-        <span
-          aria-label={`Stream in flight on ${label} tab`}
-          title="Stream in flight on this tab"
-          className="ml-0.5 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-primary"
-        />
-      )}
-    </button>
-  );
-}
-
 function ChatWorkspace({ goCompare }: { goCompare: () => void }) {
   const { chats, activeChat } = useChatStore();
   const current = chats.find((c) => c.id === activeChat);
@@ -299,7 +75,7 @@ function App() {
         >
           Skip to main content
         </a>
-        <Header page={page} setPage={setPage} />
+        <Header page={page} setPage={setPage} baseUrl={baseUrl} />
         {page === "chat" && (
           <ChatWorkspace goCompare={() => setPage("compare")} />
         )}
