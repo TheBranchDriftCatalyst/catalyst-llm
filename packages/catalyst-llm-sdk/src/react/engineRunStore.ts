@@ -24,6 +24,12 @@
 import { create } from "zustand";
 import type { AgentDescriptor, AgentEvent } from "../agent/events.js";
 import type { CatalystAgentClient } from "../agent/index.js";
+import {
+  agentEventToPanelEvent,
+  resolveLLMNodeId,
+  topologyNodeIds,
+} from "../components/engine-panel/adapters.js";
+import type { PanelEvent } from "../components/engine-panel/types.js";
 import { useEngineStore } from "./engineStore.js";
 import { usePromptStore } from "./promptStore.js";
 
@@ -70,6 +76,15 @@ export interface RunDisplay {
   startedAt: number;
   /** Wall-clock end (set on done/error/cancelled). */
   endedAt?: number;
+  /**
+   * Raw event log normalised into PanelEvent shape — feeds the
+   * LangGraphEnginePanel sub-components (EventStream / RunTimeline /
+   * NodePanel / Terminal). Includes every kind (token, reasoning,
+   * iteration, tool_call_*, message_done, error, cancelled) so the
+   * panel renders the full trace, not just the projected
+   * content/toolCalls fields above.
+   */
+  panelEvents: PanelEvent[];
 }
 
 export interface StartRunArgs {
@@ -236,9 +251,15 @@ export const useEngineRunStore = create<EngineRunStore>()((set, get) => ({
           activeNodeId: "__start__",
           events: 0,
           startedAt: Date.now(),
+          panelEvents: [],
         },
       },
     }));
+
+    // llmNodeId + nodeIds are passed in by the caller (see
+    // StartRunArgs above); they're the same values the adapter
+    // wants. panelSeq is local — a fresh counter per dispatch.
+    let panelSeq = 0;
 
     const agentConfig = useEngineStore.getState().asRequestPayload();
     const promptOverrides = collectPromptOverrides(agentConfig);
@@ -257,11 +278,19 @@ export const useEngineRunStore = create<EngineRunStore>()((set, get) => ({
       for await (const ev of stream) {
         if (ctrl.signal.aborted) break;
         const active = deriveActiveNode(ev, llmNodeId, nodeIds);
+        const panelEv = agentEventToPanelEvent(
+          ev,
+          panelSeq++,
+          Date.now(),
+          llmNodeId,
+          nodeIds,
+        );
         set((s) => {
           const prev = s.runs[agent.id];
           if (!prev) return s; // operator cleared mid-stream
           const next = applyEvent(prev, ev);
           if (active !== undefined) next.activeNodeId = active;
+          next.panelEvents = [...prev.panelEvents, panelEv];
           return { runs: { ...s.runs, [agent.id]: next } };
         });
       }

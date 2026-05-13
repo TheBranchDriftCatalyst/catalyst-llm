@@ -12,6 +12,21 @@ export {
   type TestRunSheetProps,
 } from "./engine/TestRunSheet.js";
 export {
+  LangGraphEnginePanel,
+  type LangGraphEnginePanelProps,
+} from "./engine-panel/LangGraphEnginePanel.js";
+export {
+  agentEventToPanelEvent,
+  resolveLLMNodeId,
+  topologyNodeIds,
+} from "./engine-panel/adapters.js";
+export type {
+  PanelEvent,
+  PanelSelection,
+  PanelContext,
+  NodeStatus,
+} from "./engine-panel/types.js";
+export {
   AgentConfigForm,
   type AgentConfigFormProps,
 } from "./engine/AgentConfigForm.js";

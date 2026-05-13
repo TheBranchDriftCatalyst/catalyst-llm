@@ -37,9 +37,14 @@ import { useEngineStore } from "../../react/engineStore.js";
 import { cn } from "../utils.js";
 import { PromptExplorerSheet } from "../PromptExplorerSheet.js";
 import { NodeRunsList } from "./NodeRunsList.js";
-import { ReactFlowAgentTopology } from "./ReactFlowAgentTopology.js";
 import { TestRunSheet } from "./TestRunSheet.js";
 import { useEngineRunStore } from "../../react/engineRunStore.js";
+import { LangGraphEnginePanel } from "../engine-panel/LangGraphEnginePanel.js";
+
+// Stable empty array for the panelEvents selector — returning a fresh
+// [] each render would trigger React's getSnapshot warning + an
+// infinite re-render loop (same pattern as EMPTY_OVERRIDES elsewhere).
+const EMPTY_PANEL_EVENTS: never[] = Object.freeze([]) as never[];
 
 function countAgentOverrides(
   agentCfg: Record<string, Record<string, unknown>> | undefined,
@@ -308,18 +313,17 @@ function AgentDetail({
   const resetAgent = useEngineStore((s) => s.resetAgent);
   const editedCount = countAgentOverrides(agentCfg);
 
-  // Node selection drives the topology's visual highlight only in
-  // T4'. T5' adds inline-on-node config so selection becomes more
-  // meaningful; T6/T8 add per-node triggers that open the sheet via
-  // onOpenSheet.
-  const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>(
-    undefined,
+  // Live event log for the LangGraphEnginePanel. Empty when no test
+  // run has fired on this agent yet; populated by the rAF-batched
+  // panelEvents buffer inside engineRunStore.
+  const panelEvents = useEngineRunStore(
+    (s) => s.runs[agent.id]?.panelEvents ?? EMPTY_PANEL_EVENTS,
   );
 
   return (
     <>
-      {/* Tight header strip — shrink-0 so the topology canvas below
-       * gets every leftover pixel. */}
+      {/* Tight header strip — shrink-0 so the panel below gets every
+       * leftover pixel. */}
       <header className="flex shrink-0 items-start justify-between gap-3 border-b border-border/60 px-6 py-3">
         <div className="min-w-0 flex-1">
           <h1 className="flex items-center gap-2 text-xl font-semibold">
@@ -359,25 +363,23 @@ function AgentDetail({
         </div>
       </header>
 
-      {/* Canvas fills the rest of the viewport. min-h-0 is the
-       * load-bearing CSS — without it the flex child would refuse
-       * to shrink below its intrinsic height and the page would
-       * re-introduce scrolling. */}
+      {/* The full forensic workbench — ported from langgraph-dev, but
+       * the center pane is our existing ReactFlowAgentTopology (the
+       * config-componentized cards + AgentDescriptor-integrated
+       * grouping). EventStream/RunTimeline/NodePanel/Terminal are
+       * placeholder stubs in Phase 2; sub-component ports land next.
+       *
+       * min-h-0 is the load-bearing CSS — without it the flex child
+       * refuses to shrink below its intrinsic height and the page
+       * re-introduces scrolling. */}
       <div className="min-h-0 flex-1">
-        <ReactFlowAgentTopology
-          topology={agent.topology}
-          agentId={agent.id}
-          agentTools={agent.tools}
-          selectedNodeId={selectedNodeId}
-          onNodeSelect={setSelectedNodeId}
+        <LangGraphEnginePanel
+          agent={agent}
+          events={panelEvents}
+          activeNodeId={activeNodeId}
+          onStartTestRun={onStartTestRun}
           onOpenPromptSheet={onOpenPromptSheet}
           onOpenRunsSheet={onOpenRunsSheet}
-          onStartTestRun={onStartTestRun}
-          activeNodeId={activeNodeId}
-          // Override the rounded card framing — at viewport scale
-          // the inner border becomes redundant with the header
-          // divider above and the page chrome around it.
-          className="rounded-none border-0"
         />
       </div>
     </>

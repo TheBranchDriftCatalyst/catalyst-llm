@@ -1,0 +1,102 @@
+/*
+ * LangGraphEnginePanel layout — port of langgraph-dev's
+ * `engine-shell` / `layout-engine` grid + splitter styling.
+ *
+ * Class prefix `lg-` to avoid collisions with consumer app styles.
+ * Consumer imports this CSS once at app bootstrap (vite import or
+ * top-level CSS @import). The grid uses CSS custom properties
+ * `--lg-engine-col-left`, `--lg-engine-col-right`, `--lg-engine-row-bottom`,
+ * `--lg-engine-main-split` that the Splitter component writes.
+ */
+
+.lg-engine-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.lg-engine-shell > .lg-engine-inner {
+  flex: 1;
+  min-height: 0;
+}
+
+.lg-engine-grid {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  grid-template-columns:
+    var(--lg-engine-col-left, 280px)
+    6px
+    minmax(0, 1fr)
+    6px
+    var(--lg-engine-col-right, 360px);
+  grid-template-rows:
+    minmax(0, 1fr)
+    6px
+    var(--lg-engine-row-bottom, 220px);
+}
+
+.lg-engine-grid .lg-engine-left {
+  grid-column: 1;
+  grid-row: 1;
+  overflow: auto;
+  min-height: 0;
+  min-width: 0;
+}
+.lg-engine-grid .lg-engine-main {
+  grid-column: 3;
+  grid-row: 1;
+  position: relative;
+  min-height: 0;
+  min-width: 0;
+}
+.lg-engine-grid .lg-engine-main-split {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+.lg-engine-grid .lg-engine-main-top {
+  height: var(--lg-engine-main-split, 220px);
+  min-height: 80px;
+  position: relative;
+  flex-shrink: 0;
+}
+.lg-engine-grid .lg-engine-main-bot {
+  flex: 1;
+  min-height: 100px;
+  position: relative;
+}
+.lg-engine-grid .lg-engine-main-split > .lg-splitter {
+  height: 6px;
+}
+.lg-engine-grid .lg-engine-right {
+  grid-column: 5;
+  grid-row: 1;
+  overflow: auto;
+  min-height: 0;
+  min-width: 0;
+}
+.lg-engine-grid .lg-engine-bottom {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Splitter handles ──────────────────────────────────────────── */
+.lg-splitter {
+  background: hsl(var(--border) / 0.6);
+  transition: background 0.15s;
+  z-index: 1;
+}
+.lg-splitter:hover,
+.lg-splitter:active {
+  background: hsl(var(--accent) / 0.8);
+}
+.lg-splitter-vertical {
+  cursor: col-resize;
+}
+.lg-splitter-horizontal {
+  cursor: row-resize;
+}
