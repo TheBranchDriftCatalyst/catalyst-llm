@@ -15,7 +15,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { Splitter } from "../engine-panel/Splitter.js";
+import { Splitter } from "./Splitter.js";
 import { cn } from "../utils.js";
 import { SidePanelItem, type SidePanelItemProps } from "./SidePanelItem.js";
 import {
@@ -183,11 +183,16 @@ export function SidePanel({
   const handleDrop = onItemMove
     ? (e: DragEvent<HTMLDivElement>) => {
         const itemId = e.dataTransfer.getData(SIDEPANEL_ITEM_DND_TYPE);
-        const target = dropState;
+        // Compute insertion FRESH from the cursor here — don't rely on
+        // dropState set during dragover, because React batches that
+        // state update and the drop handler closure may see the stale
+        // initial value (especially under synthetic event dispatch in
+        // tests where dragover + drop fire in the same tick).
+        const fresh = computeInsertion(e);
         setDropState({ active: false, beforeId: null, indicatorY: 0 });
         if (!itemId) return;
         e.preventDefault();
-        onItemMove(itemId, side, target.beforeId);
+        onItemMove(itemId, side, fresh.beforeId);
       }
     : undefined;
 
@@ -268,6 +273,7 @@ export function SidePanel({
         {dropState.active && (
           <div
             aria-hidden="true"
+            data-drop-indicator
             className="pointer-events-none absolute left-1 right-1 z-10 h-0.5 bg-primary shadow-[0_0_8px_var(--primary)]"
             style={{ top: dropState.indicatorY }}
           />

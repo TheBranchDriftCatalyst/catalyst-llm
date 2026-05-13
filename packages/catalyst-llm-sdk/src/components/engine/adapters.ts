@@ -7,7 +7,7 @@
  * Jupyter widget, etc.) that wants the same normalised event flow.
  */
 import type { AgentDescriptor, AgentEvent } from "../../agent/events.js";
-import type { PanelEvent } from "./types.js";
+import type { PanelEvent } from "./panel-types.js";
 
 /**
  * Project one AgentEvent into a PanelEvent. `seq` and `ts` are caller-

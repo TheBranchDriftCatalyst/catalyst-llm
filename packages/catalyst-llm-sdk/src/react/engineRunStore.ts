@@ -28,8 +28,8 @@ import {
   agentEventToPanelEvent,
   resolveLLMNodeId,
   topologyNodeIds,
-} from "../components/engine-panel/adapters.js";
-import type { PanelEvent } from "../components/engine-panel/types.js";
+} from "../components/engine/adapters.js";
+import type { PanelEvent } from "../components/engine/panel-types.js";
 import { useEngineStore } from "./engineStore.js";
 import { usePromptStore } from "./promptStore.js";
 

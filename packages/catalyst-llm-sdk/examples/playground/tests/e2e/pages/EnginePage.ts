@@ -1,19 +1,27 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect } from "@playwright/test";
+import { dispatchItemDrag, finishDrag, startDragHover } from "../helpers/dnd";
 
 export type Side = "left" | "right" | "bottom";
 
+interface Box {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 /** Page Object Model for the Engine tab.
  *
- * Exposes typed locators for every rail / item / splitter the layout
- * tests interact with, plus high-level action helpers (collapse,
- * dragItem, dragRailSplitter, dragInterItemSplitter, reload + state
- * round-trip). Tests stay declarative.
- */
+ * Locators target structural attributes (data-side, data-sidepanel-item)
+ * over class names so refactors of styling don't break tests. Action
+ * helpers (toggleItem, dragItem, dragRailSplitter,
+ * dragInterItemSplitter, resetState) hide the lower-level event
+ * dispatch and coordinate math; specs stay declarative. */
 export class EnginePage {
   constructor(public readonly page: Page) {}
 
-  // ─── Top-level locators ──────────────────────────────────────────
+  // ─── Locators ─────────────────────────────────────────────────────
 
   get pageShell(): Locator {
     return this.page.locator(".page-shell");
@@ -23,40 +31,38 @@ export class EnginePage {
     return this.page.locator(`[data-side="${side}"]`);
   }
 
-  /** Every SidePanelItem `<section>` carries `data-sidepanel-item`. */
   item(id: string): Locator {
     return this.page.locator(`[data-sidepanel-item="${id}"]`);
   }
 
-  /** The clickable header of an item (chevron + title + grip). */
   itemHeader(id: string): Locator {
     return this.item(id).locator("header").first();
   }
 
-  /** The draggable grip inside an item header (only present when the
-   * parent rail has onItemMove wired). */
+  itemTitle(id: string): Locator {
+    // The visible title <span class="flex-1 truncate"> in the header.
+    // Clicking THIS is a safe way to toggle without hitting the grip
+    // (which carries stopPropagation) or any right-side action button.
+    return this.itemHeader(id).locator("span.flex-1").first();
+  }
+
   itemDragHandle(id: string): Locator {
     return this.itemHeader(id).locator('[aria-label="Drag handle"]');
   }
 
-  /** Every Splitter renders as `[role=separator]` with the title
-   * `drag to resize · double-click to reset`. There are 3 rail-level
-   * splitters + N intra-rail splitters between adjacent expanded
-   * items. */
   allSplitters(): Locator {
     return this.page.locator('[role="separator"][title*="resize"]');
   }
 
-  // ─── Lifecycle helpers ───────────────────────────────────────────
+  // ─── Lifecycle ───────────────────────────────────────────────────
 
   async goto(): Promise<void> {
-    // Hit the Engine route directly so we don't depend on Chat default.
     await this.page.goto("/engine");
     await expect(this.pageShell).toBeVisible();
   }
 
-  /** Wipe every `catalyst-llm-sdk:*` key + reload. Tests should call
-   * this in `beforeEach` so each test starts from defaults. */
+  /** Wipe every `catalyst-llm-sdk:*` localStorage key + reload so the
+   * test starts from documented defaults. Call from `beforeEach`. */
   async resetState(): Promise<void> {
     await this.page.evaluate(() => {
       for (const k of Object.keys(localStorage)) {
@@ -67,28 +73,20 @@ export class EnginePage {
     await expect(this.pageShell).toBeVisible();
   }
 
-  // ─── State observers ─────────────────────────────────────────────
+  // ─── Observers ───────────────────────────────────────────────────
 
-  /** Bounding box of the named rail in CSS pixels. */
-  async railBox(side: Side): Promise<{ x: number; y: number; width: number; height: number }> {
-    const b = await this.rail(side).boundingBox();
-    if (!b) throw new Error(`rail "${side}" not visible`);
-    return b;
+  async railBox(side: Side): Promise<Box> {
+    return this.requireBox(this.rail(side), `rail "${side}"`);
   }
 
-  /** Bounding box of an item section. */
-  async itemBox(id: string): Promise<{ x: number; y: number; width: number; height: number }> {
-    const b = await this.item(id).boundingBox();
-    if (!b) throw new Error(`item "${id}" not visible`);
-    return b;
+  async itemBox(id: string): Promise<Box> {
+    return this.requireBox(this.item(id), `item "${id}"`);
   }
 
-  /** True when the item is currently expanded (data-collapsed absent). */
   async isExpanded(id: string): Promise<boolean> {
     return !(await this.item(id).getAttribute("data-collapsed"));
   }
 
-  /** Which rail an item is currently in, by DOM ancestry. */
   async whichRail(id: string): Promise<Side> {
     const side = await this.item(id).evaluate((el) => {
       const panel = el.closest("[data-side]");
@@ -102,27 +100,23 @@ export class EnginePage {
 
   /** Ordered list of item ids in a rail, top-to-bottom. */
   async itemOrder(side: Side): Promise<string[]> {
-    return this.rail(side).evaluate((panel) => {
-      const items = Array.from(
-        panel.querySelectorAll("[data-sidepanel-item]"),
-      );
-      return items.map((el) => el.getAttribute("data-sidepanel-item")!);
-    });
+    return this.rail(side).evaluate((panel) =>
+      Array.from(panel.querySelectorAll("[data-sidepanel-item]")).map(
+        (el) => el.getAttribute("data-sidepanel-item")!,
+      ),
+    );
   }
 
-  // ─── Action helpers ──────────────────────────────────────────────
+  // ─── Actions ─────────────────────────────────────────────────────
 
-  /** Click the header (NOT the grip) to toggle collapsed state.
-   * The grip span sits at x≈6-22 inside the header and carries
-   * `stopPropagation`, so we click past it on the chevron / title
-   * area. Click at the horizontal CENTER which is reliably the title
-   * text region for every item. */
+  /** Toggle collapsed state by dispatching a native click on the
+   * `<header>` directly. We bypass Playwright's coordinate-based
+   * click because the header has a left-edge grip (stopPropagation)
+   * and a right-edge action slot (also stopPropagation) — the safe
+   * area is narrow and depends on the item's content. A direct
+   * `element.click()` reaches the header's React onClick reliably. */
   async toggleItem(id: string): Promise<void> {
-    const header = this.itemHeader(id);
-    const box = await header.boundingBox();
-    if (!box) throw new Error(`item header ${id} not visible`);
-    // 40px from left edge is past the 22px-wide grip + chevron icon.
-    await this.page.mouse.click(box.x + 40, box.y + box.height / 2);
+    await this.itemHeader(id).evaluate((el) => (el as HTMLElement).click());
   }
 
   async expandItem(id: string): Promise<void> {
@@ -133,58 +127,31 @@ export class EnginePage {
     if (await this.isExpanded(id)) await this.toggleItem(id);
   }
 
-  /** Drag a rail-level splitter by `delta` pixels along its axis.
-   * The rail boundary moves by that delta (left/right rail splitters
-   * widen/shrink horizontally; bottom splitter heights vertically). */
+  /** Drag a rail-level splitter by `delta` pixels along its axis. The
+   * rail boundary moves by that delta (left/right rails widen on
+   * horizontal drag; bottom rail grows on vertical drag). */
   async dragRailSplitter(
     side: Side,
     delta: number,
   ): Promise<{ before: number; after: number }> {
-    const before =
+    const measure = async () =>
       side === "bottom"
         ? (await this.railBox("bottom")).height
         : (await this.railBox(side)).width;
+    const before = await measure();
+    const { x, y, dx, dy } = await this.railSplitterDragVector(side, delta);
 
-    // Locate the rail's adjacent splitter by hit-testing against the
-    // rail box edge — splitters are 4px-wide grid cells abutting the
-    // rail. We pick a Y midpoint for vertical splitters / X midpoint
-    // for the horizontal one.
-    const railBox = await this.railBox(side);
-    let splitterX: number;
-    let splitterY: number;
-    if (side === "left") {
-      splitterX = railBox.x + railBox.width + 2; // 4px-wide cell, center
-      splitterY = railBox.y + railBox.height / 2;
-    } else if (side === "right") {
-      splitterX = railBox.x - 2;
-      splitterY = railBox.y + railBox.height / 2;
-    } else {
-      splitterX = railBox.x + railBox.width / 2;
-      splitterY = railBox.y - 2;
-    }
-
-    await this.page.mouse.move(splitterX, splitterY);
+    await this.page.mouse.move(x, y);
     await this.page.mouse.down();
-    if (side === "left") {
-      await this.page.mouse.move(splitterX + delta, splitterY, { steps: 10 });
-    } else if (side === "right") {
-      await this.page.mouse.move(splitterX - delta, splitterY, { steps: 10 });
-    } else {
-      await this.page.mouse.move(splitterX, splitterY - delta, { steps: 10 });
-    }
+    await this.page.mouse.move(x + dx, y + dy, { steps: 10 });
     await this.page.mouse.up();
 
-    const after =
-      side === "bottom"
-        ? (await this.railBox("bottom")).height
-        : (await this.railBox(side)).width;
-    return { before, after };
+    return { before, after: await measure() };
   }
 
-  /** Drag the intra-rail splitter between two adjacent expanded items.
-   * `aboveId` is the item ABOVE the splitter, `belowId` is the item
-   * BELOW. Returns before/after height of the BELOW item (which is
-   * the one the splitter directly sizes via its CSS var). */
+  /** Drag the splitter between two adjacent EXPANDED items. Returns
+   * before/after height of `belowId` (the splitter writes that item's
+   * CSS var via `invert: true`). */
   async dragInterItemSplitter(
     aboveId: string,
     belowId: string,
@@ -194,7 +161,6 @@ export class EnginePage {
 
     const aboveBox = await this.itemBox(aboveId);
     const belowBox = await this.itemBox(belowId);
-    // Splitter sits between the two — center its hit point on the gap.
     const gapY = (aboveBox.y + aboveBox.height + belowBox.y) / 2;
     const splitterX = aboveBox.x + aboveBox.width / 2;
 
@@ -203,71 +169,106 @@ export class EnginePage {
     await this.page.mouse.move(splitterX, gapY + deltaY, { steps: 10 });
     await this.page.mouse.up();
 
-    const after = (await this.itemBox(belowId)).height;
-    return { before, after };
+    return { before, after: (await this.itemBox(belowId)).height };
   }
 
-  /** Drag an item to a target item or to the empty space of a rail.
-   * Uses native HTML5 drag/drop events with the SDK's custom MIME type
-   * because Playwright's locator.dragTo simulates a mouse drag, which
-   * doesn't always fire dragstart on a [draggable] child element. */
+  /** Move an item to a new position via synthetic HTML5 drag:
+   *   { kind: "before-item", itemId } — insert BEFORE that item
+   *   { kind: "rail", side }          — append to that rail's end
+   */
   async dragItem(
     sourceId: string,
-    target: { kind: "before-item"; itemId: string } | { kind: "rail"; side: Side },
+    target:
+      | { kind: "before-item"; itemId: string }
+      | { kind: "rail"; side: Side },
   ): Promise<void> {
     const handle = this.itemDragHandle(sourceId);
     await expect(handle).toBeVisible();
+    const { x, y } = await this.dropCoords(target);
+    await dispatchItemDrag(handle, {
+      itemId: sourceId,
+      clientX: x,
+      clientY: y,
+    });
+  }
 
-    // Determine target element + bounding box for the drop position.
-    const dropLocator =
-      target.kind === "before-item"
-        ? this.item(target.itemId)
-        : this.rail(target.side);
-    const dropBox = await dropLocator.boundingBox();
-    if (!dropBox) throw new Error("drop target not visible");
+  /** Begin a drag without dropping — used to assert on the visual
+   * indicator. Pair with `endDrag` to clean up. */
+  async beginDragHover(
+    sourceId: string,
+    target:
+      | { kind: "before-item"; itemId: string }
+      | { kind: "rail"; side: Side },
+  ): Promise<{ clientX: number; clientY: number }> {
+    const handle = this.itemDragHandle(sourceId);
+    const { x, y } = await this.dropCoords(target);
+    await startDragHover(handle, { itemId: sourceId, clientX: x, clientY: y });
+    return { clientX: x, clientY: y };
+  }
 
-    // For before-item: drop on the TOP of the target item so the
-    //   insertion indicator lands BEFORE that item.
-    // For rail: drop on the very bottom so it appends.
-    const dropX = dropBox.x + dropBox.width / 2;
-    const dropY =
-      target.kind === "before-item"
-        ? dropBox.y + 4
-        : dropBox.y + dropBox.height - 8;
+  async endDrag(
+    sourceId: string,
+    coords: { clientX: number; clientY: number },
+  ): Promise<void> {
+    const handle = this.itemDragHandle(sourceId);
+    await finishDrag(handle, { itemId: sourceId, ...coords });
+  }
 
-    await handle.evaluate(
-      (sourceEl, args) => {
-        const { dropX, dropY, sourceId } = args as {
-          dropX: number;
-          dropY: number;
-          sourceId: string;
-        };
-        const dropEl = document.elementFromPoint(dropX, dropY);
-        if (!dropEl) throw new Error("no element at drop point");
+  // ─── Internals ───────────────────────────────────────────────────
 
-        const dt = new DataTransfer();
-        dt.setData("application/x-catalyst-sidepanel-item", sourceId);
+  private async requireBox(loc: Locator, label: string): Promise<Box> {
+    const b = await loc.boundingBox();
+    if (!b) throw new Error(`${label} not visible`);
+    return b;
+  }
 
-        // Walk up to find the panel root so dragover/drop fire on the
-        // element that carries the listeners.
-        const fireOn = (el: Element, type: string) => {
-          const ev = new DragEvent(type, {
-            bubbles: true,
-            cancelable: true,
-            clientX: dropX,
-            clientY: dropY,
-            dataTransfer: dt,
-          });
-          el.dispatchEvent(ev);
-        };
+  /** Mouse-down coords + drag delta for a rail-level splitter, given
+   * a desired width/height delta. The cell is 4px-wide in the grid,
+   * but the splitter element extends ±3px via negative margins, so
+   * landing ON the cell midpoint is reliable. */
+  private async railSplitterDragVector(
+    side: Side,
+    delta: number,
+  ): Promise<{ x: number; y: number; dx: number; dy: number }> {
+    const railBox = await this.railBox(side);
+    if (side === "left") {
+      return {
+        x: railBox.x + railBox.width + 2,
+        y: railBox.y + railBox.height / 2,
+        dx: delta,
+        dy: 0,
+      };
+    }
+    if (side === "right") {
+      return {
+        x: railBox.x - 2,
+        y: railBox.y + railBox.height / 2,
+        dx: -delta,
+        dy: 0,
+      };
+    }
+    return {
+      x: railBox.x + railBox.width / 2,
+      y: railBox.y - 2,
+      dx: 0,
+      dy: -delta,
+    };
+  }
 
-        fireOn(sourceEl, "dragstart");
-        fireOn(dropEl, "dragenter");
-        fireOn(dropEl, "dragover");
-        fireOn(dropEl, "drop");
-        fireOn(sourceEl, "dragend");
-      },
-      { dropX, dropY, sourceId },
-    );
+  /** Resolve a drop-target into clientX/clientY coordinates. */
+  private async dropCoords(
+    target:
+      | { kind: "before-item"; itemId: string }
+      | { kind: "rail"; side: Side },
+  ): Promise<{ x: number; y: number }> {
+    if (target.kind === "before-item") {
+      const box = await this.itemBox(target.itemId);
+      // Top 4px of the target item — places the cursor above its
+      // vertical midpoint so the panel resolves "insert BEFORE".
+      return { x: box.x + box.width / 2, y: box.y + 4 };
+    }
+    const box = await this.railBox(target.side);
+    // Bottom-of-rail empty area → cursor below every item → append.
+    return { x: box.x + box.width / 2, y: box.y + box.height - 8 };
   }
 }

@@ -25,7 +25,7 @@
  * (Compare/Stats/etc) can compose its own.
  */
 import type { ReactNode } from "react";
-import { Splitter } from "../engine-panel/Splitter.js";
+import { Splitter } from "./Splitter.js";
 import { cn } from "../utils.js";
 import "./styles.css";
 

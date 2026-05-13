@@ -21,13 +21,13 @@ export {
   agentEventToPanelEvent,
   resolveLLMNodeId,
   topologyNodeIds,
-} from "./engine-panel/adapters.js";
+} from "./engine/adapters.js";
 export type {
   PanelEvent,
   PanelSelection,
   PanelContext,
   NodeStatus,
-} from "./engine-panel/types.js";
+} from "./engine/panel-types.js";
 export {
   AgentConfigForm,
   type AgentConfigFormProps,
