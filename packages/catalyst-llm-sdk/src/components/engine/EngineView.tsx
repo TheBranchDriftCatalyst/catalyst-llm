@@ -3,8 +3,8 @@
  *
  *   ┌─────────────────────────────────────────────────────────────┐
  *   │ ┌── left ─────┐ ┌── center ────────────────┐ ┌── right ───┐ │
- *   │ │ Agents item │ │ agent header + topology  │ │ Node detail │ │
- *   │ │ Events item │ │ canvas                    │ │ item        │ │
+ *   │ │ Agents item │ │ agent header + topology  │ │ Test run    │ │
+ *   │ │ Events item │ │ canvas                    │ │ Node detail │ │
  *   │ └─────────────┘ └───────────────────────────┘ └─────────────┘ │
  *   │ ┌── bottom ────────────────────────────────────────────────┐  │
  *   │ │ Terminal item (live tokens + reasoning)                 │  │
@@ -17,8 +17,10 @@
  * SidePanelItems. Right + bottom rails are first-class citizens of
  * the same PageShell.
  *
- * Sheet overlays (prompt explorer, runs list, test-run) stay on top
- * as before — they're orthogonal to the page rails.
+ * Test run lives inline in the right rail — clicking the __start__
+ * chip pops the rail item open and focuses the prompt textarea. Prompt
+ * explorer + runs list stay as right-edge Sheet overlays because
+ * they're transient workbench surfaces, not persistent operator state.
  */
 import { useMemo, useState } from "react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
@@ -33,6 +35,7 @@ import {
   Activity,
   Bot,
   Layers,
+  Play,
   RefreshCw,
   RotateCcw,
   Terminal as TerminalIcon,
@@ -62,11 +65,11 @@ function countAgentOverrides(
   return n;
 }
 
-/** SidePanel-item-ready shape for the Engine page's Sheet branches. */
+/** SidePanel-item-ready shape for the Engine page's Sheet branches.
+ * Test-run is no longer a Sheet branch — it lives in the right rail. */
 export type SheetContext =
   | { kind: "prompt"; agentId: string; nodeId: string }
   | { kind: "runs"; agentId: string; nodeId: string }
-  | { kind: "test-run"; agentId: string }
   | null;
 
 export interface EngineViewProps {
@@ -79,6 +82,11 @@ export function EngineView({ className }: EngineViewProps) {
     undefined,
   );
   const [sheetContext, setSheetContext] = useState<SheetContext>(null);
+  // Counter that bumps every time __start__ is clicked, forcing the
+  // Test run rail item open on the right. The item also stays open
+  // across runs once the operator has it expanded — see the
+  // `openSignal` prop on SidePanelItem.
+  const [testRunOpenSignal, setTestRunOpenSignal] = useState(0);
 
   const selected = useMemo(() => {
     if (!agents.length) return undefined;
@@ -182,10 +190,27 @@ export function EngineView({ className }: EngineViewProps) {
         right={
           <SidePanel side="right">
             <SidePanelItem
+              id="engine.test-run"
+              title="Test run"
+              icon={<Play className="h-3 w-3" />}
+              defaultGrow
+              openSignal={testRunOpenSignal}
+            >
+              {selected ? (
+                <div className="flex h-full min-h-0 flex-col p-2">
+                  <TestRunSheet agent={selected} />
+                </div>
+              ) : (
+                <div className="p-2 text-[11px] text-muted-foreground">
+                  Select an agent to dispatch a test run.
+                </div>
+              )}
+            </SidePanelItem>
+            <SidePanelItem
               id="engine.node-detail"
               title="Node detail"
               icon={<Activity className="h-3 w-3" />}
-              defaultGrow
+              defaultCollapsed
             >
               <div className="p-2 text-[11px] text-muted-foreground">
                 NodePanel — click a topology node to inspect its last
@@ -231,9 +256,7 @@ export function EngineView({ className }: EngineViewProps) {
                 nodeId,
               })
             }
-            onStartTestRun={() =>
-              setSheetContext({ kind: "test-run", agentId: selected.id })
-            }
+            onStartTestRun={() => setTestRunOpenSignal((n) => n + 1)}
             activeNodeId={activeNodeId}
           />
         ) : (
@@ -243,9 +266,9 @@ export function EngineView({ className }: EngineViewProps) {
         )}
       </PageShell>
 
-      {/* RIGHT-edge Sheet overlay for the prompt-explorer / runs /
-       * test-run flows. Independent of the PageShell rails — these
-       * are transient workbenches that overlay the page on demand. */}
+      {/* RIGHT-edge Sheet overlay — transient workbench surfaces for
+       * prompt explorer + runs list. Test-run is NOT here anymore; it
+       * lives in the right SidePanel rail above. */}
       <Sheet
         open={sheetContext !== null}
         onOpenChange={(open) => {
@@ -260,18 +283,14 @@ export function EngineView({ className }: EngineViewProps) {
             <SheetTitle>
               {sheetContext?.kind === "prompt"
                 ? `Prompts for ${sheetContext.agentId}.${sheetContext.nodeId}`
-                : sheetContext?.kind === "test-run"
-                  ? `Test run · ${sheetContext.agentId}`
-                  : "Runs"}
+                : "Runs"}
             </SheetTitle>
             <SheetDescription>
               {sheetContext?.kind === "prompt"
                 ? "Bind a saved prompt, set an inline override, or edit the bound preset."
-                : sheetContext?.kind === "test-run"
-                  ? "Dispatch a one-off chat request through this Agent's LangGraph flow."
-                  : sheetContext
-                    ? `${sheetContext.agentId}.${sheetContext.nodeId}`
-                    : ""}
+                : sheetContext
+                  ? `${sheetContext.agentId}.${sheetContext.nodeId}`
+                  : ""}
             </SheetDescription>
           </SheetHeader>
           <div className="mt-4 flex min-h-0 flex-1 flex-col">
@@ -281,9 +300,6 @@ export function EngineView({ className }: EngineViewProps) {
                 nodeId={sheetContext.nodeId}
                 onClose={() => setSheetContext(null)}
               />
-            )}
-            {sheetContext?.kind === "test-run" && selected && (
-              <TestRunSheet agent={selected} />
             )}
             {sheetContext?.kind === "runs" && (
               <NodeRunsList

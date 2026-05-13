@@ -29,6 +29,13 @@ export interface SidePanelItemProps {
   defaultGrow?: boolean;
   /** Right-aligned header content (badges, action buttons). */
   headerRight?: ReactNode;
+  /** Imperative "force-expand" signal. When this value changes (e.g.
+   * the parent increments a counter), the item flips to expanded
+   * regardless of its current collapsed state. Useful for "clicking X
+   * in the canvas should pop open the Y rail item". The item's own
+   * collapse/expand interactions still work normally; this is just a
+   * one-way notification. */
+  openSignal?: number;
   /** The item body. Should size itself to its content; the wrapper
    * applies overflow + flex according to `defaultGrow`. */
   children: ReactNode;
@@ -46,6 +53,7 @@ export function SidePanelItem({
   defaultCollapsed = false,
   defaultGrow = false,
   headerRight,
+  openSignal,
   children,
   className,
 }: SidePanelItemProps) {
@@ -70,6 +78,17 @@ export function SidePanelItem({
       /* ignore */
     }
   }, [collapsed, id]);
+
+  // Watch the openSignal — every distinct value flips collapsed → false.
+  // Ignore undefined (parent hasn't wired it) and the very first render
+  // (we don't want a mount-time expand to overwrite the persisted state).
+  const lastSignalRef = useRef<number | undefined>(openSignal);
+  useEffect(() => {
+    if (openSignal === undefined) return;
+    if (lastSignalRef.current === openSignal) return;
+    lastSignalRef.current = openSignal;
+    setCollapsed(false);
+  }, [openSignal]);
 
   return (
     <section
