@@ -52,7 +52,7 @@ import {
   EDGE_CONDITIONAL,
   EDGE_SOLID,
   EDGE_TYPES,
-} from "./edges.js";
+} from "./edges/index.js";
 import {
   NODE_TYPES,
   type CommonNodeData,
