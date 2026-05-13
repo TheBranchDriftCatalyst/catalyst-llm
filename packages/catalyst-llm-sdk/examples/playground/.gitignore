@@ -10,3 +10,7 @@ dist
 # Playwright MCP debug artifacts
 .playwright-mcp/
 playground-*.png
+
+# Playwright
+test-results/
+playwright-report/
