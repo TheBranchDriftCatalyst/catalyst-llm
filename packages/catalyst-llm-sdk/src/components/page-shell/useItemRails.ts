@@ -62,7 +62,11 @@ function storageKey(namespace: string): string {
 
 export interface UseItemRailsResult {
   rails: RailMap;
-  moveItem: (id: string, to: Side) => void;
+  /** Move `id` into `to`, inserting BEFORE `beforeId`. When `beforeId`
+   * is null the item appends to the end of `to`. Same-rail reorders
+   * work too (the dragged item is removed from its current position
+   * before re-inserting). */
+  moveItem: (id: string, to: Side, beforeId: string | null) => void;
   /** Reset assignments back to the defaults passed at construction. */
   reset: () => void;
 }
@@ -97,23 +101,53 @@ export function useItemRails(
     }
   }, [namespace, rails]);
 
-  const moveItem = useCallback((id: string, to: Side) => {
-    setRails((prev) => {
-      let from: Side | null = null;
-      for (const s of SIDES) {
-        if (prev[s].includes(id)) {
-          from = s;
-          break;
+  const moveItem = useCallback(
+    (id: string, to: Side, beforeId: string | null) => {
+      setRails((prev) => {
+        let from: Side | null = null;
+        for (const s of SIDES) {
+          if (prev[s].includes(id)) {
+            from = s;
+            break;
+          }
         }
-      }
-      if (!from || from === to) return prev;
-      return {
-        ...prev,
-        [from]: prev[from].filter((x) => x !== id),
-        [to]: [...prev[to], id],
-      };
-    });
-  }, []);
+        if (!from) return prev;
+
+        // Compute the source list with the dragged item removed first
+        // so the insertion index is correct even on same-rail reorders
+        // (where the dragged item was originally at some earlier slot).
+        const next: RailMap = { ...prev };
+        if (from === to) {
+          const withoutDragged = prev[to].filter((x) => x !== id);
+          const insertAt =
+            beforeId === null
+              ? withoutDragged.length
+              : Math.max(0, withoutDragged.indexOf(beforeId));
+          if (
+            withoutDragged.indexOf(id) === insertAt &&
+            prev[to][insertAt] === id
+          ) {
+            return prev; // no-op: dropped onto its current slot
+          }
+          const reordered = [...withoutDragged];
+          reordered.splice(insertAt, 0, id);
+          next[to] = reordered;
+          return next;
+        }
+
+        next[from] = prev[from].filter((x) => x !== id);
+        const dest = [...prev[to]];
+        const insertAt =
+          beforeId === null
+            ? dest.length
+            : Math.max(0, dest.indexOf(beforeId));
+        dest.splice(insertAt, 0, id);
+        next[to] = dest;
+        return next;
+      });
+    },
+    [],
+  );
 
   const reset = useCallback(() => {
     setRails(defaultRails);

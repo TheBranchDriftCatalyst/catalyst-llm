@@ -1,28 +1,14 @@
-/**
- * SidePanel — stack container for SidePanelItems within a PageShell rail.
- *
- * Owns the layout for its items:
- *   - Left/right rails stack vertically; bottom rail stacks horizontally
- *     (driven by `side` and matching CSS classes).
- *   - Between every pair of adjacent EXPANDED items, a Splitter is
- *     rendered so the operator can drag the boundary between them. The
- *     splitter writes a CSS var consumed by the previous item's
- *     flex-basis; the last expanded item is `flex: 1 1 0` and absorbs
- *     leftover space.
- *   - Sizes persist per-item to localStorage; collapsed/expanded state
- *     persists per-item via SidePanelItem's own storage hook.
- *
- * Items report their collapsed state through `SidePanelCtx` so the panel
- * can recompute the splitter layout when an item collapses or expands.
- * Initial collapsed state is read directly from localStorage (same key
- * as SidePanelItem) so first-paint layout is correct without waiting
- * for the items to mount + dispatch.
+/* Stack of SidePanelItems inside a PageShell rail.
+ * - Items collapse upward (header sits at the top, content folds below).
+ * - Adjacent expanded items get a Splitter between them (resize heights).
+ * - Optional cross-rail + same-rail reorder via HTML5 drag/drop.
  */
 import {
   Children,
   Fragment,
   isValidElement,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type DragEvent,
@@ -40,10 +26,7 @@ import {
   type SidePanelCtxValue,
 } from "./sidepanel-internals.js";
 
-function readInitialCollapsed(
-  id: string,
-  defaultCollapsed: boolean,
-): boolean {
+function readInitialCollapsed(id: string, defaultCollapsed: boolean): boolean {
   try {
     const raw = localStorage.getItem(itemCollapsedStorageKey(id));
     if (raw === "1") return true;
@@ -62,9 +45,6 @@ interface DiscoveredItem {
 
 function discoverItems(children: ReactNode): DiscoveredItem[] {
   const out: DiscoveredItem[] = [];
-  // Descend through Fragments so callers can map over an id list and
-  // wrap each entry in a Fragment for keying without breaking
-  // discovery (the EngineView rail-routing pattern).
   const visit = (node: ReactNode): void => {
     Children.forEach(node, (child) => {
       if (!isValidElement(child)) return;
@@ -86,19 +66,15 @@ function discoverItems(children: ReactNode): DiscoveredItem[] {
 }
 
 export interface SidePanelProps {
-  /** Stack of SidePanelItem children. */
   children: ReactNode;
-  /** Which rail of the PageShell this panel sits in. All rails stack
-   * items vertically internally; `side` is informational and used as
-   * the namespace for per-item size CSS vars + localStorage keys. */
   side?: Side;
-  /** Optional cross-rail move handler. When provided, SidePanelItem
-   * headers render a grip drag handle and this panel accepts drops
-   * from sibling rails. On drop, the panel calls onItemMove with the
-   * dropped item id; the host (typically the page-level consumer)
-   * updates its rail-assignment state. When undefined, items are
-   * read-only with respect to cross-rail movement. */
-  onItemMove?: (itemId: string, toSide: Side) => void;
+  /** Cross-rail + within-rail move. beforeId names the item to insert
+   * the dragged item BEFORE; null = append to the end of toSide. */
+  onItemMove?: (
+    itemId: string,
+    toSide: Side,
+    beforeId: string | null,
+  ) => void;
   className?: string;
 }
 
@@ -110,10 +86,6 @@ export function SidePanel({
 }: SidePanelProps) {
   const items = useMemo(() => discoverItems(children), [children]);
 
-  // Initialize collapsed state map from localStorage. After first render
-  // each SidePanelItem will push updates back into this map via
-  // `reportCollapsed` (called from its persist effect), so the panel
-  // stays in sync.
   const [collapsedById, setCollapsedById] = useState<Record<string, boolean>>(
     () => {
       const init: Record<string, boolean> = {};
@@ -137,64 +109,97 @@ export function SidePanel({
     [side, draggable],
   );
 
-  // ─ Cross-rail drag/drop wiring ───────────────────────────────────
-  // Operator drags a SidePanelItem header from one rail and drops it
-  // anywhere on a sibling rail. We use HTML5 DnD with a custom MIME
-  // type so unrelated content drags (text, files) don't trigger a move.
-  const [dragOver, setDragOver] = useState(false);
+  // ─ Drag/drop with insertion-target hit-testing ───────────────────
+  // When the operator drags a SidePanelItem header over this panel,
+  // we hit-test the cursor against each item's section element to
+  // figure out where the drop should insert. Top half of an item =
+  // insert BEFORE it; bottom half = insert AFTER (= before the next
+  // item, or null = append). A horizontal indicator line renders at
+  // the insertion position so the operator can see where it'll land.
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const [dropState, setDropState] = useState<{
+    active: boolean;
+    /** Item id to insert BEFORE. null = append to end of this rail. */
+    beforeId: string | null;
+    /** Y position (relative to panel content) of the indicator line. */
+    indicatorY: number;
+  }>({ active: false, beforeId: null, indicatorY: 0 });
+
+  const computeInsertion = (
+    e: DragEvent<HTMLDivElement>,
+  ): { beforeId: string | null; indicatorY: number } => {
+    const panel = panelRef.current;
+    if (!panel) return { beforeId: null, indicatorY: 0 };
+    const itemEls = Array.from(
+      panel.querySelectorAll<HTMLElement>("[data-sidepanel-item]"),
+    );
+    if (itemEls.length === 0) {
+      return { beforeId: null, indicatorY: 0 };
+    }
+    const panelRect = panel.getBoundingClientRect();
+    const cursorY = e.clientY;
+    // Find the first item whose VERTICAL midpoint is below the cursor —
+    // that's the one we'd insert before.
+    for (const el of itemEls) {
+      const r = el.getBoundingClientRect();
+      const mid = r.top + r.height / 2;
+      if (cursorY < mid) {
+        const id = el.getAttribute("data-sidepanel-item")!;
+        return {
+          beforeId: id,
+          indicatorY: r.top - panelRect.top + panel.scrollTop,
+        };
+      }
+    }
+    // Cursor is below every item's midpoint → append to end.
+    const lastRect = itemEls[itemEls.length - 1].getBoundingClientRect();
+    return {
+      beforeId: null,
+      indicatorY: lastRect.bottom - panelRect.top + panel.scrollTop,
+    };
+  };
+
   const handleDragOver = onItemMove
     ? (e: DragEvent<HTMLDivElement>) => {
         if (!e.dataTransfer.types.includes(SIDEPANEL_ITEM_DND_TYPE)) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = "move";
-        if (!dragOver) setDragOver(true);
+        const next = computeInsertion(e);
+        setDropState((prev) =>
+          prev.active &&
+          prev.beforeId === next.beforeId &&
+          prev.indicatorY === next.indicatorY
+            ? prev
+            : { active: true, ...next },
+        );
       }
     : undefined;
   const handleDragLeave = onItemMove
     ? (e: DragEvent<HTMLDivElement>) => {
-        // Only clear when truly leaving the panel — ignore moves between
-        // child elements (each child fires dragleave when the pointer
-        // crosses its edge, even within the same panel).
         if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
-        setDragOver(false);
+        setDropState((s) => (s.active ? { ...s, active: false } : s));
       }
     : undefined;
   const handleDrop = onItemMove
     ? (e: DragEvent<HTMLDivElement>) => {
-        setDragOver(false);
         const itemId = e.dataTransfer.getData(SIDEPANEL_ITEM_DND_TYPE);
+        const target = dropState;
+        setDropState({ active: false, beforeId: null, indicatorY: 0 });
         if (!itemId) return;
         e.preventDefault();
-        onItemMove(itemId, side);
+        onItemMove(itemId, side, target.beforeId);
       }
     : undefined;
 
-  // Compute which items are expanded + which one is the FIRST expanded
-  // (the grower). All other expanded items are explicitly sized via
-  // CSS vars written by the trailing Splitter on the item above them.
-  // When all items are collapsed the panel renders as a stack of
-  // headers — fine, nothing to grow.
   const expandedIds = useMemo(
     () => items.filter((it) => !collapsedById[it.id]).map((it) => it.id),
     [items, collapsedById],
   );
   const firstExpandedId = expandedIds[0];
 
-  // All rails stack VERTICALLY inside the panel — items collapse
-  // upward (header on top, content folds away below). The bottom rail
-  // is just a short rail at the bottom of the page; its items still
-  // stack top→bottom inside it. Horizontal item stacking turned out
-  // weird (collapsed items became thin vertical strips with a
-  // sideways header) and the operator's mental model is "drawers
-  // stack". The grid template still places the bottom rail as a
-  // bottom-row landscape; only its INTERNAL layout changes.
   const cssVarBase = `--sp-${side}`;
   const sizeFallback = 200;
 
-  // Build the rendered sequence: each item, optionally followed by a
-  // Splitter that controls the NEXT expanded item's size. The splitter
-  // is "invert" because dragging it INTO the next item shrinks that
-  // item (its size var goes down).
   const segments: ReactNode[] = [];
   for (let i = 0; i < items.length; i++) {
     const it = items[i];
@@ -202,16 +207,9 @@ export function SidePanel({
     const isGrower = it.id === firstExpandedId;
 
     let flexValue: CSSProperties["flex"];
-    if (!expanded) {
-      // Collapsed → just the header height/width.
-      flexValue = "0 0 auto";
-    } else if (isGrower) {
-      // The grower — absorbs leftover space.
-      flexValue = "1 1 0";
-    } else {
-      // Sized via CSS var written by the splitter above this item.
-      flexValue = `0 0 var(${cssVarBase}-${it.id}-px, ${sizeFallback}px)`;
-    }
+    if (!expanded) flexValue = "0 0 auto";
+    else if (isGrower) flexValue = "1 1 0";
+    else flexValue = `0 0 var(${cssVarBase}-${it.id}-px, ${sizeFallback}px)`;
 
     segments.push(
       <div
@@ -223,9 +221,6 @@ export function SidePanel({
       </div>,
     );
 
-    // Render a splitter AFTER this expanded item if there's a later
-    // expanded sibling. The splitter writes the size for that next
-    // expanded item (which is therefore sized, not the grower).
     if (expanded) {
       const nextExpandedId = expandedIds[expandedIds.indexOf(it.id) + 1];
       if (nextExpandedId) {
@@ -249,16 +244,10 @@ export function SidePanel({
   return (
     <SidePanelCtx.Provider value={ctxValue}>
       <div
+        ref={panelRef}
         className={cn(
-          // `flex-1 min-h-0` (instead of `h-full`) makes this panel
-          // claim the rail-cell's full main-axis height via the
-          // flex-column parent's flex algorithm. `h-full` (% height)
-          // intermittently failed to resolve in nested flex chains,
-          // causing the rails to size to content instead of filling.
-          "flex min-h-0 min-w-0 flex-1 flex-col gap-0.5 overflow-y-auto p-1",
-          // Faint inset ring during a hover-while-dragging an item from
-          // another rail — telegraphs "drop here works".
-          dragOver && "ring-2 ring-inset ring-primary/60",
+          "relative flex min-h-0 min-w-0 flex-1 flex-col gap-0.5 overflow-y-auto p-1",
+          dropState.active && "ring-2 ring-inset ring-primary/40",
           className,
         )}
         data-side={side}
@@ -267,6 +256,15 @@ export function SidePanel({
         onDrop={handleDrop}
       >
         {segments}
+        {/* Drop-insertion indicator — absolute-positioned 2px line at
+         * the Y where the dragged item will land. */}
+        {dropState.active && (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute left-1 right-1 z-10 h-0.5 bg-primary shadow-[0_0_8px_var(--primary)]"
+            style={{ top: dropState.indicatorY }}
+          />
+        )}
       </div>
     </SidePanelCtx.Provider>
   );
