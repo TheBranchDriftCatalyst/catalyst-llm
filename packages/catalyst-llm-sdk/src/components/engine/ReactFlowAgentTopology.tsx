@@ -26,7 +26,6 @@
  * each node without opening the panel.
  */
 import { useMemo, useCallback } from "react";
-import dagre from "@dagrejs/dagre";
 import {
   Background,
   Controls,
@@ -53,6 +52,15 @@ import type {
 import { useEngineStore } from "../../react/engineStore.js";
 import { cn } from "../utils.js";
 import { NodeInlineConfig } from "./NodeInlineConfig.js";
+import {
+  GROUP_LABEL_BAND,
+  GROUP_PADDING,
+  buildEnsembleByMemberId,
+  computeEnsembleGroupSize,
+  getNodeSize,
+  getRenderedNodeSize,
+  layoutWithDagre,
+} from "./topology/layout.js";
 
 export interface ReactFlowAgentTopologyProps {
   topology: AgentTopology;
@@ -85,93 +93,6 @@ export interface ReactFlowAgentTopologyProps {
   onStartTestRun?: () => void;
   className?: string;
 }
-
-// Sizing for the fixed-shape node types (start/end/tools). Agent nodes
-// size themselves from their schema field count — see
-// computeAgentNodeSize() below.
-const FIXED_NODE_SIZES: Record<"start" | "end" | "tools", { w: number; h: number }> = {
-  start: { w: 140, h: 44 },
-  end: { w: 140, h: 44 },
-  tools: { w: 220, h: 96 },
-};
-const AGENT_NODE_WIDTH = 300;
-const AGENT_HEADER_PX = 30;       // icon + nodeId row
-const AGENT_ROW_PX = 28;          // one schema field, inline control
-const AGENT_VERTICAL_PADDING = 24; // top + bottom card padding
-const AGENT_MIN_HEIGHT = 80;
-const AGENT_MAX_HEIGHT = 360;
-
-function computeAgentNodeSize(
-  schema: AgentConfigSchema | null,
-): { w: number; h: number } {
-  if (!schema?.properties) {
-    return { w: AGENT_NODE_WIDTH, h: AGENT_MIN_HEIGHT };
-  }
-  const fieldCount = Object.keys(schema.properties).length;
-  const h = Math.min(
-    Math.max(
-      AGENT_MIN_HEIGHT,
-      AGENT_HEADER_PX + fieldCount * AGENT_ROW_PX + AGENT_VERTICAL_PADDING,
-    ),
-    AGENT_MAX_HEIGHT,
-  );
-  return { w: AGENT_NODE_WIDTH, h };
-}
-
-function getNodeSize(node: AgentTopologyNode): { w: number; h: number } {
-  if (node.type === "agent") return computeAgentNodeSize(node.config_schema);
-  return FIXED_NODE_SIZES[node.type];
-}
-
-// Width + height for an ensemble-group card. Slightly wider than a
-// regular agent card (it has a 'members' section beneath the form)
-// and uses the schema's `maximum` on the instance-count field as the
-// upper bound so the card doesn't resize on every instance-count
-// change. Internal scroll handles smaller counts.
-const ENSEMBLE_GROUP_WIDTH = 340;
-const ENSEMBLE_HEADER_PX = 24;
-const ENSEMBLE_ROW_PX = 28;
-const ENSEMBLE_MEMBER_ROW_PX = 22;
-const ENSEMBLE_MEMBERS_OVERHEAD_PX = 28;
-const ENSEMBLE_VERTICAL_PADDING_PX = 24;
-const ENSEMBLE_MAX_HEIGHT = 480;
-
-function computeEnsembleGroupSize(
-  group: AgentTopologyGroup,
-  memberSchema: AgentConfigSchema | null,
-): { w: number; h: number } {
-  const groupProps = group.config_schema?.properties ?? {};
-  const memberProps = memberSchema?.properties ?? {};
-  // Skip ui.widget="hidden" fields — NodeInlineConfig filters them so
-  // they don't take vertical space.
-  const visibleGroupFields = Object.values(groupProps).filter(
-    (f) => f.ui?.widget !== "hidden",
-  ).length;
-  const visibleMemberFields = Object.values(memberProps).filter(
-    (f) => f.ui?.widget !== "hidden",
-  ).length;
-  // Member form gets its own sub-header strip (~24px) when present.
-  const memberHeaderPx = visibleMemberFields > 0 ? 28 : 0;
-  const h = Math.min(
-    ENSEMBLE_HEADER_PX +
-      visibleGroupFields * ENSEMBLE_ROW_PX +
-      memberHeaderPx +
-      visibleMemberFields * ENSEMBLE_ROW_PX +
-      ENSEMBLE_VERTICAL_PADDING_PX,
-    ENSEMBLE_MAX_HEIGHT,
-  );
-  return { w: ENSEMBLE_GROUP_WIDTH, h };
-}
-
-const RANK_SEP = 60;
-const NODE_SEP = 80;
-
-// Compound-container padding. We grow the group's bounding box by this
-// many pixels on each side so children don't touch the dashed border,
-// and reserve a `GROUP_LABEL_BAND` strip at the top for the group's
-// "actor-critic loop" / "ensemble" label.
-const GROUP_PADDING = 24;
-const GROUP_LABEL_BAND = 28;
 
 // Group-container visual styling. Keeps tone parity with NODE_VISUAL
 // above so the canvas reads as one palette.
@@ -250,65 +171,6 @@ interface CommonNodeData extends Record<string, unknown> {
   /** Called when the __start__ chip is clicked. Only set on the
    * start chip; other node types ignore. */
   onStartTestRun?: () => void;
-}
-
-/** Map a member-template-node id → the ensemble group it belongs to.
- * Only includes groups with a non-null config_schema (the new
- * configured-ensemble shape); legacy group_type wrappers go through a
- * different rendering path. */
-function buildEnsembleByMemberId(
-  topology: AgentTopology,
-): Map<string, AgentTopologyGroup> {
-  const out = new Map<string, AgentTopologyGroup>();
-  for (const g of topology.groups ?? []) {
-    if (!g.config_schema) continue;
-    for (const n of topology.nodes) {
-      if (n.group_id === g.id) out.set(n.id, g);
-    }
-  }
-  return out;
-}
-
-function getRenderedNodeSize(
-  node: AgentTopologyNode,
-  ensembleByMember: Map<string, AgentTopologyGroup>,
-): { w: number; h: number } {
-  const eg = ensembleByMember.get(node.id);
-  if (eg) return computeEnsembleGroupSize(eg, node.config_schema);
-  return getNodeSize(node);
-}
-
-function layoutWithDagre(
-  topology: AgentTopology,
-  ensembleByMember: Map<string, AgentTopologyGroup>,
-): Record<string, { x: number; y: number }> {
-  const g = new dagre.graphlib.Graph();
-  g.setGraph({
-    rankdir: "TB",
-    ranksep: RANK_SEP,
-    nodesep: NODE_SEP,
-    marginx: 24,
-    marginy: 24,
-  });
-  g.setDefaultEdgeLabel(() => ({}));
-
-  for (const n of topology.nodes) {
-    const size = getRenderedNodeSize(n, ensembleByMember);
-    g.setNode(n.id, { width: size.w, height: size.h });
-  }
-  for (const e of topology.edges) {
-    g.setEdge(e.source, e.target);
-  }
-  dagre.layout(g);
-
-  const out: Record<string, { x: number; y: number }> = {};
-  for (const n of topology.nodes) {
-    const d = g.node(n.id) as { x: number; y: number };
-    const size = getRenderedNodeSize(n, ensembleByMember);
-    // dagre reports centre points; reactflow uses top-left corners.
-    out[n.id] = { x: d.x - size.w / 2, y: d.y - size.h / 2 };
-  }
-  return out;
 }
 
 // ─── Custom node components ──────────────────────────────────────────
