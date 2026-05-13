@@ -20,6 +20,7 @@
  */
 import {
   Children,
+  Fragment,
   isValidElement,
   useMemo,
   useState,
@@ -61,16 +62,26 @@ interface DiscoveredItem {
 
 function discoverItems(children: ReactNode): DiscoveredItem[] {
   const out: DiscoveredItem[] = [];
-  Children.forEach(children, (child) => {
-    if (!isValidElement(child)) return;
-    if (child.type !== SidePanelItem) return;
-    const props = child.props as SidePanelItemProps;
-    out.push({
-      id: props.id,
-      defaultCollapsed: props.defaultCollapsed ?? false,
-      element: child as ReactElement<SidePanelItemProps>,
+  // Descend through Fragments so callers can map over an id list and
+  // wrap each entry in a Fragment for keying without breaking
+  // discovery (the EngineView rail-routing pattern).
+  const visit = (node: ReactNode): void => {
+    Children.forEach(node, (child) => {
+      if (!isValidElement(child)) return;
+      if (child.type === Fragment) {
+        visit((child.props as { children?: ReactNode }).children);
+        return;
+      }
+      if (child.type !== SidePanelItem) return;
+      const props = child.props as SidePanelItemProps;
+      out.push({
+        id: props.id,
+        defaultCollapsed: props.defaultCollapsed ?? false,
+        element: child as ReactElement<SidePanelItemProps>,
+      });
     });
-  });
+  };
+  visit(children);
   return out;
 }
 
@@ -239,7 +250,12 @@ export function SidePanel({
     <SidePanelCtx.Provider value={ctxValue}>
       <div
         className={cn(
-          "flex h-full min-h-0 min-w-0 flex-col gap-1 overflow-y-auto p-2",
+          // `flex-1 min-h-0` (instead of `h-full`) makes this panel
+          // claim the rail-cell's full main-axis height via the
+          // flex-column parent's flex algorithm. `h-full` (% height)
+          // intermittently failed to resolve in nested flex chains,
+          // causing the rails to size to content instead of filling.
+          "flex min-h-0 min-w-0 flex-1 flex-col gap-0.5 overflow-y-auto p-1",
           // Faint inset ring during a hover-while-dragging an item from
           // another rail — telegraphs "drop here works".
           dragOver && "ring-2 ring-inset ring-primary/60",

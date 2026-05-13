@@ -1,19 +1,5 @@
-/*
- * PageShell layout — explicit 3-rail (left/right/bottom) + center grid.
- *
- * Consumers import via `import "@catalyst/llm-sdk/components/index.css"`
- * (tsup emits this into dist/components/index.css alongside the
- * engine-panel grid rules).
- *
- * Grid template adapts to which rails are present:
- *   - data-has-left:  reserves columns 1 + 2 (panel + splitter)
- *   - data-has-right: reserves columns 4 + 5 (splitter + panel)
- *   - data-has-bottom: reserves rows 2 + 3 (splitter + panel)
- *
- * When a rail isn't supplied, its column/row collapses to 0 and the
- * remaining cells expand. CSS variables (--page-col-left, etc) are
- * written by the Splitter component when the operator drags.
- */
+/* PageShell — 3-rail (left/right/bottom) + center grid.
+ * Imported by PageShell.tsx; tsup ships it as dist/components/index.css. */
 
 .page-shell {
   display: flex;
@@ -29,14 +15,10 @@
   min-height: 0;
   min-width: 0;
   width: 100%;
-  /* Default (no rails): single column + row. */
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
 }
 
-/* Splitter columns/rows are 4px in the grid template — the splitter
- * element itself sits on top with a wider hover hit area so the operator
- * doesn't need pixel-perfect aim to grab it. */
 .page-shell[data-has-left] > .page-shell-grid {
   grid-template-columns: var(--page-col-left, 320px) 4px minmax(0, 1fr);
 }
@@ -51,44 +33,30 @@
     4px
     var(--page-col-right, 360px);
 }
-
 .page-shell[data-has-bottom] > .page-shell-grid {
   grid-template-rows: minmax(0, 1fr) 4px var(--page-row-bottom, 220px);
 }
 
-/* Region placement — the splitters are positioned inline via style
- * props in PageShell.tsx; the named regions below claim the cells. */
-.page-shell-left {
-  grid-column: 1;
-  grid-row: 1;
-  /* display: flex makes the SidePanel inside a deterministic flex child
-   * that fills the cell height. Without this, the panel relied on
-   * grid-item stretching + h-full resolving against an implicit
-   * height — which broke in some browser layout passes and left a
-   * blank strip at the bottom of the rail. */
+.page-shell-left,
+.page-shell-center,
+.page-shell-right,
+.page-shell-bottom {
   display: flex;
   flex-direction: column;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
-  border-right: 1px solid hsl(var(--border) / 0.6);
+}
+.page-shell-left {
+  grid-column: 1;
+  grid-row: 1;
   background: hsl(var(--card) / 0.3);
 }
 .page-shell-center {
   grid-row: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  min-width: 0;
-  overflow: hidden;
-  /* Center column is 1, 3, or 5 depending on which rails are present.
-   * The .page-shell-grid template handles that; we just claim the
-   * effective middle. */
   grid-column: 1 / -1;
 }
-.page-shell[data-has-left] .page-shell-center {
-  grid-column: 3;
-}
+.page-shell[data-has-left] .page-shell-center,
 .page-shell[data-has-left][data-has-right] .page-shell-center {
   grid-column: 3;
 }
@@ -97,12 +65,6 @@
 }
 .page-shell-right {
   grid-row: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  min-width: 0;
-  overflow: hidden;
-  border-left: 1px solid hsl(var(--border) / 0.6);
   background: hsl(var(--card) / 0.3);
 }
 .page-shell[data-has-left][data-has-right] .page-shell-right {
@@ -114,10 +76,90 @@
 .page-shell-bottom {
   grid-column: 1 / -1;
   grid-row: 3;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
-  border-top: 1px solid hsl(var(--border) / 0.6);
   background: hsl(var(--card) / 0.4);
+}
+
+/* Splitter handles — used by every Splitter instance (PageShell rails
+ * + intra-SidePanel item dividers). Cell is 4–6px in the grid; the
+ * element extends ±3px via negative margins so the operator has a
+ * ~10px hit area without enlarging the layout footprint. The grip
+ * pseudo-element is pointer-events:none so clicks land on the parent
+ * (which carries the drag handler). */
+.lg-splitter {
+  position: relative;
+  background: transparent;
+  z-index: 5;
+}
+.lg-splitter-vertical {
+  margin-left: -3px;
+  margin-right: -3px;
+  cursor: col-resize;
+}
+.lg-splitter-horizontal {
+  margin-top: -3px;
+  margin-bottom: -3px;
+  cursor: row-resize;
+}
+.lg-splitter::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  background: hsl(var(--muted-foreground) / 0.5);
+  border-radius: 9999px;
+  transform: translate(-50%, -50%);
+  transition: background 0.12s, width 0.12s, height 0.12s;
+  pointer-events: none;
+}
+.lg-splitter-vertical::before {
+  width: 3px;
+  height: 36px;
+}
+.lg-splitter-horizontal::before {
+  width: 36px;
+  height: 3px;
+}
+.lg-splitter:hover::before {
+  background: hsl(var(--accent, var(--foreground)));
+}
+.lg-splitter-vertical:hover::before {
+  width: 4px;
+  height: 56px;
+}
+.lg-splitter-horizontal:hover::before {
+  width: 56px;
+  height: 4px;
+}
+.lg-splitter:active::before {
+  background: hsl(var(--foreground));
+}
+
+/* ReactFlow controls — dark-theme overrides for the +/-/fit-view chip. */
+.react-flow__controls {
+  background: hsl(var(--card) / 0.85);
+  border: 1px solid hsl(var(--border) / 0.6);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.3);
+  overflow: hidden;
+}
+.react-flow__controls-button {
+  background: transparent !important;
+  border: none !important;
+  border-bottom: 1px solid hsl(var(--border) / 0.4) !important;
+  color: hsl(var(--muted-foreground)) !important;
+  transition: background 0.12s, color 0.12s;
+  width: 26px;
+  height: 26px;
+}
+.react-flow__controls-button:last-child {
+  border-bottom: none !important;
+}
+.react-flow__controls-button:hover {
+  background: hsl(var(--accent) / 0.2) !important;
+  color: hsl(var(--foreground)) !important;
+}
+.react-flow__controls-button svg {
+  fill: currentColor !important;
+  max-width: 14px;
+  max-height: 14px;
 }

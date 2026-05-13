@@ -147,21 +147,25 @@ export function SidePanelItem({
         title={collapsed ? "Expand" : "Collapse"}
       >
         {/* Drag handle — only renders when the parent SidePanel allows
-         * cross-rail moves. The handle (NOT the header) carries
-         * draggable=true so a normal header click still toggles
-         * collapse without starting a drag. Stops click propagation so
-         * grabbing the grip doesn't ALSO toggle collapse. */}
+         * moves. The handle (NOT the header) carries draggable=true so
+         * a normal header click still toggles collapse without
+         * starting a drag. Stops click propagation so grabbing the
+         * grip doesn't ALSO toggle collapse. Larger + always-visible
+         * tint so the operator can find it on a busy header. */}
         {draggable && (
           <span
             draggable
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
             onClick={(e) => e.stopPropagation()}
-            className="-ml-1 flex h-5 w-3 cursor-grab items-center justify-center text-muted-foreground/60 hover:text-foreground active:cursor-grabbing"
-            title="Drag to move to another rail"
+            className={cn(
+              "-ml-0.5 flex h-6 w-4 cursor-grab items-center justify-center rounded text-muted-foreground/70 hover:bg-accent/30 hover:text-foreground active:cursor-grabbing",
+              dragging && "bg-primary/30 text-foreground",
+            )}
+            title="Drag to move (across rails or to reorder)"
             aria-label="Drag handle"
           >
-            <GripVertical className="h-3 w-3" aria-hidden="true" />
+            <GripVertical className="h-4 w-4" aria-hidden="true" />
           </span>
         )}
         {collapsed ? (

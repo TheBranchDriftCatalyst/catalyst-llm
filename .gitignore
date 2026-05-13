@@ -43,3 +43,7 @@ apps/prompt-playground/catalyst-ui
 *.db
 .beads-credential-key
 k8s/local/litellm-secrets.env
+
+# Playwright MCP scratch
+.playwright-mcp/
+engine-*.png
