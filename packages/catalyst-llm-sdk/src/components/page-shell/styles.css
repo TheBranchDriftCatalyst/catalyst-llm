@@ -62,6 +62,13 @@
 .page-shell-left {
   grid-column: 1;
   grid-row: 1;
+  /* display: flex makes the SidePanel inside a deterministic flex child
+   * that fills the cell height. Without this, the panel relied on
+   * grid-item stretching + h-full resolving against an implicit
+   * height — which broke in some browser layout passes and left a
+   * blank strip at the bottom of the rail. */
+  display: flex;
+  flex-direction: column;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
@@ -70,6 +77,8 @@
 }
 .page-shell-center {
   grid-row: 1;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
@@ -89,6 +98,8 @@
 }
 .page-shell-right {
   grid-row: 1;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
@@ -104,6 +115,8 @@
 .page-shell-bottom {
   grid-column: 1 / -1;
   grid-row: 3;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
   overflow: hidden;
   border-top: 1px solid hsl(var(--border) / 0.6);

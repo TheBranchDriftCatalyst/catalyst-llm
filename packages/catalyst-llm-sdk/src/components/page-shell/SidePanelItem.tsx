@@ -5,14 +5,18 @@
  * item's content. Collapsed state persists per `storageKey` so the
  * operator's preferred fold-out doesn't reset on refresh.
  *
- * Items adapt their flex behaviour to the side they're in: in
- * left/right (vertical stack), items grow to fill the panel when only
- * one is expanded, but a `defaultGrow` prop lets the operator decide
- * which item gets the slack when multiple are expanded.
+ * The parent SidePanel owns the layout: it places this section in a
+ * flex parent and sizes the section via inline flex styles + Splitters
+ * between adjacent expanded items. SidePanelItem itself is intentionally
+ * size-agnostic — it just fills whatever box the parent gives it.
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "../utils.js";
+import {
+  itemCollapsedStorageKey as itemCollapsedStorageKeyInternal,
+  useSidePanelReport,
+} from "./sidepanel-internals.js";
 
 export interface SidePanelItemProps {
   /** Stable id used to scope localStorage state (collapsed flag). */
@@ -25,7 +29,12 @@ export interface SidePanelItemProps {
   defaultCollapsed?: boolean;
   /** When true and the item is expanded, the body claims `flex: 1` to
    * absorb leftover vertical space. Useful for "primary" items on a
-   * panel (e.g. the agents list) so siblings stay compact. */
+   * panel (e.g. the agents list) so siblings stay compact.
+   *
+   * NOTE: SidePanel now drives sizing via Splitters — the LAST expanded
+   * item in the panel is automatically the grower regardless of this
+   * flag. The flag is kept for storybook/standalone use where there's
+   * no parent SidePanel; in a SidePanel context it's ignored. */
   defaultGrow?: boolean;
   /** Right-aligned header content (badges, action buttons). */
   headerRight?: ReactNode;
@@ -42,16 +51,14 @@ export interface SidePanelItemProps {
   className?: string;
 }
 
-function storageKey(id: string): string {
-  return `catalyst-llm-sdk:sidepanel-item:${id}:collapsed`;
-}
+/** Re-export the storage-key helper for backwards-compatible imports. */
+export const itemCollapsedStorageKey = itemCollapsedStorageKeyInternal;
 
 export function SidePanelItem({
   id,
   title,
   icon,
   defaultCollapsed = false,
-  defaultGrow = false,
   headerRight,
   openSignal,
   children,
@@ -59,7 +66,7 @@ export function SidePanelItem({
 }: SidePanelItemProps) {
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     try {
-      const raw = localStorage.getItem(storageKey(id));
+      const raw = localStorage.getItem(itemCollapsedStorageKey(id));
       if (raw === "1") return true;
       if (raw === "0") return false;
     } catch {
@@ -69,11 +76,19 @@ export function SidePanelItem({
   });
   const persistedRef = useRef<boolean>(collapsed);
 
+  // Notify the enclosing SidePanel (if any) about the current collapsed
+  // state so it can recompute its flex/splitter layout. Safe outside a
+  // SidePanel — the hook returns a no-op then.
+  const reportCollapsed = useSidePanelReport();
+  useEffect(() => {
+    reportCollapsed(id, collapsed);
+  }, [id, collapsed, reportCollapsed]);
+
   useEffect(() => {
     if (persistedRef.current === collapsed) return;
     persistedRef.current = collapsed;
     try {
-      localStorage.setItem(storageKey(id), collapsed ? "1" : "0");
+      localStorage.setItem(itemCollapsedStorageKey(id), collapsed ? "1" : "0");
     } catch {
       /* ignore */
     }
@@ -93,8 +108,9 @@ export function SidePanelItem({
   return (
     <section
       className={cn(
-        "flex shrink-0 flex-col overflow-hidden rounded-md border border-border/60 bg-card/30",
-        !collapsed && defaultGrow && "min-h-0 flex-1",
+        // Section fills whatever box the parent gave it. No flex-1 here
+        // — SidePanel decides which item is the grower.
+        "flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-border/60 bg-card/30",
         className,
       )}
       data-collapsed={collapsed || undefined}
@@ -130,3 +146,4 @@ export function SidePanelItem({
     </section>
   );
 }
+
