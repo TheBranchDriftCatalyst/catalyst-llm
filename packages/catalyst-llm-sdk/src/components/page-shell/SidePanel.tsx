@@ -4,84 +4,23 @@
  * - Optional cross-rail + same-rail reorder via HTML5 drag/drop.
  */
 import {
-  Children,
-  Fragment,
-  isValidElement,
   useMemo,
   useRef,
   useState,
   type CSSProperties,
   type DragEvent,
-  type ReactElement,
   type ReactNode,
 } from "react";
 import { Splitter } from "./Splitter.js";
 import { cn } from "../utils.js";
-import { SidePanelItem, type SidePanelItemProps } from "./SidePanelItem.js";
 import {
   SIDEPANEL_ITEM_DND_TYPE,
   SidePanelCtx,
-  itemCollapsedStorageKey,
   type Side,
   type SidePanelCtxValue,
 } from "./sidepanel-internals.js";
-
-function readInitialCollapsed(id: string, defaultCollapsed: boolean): boolean {
-  try {
-    const raw = localStorage.getItem(itemCollapsedStorageKey(id));
-    if (raw === "1") return true;
-    if (raw === "0") return false;
-  } catch {
-    /* localStorage may be blocked */
-  }
-  return defaultCollapsed;
-}
-
-interface DiscoveredItem {
-  id: string;
-  defaultCollapsed: boolean;
-  element: ReactElement<SidePanelItemProps>;
-}
-
-function discoverItems(children: ReactNode): DiscoveredItem[] {
-  const out: DiscoveredItem[] = [];
-  const visit = (node: ReactNode): void => {
-    Children.forEach(node, (child) => {
-      if (!isValidElement(child)) return;
-      if (child.type === Fragment) {
-        visit((child.props as { children?: ReactNode }).children);
-        return;
-      }
-      // Direct <SidePanelItem> — read id/defaultCollapsed from its props.
-      if (child.type === SidePanelItem) {
-        const props = child.props as SidePanelItemProps;
-        out.push({
-          id: props.id,
-          defaultCollapsed: props.defaultCollapsed ?? false,
-          element: child as ReactElement<SidePanelItemProps>,
-        });
-        return;
-      }
-      // Wrapper component that renders a SidePanelItem internally —
-      // recognised by a static `itemId` (and optional `defaultCollapsed`)
-      // attached to its function. Lets pages compose rail items as
-      // reusable components without losing discoverability.
-      const t = child.type as
-        | { itemId?: string; defaultCollapsed?: boolean }
-        | string;
-      if (typeof t === "function" && typeof (t as { itemId?: string }).itemId === "string") {
-        const meta = t as { itemId: string; defaultCollapsed?: boolean };
-        out.push({
-          id: meta.itemId,
-          defaultCollapsed: meta.defaultCollapsed ?? false,
-          element: child as ReactElement<SidePanelItemProps>,
-        });
-      }
-    });
-  };
-  visit(children);
-  return out;
-}
+import { useCollapsedRegistry } from "./hooks/useCollapsedRegistry.js";
+import { useDiscoveredItems } from "./hooks/useDiscoveredItems.js";
 
 export interface SidePanelProps {
   children: ReactNode;
@@ -102,29 +41,13 @@ export function SidePanel({
   onItemMove,
   className,
 }: SidePanelProps) {
-  const items = useMemo(() => discoverItems(children), [children]);
-
-  const [collapsedById, setCollapsedById] = useState<Record<string, boolean>>(
-    () => {
-      const init: Record<string, boolean> = {};
-      for (const it of items) {
-        init[it.id] = readInitialCollapsed(it.id, it.defaultCollapsed);
-      }
-      return init;
-    },
-  );
+  const items = useDiscoveredItems(children);
+  const { collapsedById, reportCollapsed } = useCollapsedRegistry(items);
 
   const draggable = Boolean(onItemMove);
   const ctxValue = useMemo<SidePanelCtxValue>(
-    () => ({
-      side,
-      reportCollapsed: (id, collapsed) =>
-        setCollapsedById((prev) =>
-          prev[id] === collapsed ? prev : { ...prev, [id]: collapsed },
-        ),
-      draggable,
-    }),
-    [side, draggable],
+    () => ({ side, reportCollapsed, draggable }),
+    [side, draggable, reportCollapsed],
   );
 
   // ─ Drag/drop with insertion-target hit-testing ───────────────────

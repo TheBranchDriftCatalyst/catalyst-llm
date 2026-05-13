@@ -15,7 +15,7 @@
  * defaultRails are silently dropped from the persisted shape.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { Side } from "./sidepanel-internals.js";
+import type { Side } from "../sidepanel-internals.js";
 
 export type RailMap = Record<Side, string[]>;
 
