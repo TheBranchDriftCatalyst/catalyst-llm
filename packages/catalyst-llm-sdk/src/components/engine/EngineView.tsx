@@ -278,7 +278,7 @@ export function EngineView({ className }: EngineViewProps) {
 
   return (
     <div
-      className={cn("flex h-full w-full overflow-hidden bg-background text-foreground", className)}
+      className={cn("relative h-full w-full overflow-hidden bg-background text-foreground", className)}
     >
       <PageShell
         storageNamespace="engine"
