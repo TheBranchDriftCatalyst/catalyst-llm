@@ -11,10 +11,12 @@ export {
   TestRunSheet,
   type TestRunSheetProps,
 } from "./engine/TestRunSheet.js";
+export { PageShell, type PageShellProps } from "./page-shell/PageShell.js";
+export { SidePanel, type SidePanelProps } from "./page-shell/SidePanel.js";
 export {
-  LangGraphEnginePanel,
-  type LangGraphEnginePanelProps,
-} from "./engine-panel/LangGraphEnginePanel.js";
+  SidePanelItem,
+  type SidePanelItemProps,
+} from "./page-shell/SidePanelItem.js";
 export {
   agentEventToPanelEvent,
   resolveLLMNodeId,

@@ -1,25 +1,24 @@
 /**
- * Engine tab — viewport-bound, no-scroll layout.
+ * Engine tab — composed from the PageShell primitive.
  *
- *   ┌────────────┬──────────────────────────────────────────┐
- *   │            │  header (agent name + tools + reset)     │
- *   │  Agents    ├──────────────────────────────────────────┤
- *   │  picker    │                                          │
- *   │  (280px)   │   ReactFlow topology (fills h+w)         │
- *   │            │                                          │
- *   └────────────┴──────────────────────────────────────────┘
+ *   ┌─────────────────────────────────────────────────────────────┐
+ *   │ ┌── left ─────┐ ┌── center ────────────────┐ ┌── right ───┐ │
+ *   │ │ Agents item │ │ agent header + topology  │ │ Node detail │ │
+ *   │ │ Events item │ │ canvas                    │ │ item        │ │
+ *   │ └─────────────┘ └───────────────────────────┘ └─────────────┘ │
+ *   │ ┌── bottom ────────────────────────────────────────────────┐  │
+ *   │ │ Terminal item (live tokens + reasoning)                 │  │
+ *   │ └──────────────────────────────────────────────────────────┘  │
+ *   └─────────────────────────────────────────────────────────────┘
  *
- * A right-side `Sheet` overlay (Radix, from catalyst-ui) is wired in
- * but inert in T4' — T6 (runs-by-node) and T8 (PromptExplorerSheet)
- * fill its content and add the triggers that flip `sheetContext`.
+ * Replaces the previous two-stacked-left-sidebars layout (one for
+ * agents inside EngineView, one for events inside LangGraphEnginePanel)
+ * with a single unified left rail that stacks both as collapsible
+ * SidePanelItems. Right + bottom rails are first-class citizens of
+ * the same PageShell.
  *
- * Config edits flow through useEngineStore (persisted to localStorage
- * under `catalyst-llm-sdk:engine:v2`); chatStore.sendMessage reads
- * the store on every chat dispatch and stuffs the overrides into the
- * wire request's `agent_config` field.
- *
- * Stacked NodeConfigCards (the interim from T2) are gone — T5' moves
- * every field onto the node cards themselves.
+ * Sheet overlays (prompt explorer, runs list, test-run) stay on top
+ * as before — they're orthogonal to the page rails.
  */
 import { useMemo, useState } from "react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
@@ -30,21 +29,27 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@thebranchdriftcatalyst/catalyst-ui/ui/sheet";
-import { Activity, RefreshCw, RotateCcw, Wrench } from "lucide-react";
+import {
+  Activity,
+  Bot,
+  Layers,
+  RefreshCw,
+  RotateCcw,
+  Terminal as TerminalIcon,
+  Wrench,
+} from "lucide-react";
 import type { AgentDescriptor } from "../../agent/events.js";
 import { useAgents } from "../../react/hooks.js";
 import { useEngineStore } from "../../react/engineStore.js";
 import { cn } from "../utils.js";
 import { PromptExplorerSheet } from "../PromptExplorerSheet.js";
 import { NodeRunsList } from "./NodeRunsList.js";
+import { ReactFlowAgentTopology } from "./ReactFlowAgentTopology.js";
 import { TestRunSheet } from "./TestRunSheet.js";
 import { useEngineRunStore } from "../../react/engineRunStore.js";
-import { LangGraphEnginePanel } from "../engine-panel/LangGraphEnginePanel.js";
-
-// Stable empty array for the panelEvents selector — returning a fresh
-// [] each render would trigger React's getSnapshot warning + an
-// infinite re-render loop (same pattern as EMPTY_OVERRIDES elsewhere).
-const EMPTY_PANEL_EVENTS: never[] = Object.freeze([]) as never[];
+import { PageShell } from "../page-shell/PageShell.js";
+import { SidePanel } from "../page-shell/SidePanel.js";
+import { SidePanelItem } from "../page-shell/SidePanelItem.js";
 
 function countAgentOverrides(
   agentCfg: Record<string, Record<string, unknown>> | undefined,
@@ -57,13 +62,7 @@ function countAgentOverrides(
   return n;
 }
 
-/**
- * What the right-side Sheet should show. Lifted to EngineView so
- * triggers anywhere in the tree (a node's prompt icon, a node's
- * runs icon, etc.) can open the sheet by setting this state. T4'
- * defines the shape; T6/T8 fill in the union with real content
- * types.
- */
+/** SidePanel-item-ready shape for the Engine page's Sheet branches. */
 export type SheetContext =
   | { kind: "prompt"; agentId: string; nodeId: string }
   | { kind: "runs"; agentId: string; nodeId: string }
@@ -87,76 +86,134 @@ export function EngineView({ className }: EngineViewProps) {
     return found ?? agents[0];
   }, [agents, selectedAgentId]);
 
-  // Live "executing now" node id for the currently selected agent.
-  // Sourced from useEngineRunStore so the topology highlight keeps
-  // updating even when the TestRunSheet is closed (the run continues
-  // server-side; nothing's lost on sheet dismiss).
+  // Live "executing now" node id for the currently selected agent,
+  // sourced from useEngineRunStore so the topology highlight survives
+  // sheet unmounts. See engineRunStore for the lifecycle.
   const activeNodeId = useEngineRunStore((s) =>
     selected ? s.runs[selected.id]?.activeNodeId : undefined,
   );
 
+  // Live event log — drives the EventStream + Terminal panels.
+  const panelEvents = useEngineRunStore(
+    (s) => (selected ? s.runs[selected.id]?.panelEvents : undefined) ?? EMPTY_PANEL_EVENTS,
+  );
+
   return (
     <div
-      className={cn(
-        "flex h-full w-full overflow-hidden bg-background text-foreground",
-        className,
-      )}
+      className={cn("flex h-full w-full overflow-hidden bg-background text-foreground", className)}
     >
-      {/* LEFT: agent picker. h-full + flex column + inner overflow-y-auto
-       * keeps the whole pane scrollable only when there are more agents
-       * than fit; the top of the picker is always pinned. */}
-      <aside className="flex w-72 shrink-0 flex-col border-r border-border bg-card/30">
-        <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-            Agents
-          </h2>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => void refresh()}
-            title="Refresh /api/agents"
-            className="h-7 w-7 p-0"
-          >
-            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-          </Button>
-        </div>
-
-        {error && (
-          <div
-            role="alert"
-            className="m-3 rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive"
-          >
-            Failed to load agents: {error}
-          </div>
-        )}
-
-        <div className="flex-1 overflow-y-auto p-3 space-y-2">
-          {loading && agents.length === 0 ? (
-            <div className="text-sm text-muted-foreground">Loading…</div>
-          ) : agents.length === 0 ? (
-            <div className="text-sm text-muted-foreground">
-              No agents registered. Configure VITE_AGENT_URL and start
-              catalyst-langgraph.
-            </div>
-          ) : (
-            agents.map((a) => (
-              <AgentCard
-                key={a.id}
-                agent={a}
-                active={selected?.id === a.id}
-                onClick={() => setSelectedAgentId(a.id)}
-              />
-            ))
-          )}
-        </div>
-      </aside>
-
-      {/* CENTER: agent header + reactflow canvas. flex-1 + min-h-0
-       * lets the canvas claim every remaining pixel. Without min-h-0
-       * the flex child would push past the viewport and reintroduce
-       * page-level scrolling. */}
-      <main className="flex flex-1 flex-col overflow-hidden">
+      <PageShell
+        storageNamespace="engine"
+        left={
+          <SidePanel side="left">
+            <SidePanelItem
+              id="engine.agents"
+              title="Agents"
+              icon={<Bot className="h-3 w-3" />}
+              defaultGrow
+              headerRight={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void refresh();
+                  }}
+                  title="Refresh /api/agents"
+                  className="h-5 w-5 p-0"
+                >
+                  <RefreshCw className="h-3 w-3" aria-hidden="true" />
+                </Button>
+              }
+            >
+              <div className="p-2 space-y-1.5">
+                {error && (
+                  <div
+                    role="alert"
+                    className="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive"
+                  >
+                    Failed to load agents: {error}
+                  </div>
+                )}
+                {loading && agents.length === 0 ? (
+                  <div className="text-xs text-muted-foreground">Loading…</div>
+                ) : agents.length === 0 ? (
+                  <div className="text-xs text-muted-foreground">
+                    No agents registered. Configure VITE_AGENT_URL and start
+                    catalyst-langgraph.
+                  </div>
+                ) : (
+                  agents.map((a) => (
+                    <AgentCard
+                      key={a.id}
+                      agent={a}
+                      active={selected?.id === a.id}
+                      onClick={() => setSelectedAgentId(a.id)}
+                    />
+                  ))
+                )}
+              </div>
+            </SidePanelItem>
+            <SidePanelItem
+              id="engine.events"
+              title="Events"
+              icon={<Layers className="h-3 w-3" />}
+              defaultCollapsed
+              headerRight={
+                <span className="text-[10px] text-muted-foreground">
+                  {panelEvents.length}
+                </span>
+              }
+            >
+              <div className="p-2 text-[11px] text-muted-foreground">
+                <p>
+                  EventStream — chronological + filterable. Sub-component
+                  lands next.
+                </p>
+                <p className="mt-1 italic">
+                  {panelEvents.length} buffered events for{" "}
+                  <span className="font-mono">{selected?.id ?? "—"}</span>
+                </p>
+              </div>
+            </SidePanelItem>
+          </SidePanel>
+        }
+        right={
+          <SidePanel side="right">
+            <SidePanelItem
+              id="engine.node-detail"
+              title="Node detail"
+              icon={<Activity className="h-3 w-3" />}
+              defaultGrow
+            >
+              <div className="p-2 text-[11px] text-muted-foreground">
+                NodePanel — click a topology node to inspect its last
+                events + drill into payload. Lands next.
+              </div>
+            </SidePanelItem>
+          </SidePanel>
+        }
+        bottom={
+          <SidePanel side="bottom">
+            <SidePanelItem
+              id="engine.terminal"
+              title="Terminal"
+              icon={<TerminalIcon className="h-3 w-3" />}
+              defaultGrow
+              headerRight={
+                <span className="text-[10px] text-muted-foreground">
+                  {panelEvents.length} total
+                </span>
+              }
+            >
+              <div className="p-2 font-mono text-[11px] text-muted-foreground">
+                Terminal — live token stream + reasoning. Lands next.
+              </div>
+            </SidePanelItem>
+          </SidePanel>
+        }
+      >
         {selected ? (
           <AgentDetail
             agent={selected}
@@ -184,11 +241,11 @@ export function EngineView({ className }: EngineViewProps) {
             Select an agent on the left to inspect it.
           </div>
         )}
-      </main>
+      </PageShell>
 
-      {/* RIGHT: contextual Sheet. Inert in T4' — placeholder content
-       * until T6 (runs) and T8 (prompt explorer) wire in real bodies +
-       * triggers. */}
+      {/* RIGHT-edge Sheet overlay for the prompt-explorer / runs /
+       * test-run flows. Independent of the PageShell rails — these
+       * are transient workbenches that overlay the page on demand. */}
       <Sheet
         open={sheetContext !== null}
         onOpenChange={(open) => {
@@ -197,11 +254,6 @@ export function EngineView({ className }: EngineViewProps) {
       >
         <SheetContent
           side="right"
-          // Wide workbench panel for the prompt explorer (operator
-          // wants a real edit surface, not a narrow sidebar). The
-          // runs panel reuses the same width — its list view is
-          // compact, but rooming it lets long run-ids and rich
-          // event payload previews land without truncation.
           className="flex w-[50vw] min-w-[640px] max-w-[960px] flex-col"
         >
           <SheetHeader>
@@ -246,6 +298,11 @@ export function EngineView({ className }: EngineViewProps) {
   );
 }
 
+// Stable empty array for the panelEvents selector — returning a fresh
+// [] each render would trigger React's getSnapshot warning + an
+// infinite re-render loop.
+const EMPTY_PANEL_EVENTS: never[] = Object.freeze([]) as never[];
+
 function AgentCard({
   agent,
   active,
@@ -262,29 +319,29 @@ function AgentCard({
       type="button"
       onClick={onClick}
       className={cn(
-        "w-full text-left rounded-md border bg-card/50 p-3 transition-colors",
+        "w-full text-left rounded-md border bg-card/50 p-2 transition-colors",
         active
           ? "border-primary/60 bg-primary/5 shadow-sm"
           : "border-border/60 hover:bg-card/80",
       )}
     >
-      <div className="flex items-center justify-between">
-        <div className="font-medium text-sm">{agent.id}</div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="truncate font-medium text-sm">{agent.id}</div>
         {overrideCount > 0 && (
-          <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-primary">
-            {overrideCount} edited
+          <span className="shrink-0 rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-primary">
+            {overrideCount}
           </span>
         )}
       </div>
-      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+      <p className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">
         {agent.description}
       </p>
       {agent.tools.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1">
+        <div className="mt-1.5 flex flex-wrap gap-1">
           {agent.tools.map((t) => (
             <span
               key={t}
-              className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/30 px-1.5 py-0.5 text-[10px] text-muted-foreground"
+              className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/30 px-1 py-0.5 text-[10px] text-muted-foreground"
             >
               <Wrench className="h-2.5 w-2.5" aria-hidden="true" />
               {t}
@@ -312,76 +369,50 @@ function AgentDetail({
   const agentCfg = useEngineStore((s) => s.configs[agent.id]);
   const resetAgent = useEngineStore((s) => s.resetAgent);
   const editedCount = countAgentOverrides(agentCfg);
-
-  // Live event log for the LangGraphEnginePanel. Empty when no test
-  // run has fired on this agent yet; populated by the rAF-batched
-  // panelEvents buffer inside engineRunStore.
-  const panelEvents = useEngineRunStore(
-    (s) => s.runs[agent.id]?.panelEvents ?? EMPTY_PANEL_EVENTS,
+  const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>(
+    undefined,
   );
 
   return (
-    <>
-      {/* Tight header strip — shrink-0 so the panel below gets every
-       * leftover pixel. */}
-      <header className="flex shrink-0 items-start justify-between gap-3 border-b border-border/60 px-6 py-3">
+    <div className="flex h-full min-h-0 flex-col">
+      <header className="flex shrink-0 items-start justify-between gap-3 border-b border-border/60 px-4 py-2">
         <div className="min-w-0 flex-1">
-          <h1 className="flex items-center gap-2 text-xl font-semibold">
-            <Activity className="h-5 w-5 text-primary" aria-hidden="true" />
+          <h1 className="flex items-center gap-2 text-lg font-semibold">
+            <Activity className="h-4 w-4 text-primary" aria-hidden="true" />
             <span className="truncate">{agent.id}</span>
           </h1>
-          <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">
+          <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
             {agent.description}
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {agent.tools.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {agent.tools.map((t) => (
-                <span
-                  key={t}
-                  className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/30 px-2 py-0.5 text-xs"
-                >
-                  <Wrench className="h-3 w-3" aria-hidden="true" />
-                  {t}
-                </span>
-              ))}
-            </div>
-          )}
-          {editedCount > 0 && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => resetAgent(agent.id)}
-              title="Clear all overrides for this Agent"
-            >
-              <RotateCcw className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
-              Reset all
-            </Button>
-          )}
-        </div>
+        {editedCount > 0 && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => resetAgent(agent.id)}
+            title="Clear all overrides for this Agent"
+            className="shrink-0"
+          >
+            <RotateCcw className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+            Reset all
+          </Button>
+        )}
       </header>
-
-      {/* The full forensic workbench — ported from langgraph-dev, but
-       * the center pane is our existing ReactFlowAgentTopology (the
-       * config-componentized cards + AgentDescriptor-integrated
-       * grouping). EventStream/RunTimeline/NodePanel/Terminal are
-       * placeholder stubs in Phase 2; sub-component ports land next.
-       *
-       * min-h-0 is the load-bearing CSS — without it the flex child
-       * refuses to shrink below its intrinsic height and the page
-       * re-introduces scrolling. */}
       <div className="min-h-0 flex-1">
-        <LangGraphEnginePanel
-          agent={agent}
-          events={panelEvents}
+        <ReactFlowAgentTopology
+          topology={agent.topology}
+          agentId={agent.id}
+          agentTools={agent.tools}
+          selectedNodeId={selectedNodeId}
           activeNodeId={activeNodeId}
-          onStartTestRun={onStartTestRun}
+          onNodeSelect={setSelectedNodeId}
           onOpenPromptSheet={onOpenPromptSheet}
           onOpenRunsSheet={onOpenRunsSheet}
+          onStartTestRun={onStartTestRun}
+          className="rounded-none border-0"
         />
       </div>
-    </>
+    </div>
   );
 }
