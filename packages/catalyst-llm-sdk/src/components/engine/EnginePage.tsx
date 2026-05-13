@@ -35,7 +35,7 @@ import { PromptExplorerSheet } from "../PromptExplorerSheet.js";
 import { PageShell } from "../page-shell/PageShell.js";
 import { SidePanel } from "../page-shell/SidePanel.js";
 import { useItemRails, type RailMap } from "../page-shell/useItemRails.js";
-import { ReactFlowAgentTopology } from "./ReactFlowAgentTopology.js";
+import { ReactFlowAgentTopology } from "./topology/ReactFlowAgentTopology.js";
 import { AgentsListPanel } from "./panels/AgentsListPanel.js";
 import { EventsPanel } from "./panels/EventsPanel.js";
 import { TestRunPanel } from "./panels/TestRunPanel.js";

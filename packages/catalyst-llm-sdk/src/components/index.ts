@@ -2,7 +2,7 @@ export { EnginePage, type EnginePageProps } from "./engine/EnginePage.js";
 export {
   ReactFlowAgentTopology,
   type ReactFlowAgentTopologyProps,
-} from "./engine/ReactFlowAgentTopology.js";
+} from "./engine/topology/ReactFlowAgentTopology.js";
 export {
   NodeRunsList,
   type NodeRunsListProps,
