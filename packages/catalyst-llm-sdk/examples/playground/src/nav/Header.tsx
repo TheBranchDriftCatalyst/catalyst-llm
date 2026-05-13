@@ -1,24 +1,27 @@
 /**
- * Top-bar nav. Shows the page-tab row, a global "stop all streams"
- * button when anything is in flight, the model micro-switcher for
- * the currently-active chat, LiteLLM external links, and the
- * connection status indicator.
+ * Top-bar nav. Iterates the page registry to build the tab row, then
+ * surfaces global cross-cutting affordances: "stop all streams"
+ * (chat + compare), the model micro-switcher for the active chat,
+ * LiteLLM external links, and the connection status indicator.
+ *
+ * Adding a new tab is a one-line registry edit — see pages/index.ts.
  */
-import { Columns3, Cpu, Database, ExternalLink, MessageSquare, Wand2 } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import {
   ConnectionStatus,
   ModelMicroSwitcher,
   useChatStore,
   useCompareStore,
 } from "@catalyst/llm-sdk";
+import { PAGES } from "../pages/index.js";
+import type { PageId, PageMeta } from "../pages/types.js";
 import { PageTab } from "./PageTab.js";
-import type { Page } from "./useRoute.js";
 
 const MAC_NODE_IP = "192.168.1.33";
 
 export interface HeaderProps {
-  page: Page;
-  setPage: (p: Page) => void;
+  page: PageId;
+  setPage: (p: PageId) => void;
   /** LiteLLM proxy base URL — drives the external "LiteLLM UI" + "API
    * Docs" links. Passed through from App so the env-reading stays in
    * one place. */
@@ -28,10 +31,6 @@ export interface HeaderProps {
 export function Header({ page, setPage, baseUrl }: HeaderProps) {
   const { chats, activeChat, setModel } = useChatStore();
   const current = chats.find((c) => c.id === activeChat);
-  // Cross-tab streaming indicators — even when the user is on the Chat tab,
-  // they can see at a glance that a Compare run is still in flight (and vice
-  // versa). The runs themselves live in their respective Zustand stores and
-  // continue updating across navigations.
   const chatStreaming = chats.some((c) => c.isStreaming);
   const compareStreaming = useCompareStore((s) =>
     Object.values(s.runs).some((r) => r.isStreaming),
@@ -45,42 +44,14 @@ export function Header({ page, setPage, baseUrl }: HeaderProps) {
           Catalyst LLM SDK · Playground
         </h1>
         <nav className="flex items-center gap-1 rounded-md border border-border bg-muted/20 p-0.5">
-          <PageTab
-            active={page === "chat"}
-            onClick={() => setPage("chat")}
-            icon={MessageSquare}
-            label="Chat"
-            streaming={chatStreaming}
-          />
-          <PageTab
-            active={page === "compare"}
-            onClick={() => setPage("compare")}
-            icon={Columns3}
-            label="Compare"
-            streaming={compareStreaming}
-          />
-          <PageTab
-            active={page === "prompts"}
-            onClick={() => setPage("prompts")}
-            icon={Wand2}
-            label="Prompts"
-          />
-          <PageTab
-            active={page === "engine"}
-            onClick={() => setPage("engine")}
-            icon={Cpu}
-            label="Engine"
-          />
-          {/* /stats is dev-only — prod builds drop the tab entirely
-              along with the entire DuckDB-WASM payload. */}
-          {import.meta.env.DEV && (
-            <PageTab
-              active={page === "stats"}
-              onClick={() => setPage("stats")}
-              icon={Database}
-              label="Stats"
+          {PAGES.map((meta) => (
+            <RegistryPageTab
+              key={meta.id}
+              meta={meta}
+              active={page === meta.id}
+              onClick={() => setPage(meta.id)}
             />
-          )}
+          ))}
         </nav>
         {(chatStreaming || compareStreaming) && (
           <button
@@ -138,3 +109,32 @@ export function Header({ page, setPage, baseUrl }: HeaderProps) {
     </header>
   );
 }
+
+/** Thin adapter that calls the page's optional streaming-indicator
+ * hook (if it has one) and threads the result into <PageTab>. Lives
+ * here rather than inside PageTab so PageTab stays a dumb leaf — any
+ * page can opt into a pulse dot by declaring useStreamingIndicator. */
+function RegistryPageTab({
+  meta,
+  active,
+  onClick,
+}: {
+  meta: PageMeta;
+  active: boolean;
+  onClick: () => void;
+}) {
+  // Hooks must be called unconditionally — if the page omits the
+  // selector, we fall back to a no-op hook that always returns false.
+  const streaming = (meta.useStreamingIndicator ?? noStreaming)();
+  return (
+    <PageTab
+      active={active}
+      onClick={onClick}
+      icon={meta.icon}
+      label={meta.label}
+      streaming={streaming}
+    />
+  );
+}
+
+const noStreaming = (): boolean => false;

@@ -1,42 +1,50 @@
 /**
- * Tiny pushState router — five routes, zero deps. Listens for
+ * Tiny pushState router. Reads paths from the page registry so
+ * adding a new tab is a one-file change in pages/. Listens for
  * back/forward via popstate and reflects tab switches into the URL
  * bar so links and refreshes are deep-linkable.
  *
- * `/stats` is dev-only — in a prod build (where `import.meta.env.DEV`
- * is false) the page registry filters it out and a deep link to
- * /stats falls back to /chat.
+ * The first page in PAGES is the default — `/` redirects to its
+ * path on mount. If the operator deep-links to a path whose page is
+ * filtered out (e.g. /stats in a prod build that doesn't ship
+ * StatsView), useRoute resolves to the default tab.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { PAGES } from "../pages/index.js";
+import type { PageId } from "../pages/types.js";
 
-export type Page = "chat" | "compare" | "prompts" | "engine" | "stats";
+export type { PageId } from "../pages/types.js";
 
-const PATH_TO_PAGE: Record<string, Page> = {
-  "/": "chat",
-  "/chat": "chat",
-  "/compare": "compare",
-  "/prompts": "prompts",
-  "/engine": "engine",
-  "/stats": "stats",
-};
-
-function pageFromPath(path: string): Page {
-  const p = PATH_TO_PAGE[path] ?? "chat";
-  // Defensive: if someone deep-links to /stats in a prod build that
-  // doesn't ship StatsView, fall back to chat instead of a blank page.
-  if (p === "stats" && !import.meta.env.DEV) return "chat";
-  return p;
+function buildPathMap(): {
+  pathToId: Map<string, PageId>;
+  idToPath: Map<PageId, string>;
+  defaultId: PageId;
+  defaultPath: string;
+} {
+  const pathToId = new Map<string, PageId>();
+  const idToPath = new Map<PageId, string>();
+  for (const p of PAGES) {
+    pathToId.set(p.path, p.id);
+    idToPath.set(p.id, p.path);
+  }
+  const first = PAGES[0];
+  if (!first) {
+    throw new Error("pages registry is empty — at least one page is required");
+  }
+  return {
+    pathToId,
+    idToPath,
+    defaultId: first.id,
+    defaultPath: first.path,
+  };
 }
 
-function pathFromPage(page: Page): string {
-  if (page === "compare") return "/compare";
-  if (page === "prompts") return "/prompts";
-  if (page === "engine") return "/engine";
-  if (page === "stats") return "/stats";
-  return "/chat";
-}
+export function useRoute(): [PageId, (p: PageId) => void] {
+  const { pathToId, idToPath, defaultId, defaultPath } = useMemo(
+    buildPathMap,
+    [],
+  );
 
-export function useRoute(): [Page, (p: Page) => void] {
   const [path, setPath] = useState(() => window.location.pathname);
 
   useEffect(() => {
@@ -45,22 +53,23 @@ export function useRoute(): [Page, (p: Page) => void] {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
-  // Normalize "/" → "/chat" once on mount so future refreshes deep-link cleanly.
+  // Normalize "/" → default page once on mount so future refreshes
+  // deep-link cleanly.
   useEffect(() => {
     if (path === "/") {
-      const url = "/chat";
-      window.history.replaceState({}, "", url);
-      setPath(url);
+      window.history.replaceState({}, "", defaultPath);
+      setPath(defaultPath);
     }
-  }, [path]);
+  }, [path, defaultPath]);
 
-  const navigate = (p: Page) => {
-    const url = pathFromPage(p);
+  const navigate = (p: PageId) => {
+    const url = idToPath.get(p) ?? defaultPath;
     if (window.location.pathname !== url) {
       window.history.pushState({}, "", url);
       setPath(url);
     }
   };
 
-  return [pageFromPath(path), navigate];
+  const id = pathToId.get(path) ?? defaultId;
+  return [id, navigate];
 }

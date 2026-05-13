@@ -1,31 +1,9 @@
-import { Suspense, lazy } from "react";
-import {
-  CatalystAgentClient,
-  CatalystLLMClient,
-  ChatPanel,
-  ChatTabs,
-  CompareView,
-  EnginePage,
-  LLMProvider,
-  PromptEditor,
-  useChatStore,
-} from "@catalyst/llm-sdk";
-// Dev-only — kept on a side import so a prod build that omits this single
-// line ships zero unload code. Vite tree-shakes since `unloadModel` is
-// only used inside the `import.meta.env.DEV` branch.
-import { unloadModel } from "@catalyst/llm-sdk/dev";
+import { CatalystAgentClient, CatalystLLMClient, LLMProvider } from "@catalyst/llm-sdk";
 import { Header } from "./nav/Header.js";
 import { useRoute } from "./nav/useRoute.js";
+import { pageById } from "./pages/index.js";
 import { MetricsRecorder } from "./metrics/MetricsRecorder.js";
 
-// StatsView is gated behind a lazy import + the import.meta.env.DEV
-// flag so the DuckDB-WASM payload (~10 MB) only lands when a dev
-// actually clicks the /stats tab — never in a production bundle.
-const StatsView = import.meta.env.DEV
-  ? lazy(() =>
-      import("@catalyst/llm-sdk/dev").then((m) => ({ default: m.StatsView })),
-    )
-  : null;
 const baseUrl =
   (import.meta.env.VITE_LITELLM_URL as string | undefined) ??
   "http://litellm.talos00";
@@ -41,30 +19,10 @@ const agentBaseUrl =
   "http://localhost:7078";
 const agentClient = new CatalystAgentClient({ baseUrl: agentBaseUrl });
 
-// Tool dispatch lives entirely server-side now (catalyst-langgraph +
-// tool-host). The available tool catalog is fetched at runtime via
-// `useAvailableTools()` (→ /api/tools); nothing to construct here.
-function ChatWorkspace({ goCompare }: { goCompare: () => void }) {
-  const { chats, activeChat } = useChatStore();
-  const current = chats.find((c) => c.id === activeChat);
-  return (
-    <>
-      <ChatTabs onExportToCompare={goCompare} />
-      <main id="main-content" className="flex-1 overflow-hidden">
-        {current ? (
-          <ChatPanel key={current.id} chat={current} />
-        ) : (
-          <div className="flex items-center justify-center h-full text-muted-foreground">
-            No chat selected
-          </div>
-        )}
-      </main>
-    </>
-  );
-}
-
 function App() {
   const [page, setPage] = useRoute();
+  const meta = pageById(page);
+  const PageComponent = meta?.component;
   return (
     <LLMProvider client={client} agentClient={agentClient}>
       <div className="h-screen flex flex-col bg-background text-foreground">
@@ -76,43 +34,7 @@ function App() {
           Skip to main content
         </a>
         <Header page={page} setPage={setPage} baseUrl={baseUrl} />
-        {page === "chat" && (
-          <ChatWorkspace goCompare={() => setPage("compare")} />
-        )}
-        {page === "compare" && (
-          <main id="main-content" className="flex-1 overflow-hidden">
-            <CompareView
-              onTurnComplete={
-                import.meta.env.DEV
-                  ? (modelId) => unloadModel(client, modelId)
-                  : undefined
-              }
-            />
-          </main>
-        )}
-        {page === "prompts" && (
-          <main id="main-content" className="flex-1 overflow-hidden">
-            <PromptEditor />
-          </main>
-        )}
-        {page === "engine" && (
-          <main id="main-content" className="flex-1 overflow-hidden">
-            <EnginePage />
-          </main>
-        )}
-        {page === "stats" && import.meta.env.DEV && StatsView && (
-          <main id="main-content" className="flex-1 overflow-hidden">
-            <Suspense
-              fallback={
-                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                  Loading DuckDB-WASM…
-                </div>
-              }
-            >
-              <StatsView />
-            </Suspense>
-          </main>
-        )}
+        {PageComponent && <PageComponent onNavigate={setPage} />}
         {/* Background recorder — silently writes one row per completed
             chat / compare turn into the in-browser DuckDB. Dev-only. */}
         {import.meta.env.DEV && <MetricsRecorder />}
@@ -120,4 +42,5 @@ function App() {
     </LLMProvider>
   );
 }
+
 export default App;
