@@ -8,16 +8,16 @@ import {
   Timer,
   Zap,
 } from "lucide-react";
-import type { Chat } from "../react/chat/index.js";
+import type { Chat } from "../../react/chat/index.js";
 import {
   useChatCost,
   formatUsd,
   formatTokens,
   formatMs,
   formatRate,
-} from "../react/useChatCost.js";
-import { useModels } from "../react/hooks.js";
-import { cn } from "./utils.js";
+} from "../../react/useChatCost.js";
+import { useModels } from "../../react/hooks.js";
+import { cn } from "../utils.js";
 
 export interface CostPinsProps {
   chat: Chat | undefined;

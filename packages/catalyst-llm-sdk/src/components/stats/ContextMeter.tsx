@@ -1,9 +1,9 @@
 import { Cpu } from "lucide-react";
-import type { Chat } from "../react/chat/index.js";
-import type { ModelWithRouting } from "../client/index.js";
-import { effectiveMetadata } from "../client/modelHints.js";
-import { formatTokens } from "../react/useChatCost.js";
-import { cn } from "./utils.js";
+import type { Chat } from "../../react/chat/index.js";
+import type { ModelWithRouting } from "../../client/index.js";
+import { effectiveMetadata } from "../../client/modelHints.js";
+import { formatTokens } from "../../react/useChatCost.js";
+import { cn } from "../utils.js";
 
 export interface ContextMeterProps {
   chat: Chat | undefined;

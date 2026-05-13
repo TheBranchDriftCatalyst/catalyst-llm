@@ -57,8 +57,8 @@ export {
   type ModelMultiSelectProps,
 } from "./model-selector/ModelMultiSelect.js";
 export { ModelInfoCard, type ModelInfoCardProps } from "./model-selector/ModelInfoCard.js";
-export { CostPins, type CostPinsProps } from "./CostPins.js";
-export { ContextMeter, type ContextMeterProps } from "./ContextMeter.js";
+export { CostPins, type CostPinsProps } from "./stats/CostPins.js";
+export { ContextMeter, type ContextMeterProps } from "./stats/ContextMeter.js";
 export {
   PromptPresets,
   SystemPromptPresets,
