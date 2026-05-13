@@ -199,6 +199,12 @@ export function SidePanel({
 
   const cssVarBase = `--sp-${side}`;
   const sizeFallback = 200;
+  // CSS custom property names must be valid CSS identifiers — dots
+  // aren't allowed (var(--sp-left-engine.events-px) is a syntax error
+  // and never resolves). Item ids commonly contain dots
+  // (e.g. "engine.test-run"), so sanitize them here for the CSS var
+  // name only; storage keys keep the original id.
+  const sanitize = (id: string) => id.replace(/[^a-zA-Z0-9_-]/g, "_");
 
   const segments: ReactNode[] = [];
   for (let i = 0; i < items.length; i++) {
@@ -209,7 +215,8 @@ export function SidePanel({
     let flexValue: CSSProperties["flex"];
     if (!expanded) flexValue = "0 0 auto";
     else if (isGrower) flexValue = "1 1 0";
-    else flexValue = `0 0 var(${cssVarBase}-${it.id}-px, ${sizeFallback}px)`;
+    else
+      flexValue = `0 0 var(${cssVarBase}-${sanitize(it.id)}-px, ${sizeFallback}px)`;
 
     segments.push(
       <div
@@ -228,7 +235,7 @@ export function SidePanel({
           <Splitter
             key={`split:${it.id}->${nextExpandedId}`}
             orientation="horizontal"
-            cssVar={`${cssVarBase}-${nextExpandedId}-px`}
+            cssVar={`${cssVarBase}-${sanitize(nextExpandedId)}-px`}
             storageKey={`catalyst-llm-sdk:sidepanel:${side}:${nextExpandedId}:size`}
             defaultPx={sizeFallback}
             minPx={80}
