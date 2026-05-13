@@ -16,7 +16,7 @@
  *
  * Differs from the first pass (three stacked sections in a narrow Sheet):
  *
- *   - Sheet itself is wider (~50vw) — EngineView's <SheetContent>
+ *   - Sheet itself is wider (~50vw) — EnginePage's <SheetContent>
  *     supplies the width.
  *   - Picker is a single search input + a horizontal chip row, not a
  *     vertical grouped list. Bound prompt is highlighted with a ring.

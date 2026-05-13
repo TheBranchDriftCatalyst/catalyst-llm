@@ -12,8 +12,7 @@
  *   └─────────────────────────────────────────────────────────────┘
  *
  * Replaces the previous two-stacked-left-sidebars layout (one for
- * agents inside EngineView, one for events inside LangGraphEnginePanel)
- * with a single unified left rail that stacks both as collapsible
+ * agents, one for events) with a single unified left rail that stacks both as collapsible
  * SidePanelItems. Right + bottom rails are first-class citizens of
  * the same PageShell.
  *
@@ -87,11 +86,11 @@ export type SheetContext =
   | { kind: "runs"; agentId: string; nodeId: string }
   | null;
 
-export interface EngineViewProps {
+export interface EnginePageProps {
   className?: string;
 }
 
-export function EngineView({ className }: EngineViewProps) {
+export function EnginePage({ className }: EnginePageProps) {
   const { agents, loading, error, refresh } = useAgents();
   const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>(
     undefined,

@@ -6,7 +6,7 @@
  *   - model         → ModelMicroSwitcher (the existing compact chip)
  *   - textarea (system_prompt) → prompt-icon button; clicking it
  *                                fires `onOpenPromptSheet` which the
- *                                topology routes up to the EngineView
+ *                                topology routes up to the EnginePage
  *                                sheet controller. Body of the sheet
  *                                lands in T8 (llm-ta1).
  *   - number / integer with min/max → thin slider + tabular-nums value

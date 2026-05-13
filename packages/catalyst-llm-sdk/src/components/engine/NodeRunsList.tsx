@@ -5,8 +5,8 @@
  * Wire path:
  *   1. Operator clicks the History icon on an AgentNodeCard / ToolsNodeCard.
  *   2. ReactFlowAgentTopology calls `onOpenRunsSheet(nodeId)`.
- *   3. EngineView flips `sheetContext` to { kind: "runs", agentId, nodeId }.
- *   4. EngineView renders `<NodeRunsList agentId nodeId />` inside the Sheet.
+ *   3. EnginePage flips `sheetContext` to { kind: "runs", agentId, nodeId }.
+ *   4. EnginePage renders `<NodeRunsList agentId nodeId />` inside the Sheet.
  *   5. This component fetches GET /api/runs/by-node and renders rows.
  *
  * `agentId` is informational — the backend's runs_by_node() filters on
@@ -111,7 +111,7 @@ export function NodeRunsList({
   }, [agentClient, agentId, nodeId, limit]);
 
   // Refetch whenever the operator hops to a different node — the Sheet
-  // body remounts but the EngineView keeps the Sheet open across
+  // body remounts but the EnginePage keeps the Sheet open across
   // changes so we lean on the dep array rather than mount semantics.
   useEffect(() => {
     void refresh();

@@ -14,7 +14,7 @@ import {
   ChatTabs,
   CompareView,
   ConnectionStatus,
-  EngineView,
+  EnginePage,
   LLMProvider,
   ModelMicroSwitcher,
   PromptEditor,
@@ -321,7 +321,7 @@ function App() {
         )}
         {page === "engine" && (
           <main id="main-content" className="flex-1 overflow-hidden">
-            <EngineView />
+            <EnginePage />
           </main>
         )}
         {page === "stats" && import.meta.env.DEV && StatsView && (

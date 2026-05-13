@@ -15,7 +15,7 @@
  *   - AgentNodeCard  — large card with ModelMicroSwitcher + a row of
  *                      param chips, sourced live from useEngineStore
  *
- * Selection is owned by the parent (EngineView): `selectedNodeId`
+ * Selection is owned by the parent (EnginePage): `selectedNodeId`
  * comes in as a prop; we render the visual highlight inside each
  * node card. Click bubbles up via `onNodeSelect(nodeId)`; clicking
  * the empty pane fires `onNodeSelect(undefined)` to deselect.
@@ -72,13 +72,13 @@ export interface ReactFlowAgentTopologyProps {
   /** Fires on node click (with node id) AND on pane click (with `undefined`). */
   onNodeSelect?: (nodeId: string | undefined) => void;
   /** Called when a node's prompt-icon button is clicked. Lets the
-   * EngineView open the contextual Sheet scoped to that node. */
+   * EnginePage open the contextual Sheet scoped to that node. */
   onOpenPromptSheet?: (nodeId: string) => void;
   /** Called when a node's runs-icon button is clicked. Symmetric with
-   * `onOpenPromptSheet` — the EngineView flips its sheetContext to
+   * `onOpenPromptSheet` — the EnginePage flips its sheetContext to
    * `{ kind: "runs", agentId, nodeId }` and renders NodeRunsList. */
   onOpenRunsSheet?: (nodeId: string) => void;
-  /** Called when the __start__ chip is clicked. EngineView flips
+  /** Called when the __start__ chip is clicked. EnginePage flips
    * sheetContext to `{ kind: "test-run", agentId }` and renders the
    * TestRunSheet so the operator can dispatch a one-shot chat request
    * through this Agent's flow without leaving the Engine tab. */

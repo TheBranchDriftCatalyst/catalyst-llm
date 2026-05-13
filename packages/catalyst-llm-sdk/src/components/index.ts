@@ -1,4 +1,4 @@
-export { EngineView, type EngineViewProps } from "./engine/EngineView.js";
+export { EnginePage, type EnginePageProps } from "./engine/EnginePage.js";
 export {
   ReactFlowAgentTopology,
   type ReactFlowAgentTopologyProps,
