@@ -47,7 +47,7 @@ import {
   draftToPayload,
   presetToDraft,
   type PromptDraft,
-} from "./PromptEditor.js";
+} from "./prompt-edit-form.js";
 import { cn } from "./utils.js";
 
 export interface PromptExplorerSheetProps {
