@@ -32,17 +32,17 @@ export {
   AgentConfigForm,
   type AgentConfigFormProps,
 } from "./engine/AgentConfigForm.js";
-export { ChatMessage, type ChatMessageProps } from "./ChatMessage.js";
-export { ToolCallCard, type ToolCallCardProps } from "./ToolCallCard.js";
+export { ChatMessage, type ChatMessageProps } from "./chat/ChatMessage.js";
+export { ToolCallCard, type ToolCallCardProps } from "./chat/ToolCallCard.js";
 export { RenderedContent, type RenderedContentProps } from "./RenderedContent.js";
 export {
   ReasoningBlock,
   splitReasoning,
   type ReasoningBlockProps,
   type ContentSegment,
-} from "./ReasoningBlock.js";
-export { ChatPanel, type ChatPanelProps } from "./ChatPanel.js";
-export { ChatTabs, type ChatTabsProps } from "./ChatTabs.js";
+} from "./chat/ReasoningBlock.js";
+export { ChatPanel, type ChatPanelProps } from "./chat/ChatPanel.js";
+export { ChatTabs, type ChatTabsProps } from "./chat/ChatTabs.js";
 export { ModelSelector, type ModelSelectorProps } from "./ModelSelector.js";
 export {
   ModelSelectorRich,
@@ -99,5 +99,5 @@ export { lineDiff, wordDiff, type Change as DiffChange } from "./diff.js";
 export { ParameterControls, type ParameterControlsProps } from "./ParameterControls.js";
 export { ResponseViewer, type ResponseViewerProps } from "./ResponseViewer.js";
 export { SystemPromptEditor, type SystemPromptEditorProps } from "./SystemPromptEditor.js";
-export { ConnectionStatus, type ConnectionStatusProps } from "./ConnectionStatus.js";
+export { ConnectionStatus, type ConnectionStatusProps } from "./chat/ConnectionStatus.js";
 export { fuzzyScore, fuzzyFilter } from "./fuzzy.js";

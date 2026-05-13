@@ -13,24 +13,24 @@ import {
   Check,
   ChevronDown,
 } from "lucide-react";
-import { useChatStore, type Chat } from "../react/chat/index.js";
+import { useChatStore, type Chat } from "../../react/chat/index.js";
 import { ChatMessage } from "./ChatMessage.js";
-import { ModelSelector } from "./ModelSelector.js";
-import { ModelSelectorRich } from "./ModelSelectorRich.js";
-import { ModelInfoCard } from "./ModelInfoCard.js";
-import { CostPins } from "./CostPins.js";
-import { ContextMeter } from "./ContextMeter.js";
-import { ParameterControls } from "./ParameterControls.js";
-import { SystemPromptEditor } from "./SystemPromptEditor.js";
-import { ResponseViewer } from "./ResponseViewer.js";
+import { ModelSelector } from "../ModelSelector.js";
+import { ModelSelectorRich } from "../ModelSelectorRich.js";
+import { ModelInfoCard } from "../ModelInfoCard.js";
+import { CostPins } from "../CostPins.js";
+import { ContextMeter } from "../ContextMeter.js";
+import { ParameterControls } from "../ParameterControls.js";
+import { SystemPromptEditor } from "../SystemPromptEditor.js";
+import { ResponseViewer } from "../ResponseViewer.js";
 import {
   PromptPresets,
   SystemPromptPresets,
-} from "./PromptPresets.js";
-import { getPresetsForModel } from "./prompt-seeds.js";
-import { useModels, useAvailableTools, type AvailableTool } from "../react/hooks.js";
-import { useFocusTrap } from "./useFocusTrap.js";
-import { cn } from "./utils.js";
+} from "../PromptPresets.js";
+import { getPresetsForModel } from "../prompt-seeds.js";
+import { useModels, useAvailableTools, type AvailableTool } from "../../react/hooks.js";
+import { useFocusTrap } from "../useFocusTrap.js";
+import { cn } from "../utils.js";
 
 export interface ChatPanelProps {
   chat: Chat;

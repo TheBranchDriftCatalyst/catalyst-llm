@@ -1,9 +1,9 @@
 import { User, Bot, AlertTriangle, OctagonX } from "lucide-react";
-import type { ChatTurn } from "../react/chat/index.js";
-import { RenderedContent } from "./RenderedContent.js";
+import type { ChatTurn } from "../../react/chat/index.js";
+import { RenderedContent } from "../RenderedContent.js";
 import { ReasoningBlock, splitReasoning } from "./ReasoningBlock.js";
 import { ToolCallCard } from "./ToolCallCard.js";
-import { cn } from "./utils.js";
+import { cn } from "../utils.js";
 
 export interface ChatMessageProps {
   message: ChatTurn;

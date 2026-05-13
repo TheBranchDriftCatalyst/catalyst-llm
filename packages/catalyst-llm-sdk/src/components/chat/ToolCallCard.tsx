@@ -29,8 +29,8 @@ import {
 import type {
   ChatToolCallRecord,
   ToolSubEvent,
-} from "../react/chat/index.js";
-import { cn } from "./utils.js";
+} from "../../react/chat/index.js";
+import { cn } from "../utils.js";
 
 export interface ToolCallCardProps {
   record: ChatToolCallRecord;
