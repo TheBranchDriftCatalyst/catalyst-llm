@@ -37,6 +37,7 @@ from . import (
     AgentDescriptor,
     AgentTopology,
     AgentTopologyEdge,
+    AgentTopologyGroup,
     AgentTopologyNode,
     register_agent,
 )
@@ -384,20 +385,20 @@ register_agent(
                     type="tools",
                     config_model=ExtractionChunkConfig,
                 ),
+                # ner_ensemble is the per-encoder TEMPLATE node — no
+                # config_model of its own. The shared encoder config
+                # (encoder_count, model, per_encoder_timeout_s) lives
+                # on the `ner_ensemble_group` group below; the UI
+                # stamps N encoder cards inside the container.
                 AgentTopologyNode(
                     id="ner_ensemble",
                     type="agent",
-                    config_model=ExtractionNerEnsembleConfig,
-                    group_type="ensemble",
-                    group_id="ner_loop",
-                    instance_count_field="encoder_count",
+                    group_id="ner_ensemble_group",
                 ),
                 AgentTopologyNode(
                     id="consensus",
                     type="tools",
                     config_model=ExtractionConsensusConfig,
-                    group_type="ensemble",
-                    group_id="ner_loop",
                 ),
                 AgentTopologyNode(
                     id="cluster_entities",
@@ -409,26 +410,24 @@ register_agent(
                     type="tools",
                     config_model=ExtractionPackConfig,
                 ),
+                # SPO stage's validate/repair loop is purely structural
+                # (the conditional edges from validate_spo carry the
+                # semantic). Dropping the actor_critic_loop wrapper
+                # keeps the rendering simpler.
                 AgentTopologyNode(
                     id="stage_spo",
                     type="agent",
                     config_model=ExtractionSpoConfig,
-                    group_type="actor_critic_loop",
-                    group_id="spo_loop",
                 ),
                 AgentTopologyNode(
                     id="validate_spo",
                     type="tools",
                     config_model=ExtractionValidateSpoConfig,
-                    group_type="actor_critic_loop",
-                    group_id="spo_loop",
                 ),
                 AgentTopologyNode(
                     id="repair_spo",
                     type="agent",
                     config_model=ExtractionRepairSpoConfig,
-                    group_type="actor_critic_loop",
-                    group_id="spo_loop",
                 ),
                 AgentTopologyNode(id="__end__", type="end"),
             ],
@@ -449,6 +448,15 @@ register_agent(
                 ),
                 # Repair loops back through validate.
                 AgentTopologyEdge(source="repair_spo", target="validate_spo"),
+            ],
+            groups=[
+                AgentTopologyGroup(
+                    id="ner_ensemble_group",
+                    type="ensemble",
+                    config_model=ExtractionNerEnsembleConfig,
+                    instance_count_field="encoder_count",
+                    label="NER encoder ensemble",
+                ),
             ],
         ),
     )

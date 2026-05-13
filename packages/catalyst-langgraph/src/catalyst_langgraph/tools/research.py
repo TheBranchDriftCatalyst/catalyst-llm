@@ -63,6 +63,7 @@ from ..agents import (
     AgentDescriptor,
     AgentTopology,
     AgentTopologyEdge,
+    AgentTopologyGroup,
     AgentTopologyNode,
     register_agent,
 )
@@ -833,38 +834,35 @@ register_agent(
         topology=AgentTopology(
             nodes=[
                 AgentTopologyNode(id="__start__", type="start"),
-                # members + critic + fusion together form an
-                # actor-critic loop: members generate, critic reviews,
-                # fusion consolidates. They render inside a single
-                # dashed compound container on the Engine tab.
-                #
-                # members ALSO carries `instance_count_field="council_size"`
-                # so the UI can stamp N small "member" thumbnails inside
-                # the members card when the operator dials council_size
-                # up — visualising the ensemble fan-out without
-                # introducing N independently-configurable nodes.
+                # `members` is the per-member TEMPLATE node — it has no
+                # config_model of its own. The shared per-member config
+                # (model, temperature, system_prompt, recursion_limit,
+                # max_tokens, council_size) lives on the
+                # `research_ensemble` group below. The UI renders the
+                # group as a container with the config form on its
+                # header and N member cards inside (count = the live
+                # value of council_size).
                 AgentTopologyNode(
                     id="members",
                     type="agent",
-                    config_model=ResearchMembersConfig,
-                    group_id="research_loop",
-                    group_type="actor_critic_loop",
-                    instance_count_field="council_size",
+                    group_id="research_ensemble",
                 ),
                 AgentTopologyNode(id="web_search", type="tools"),
+                # critic + fusion are free nodes (no group) — the
+                # original actor-critic-loop wrapper was dropped per
+                # user direction. The conditional feedback edge from
+                # critic → members (dashed accent) still conveys the
+                # review-loop semantics visually without a structural
+                # container.
                 AgentTopologyNode(
                     id="critic",
                     type="agent",
                     config_model=ResearchCriticConfig,
-                    group_id="research_loop",
-                    group_type="actor_critic_loop",
                 ),
                 AgentTopologyNode(
                     id="fusion",
                     type="agent",
                     config_model=ResearchFusionConfig,
-                    group_id="research_loop",
-                    group_type="actor_critic_loop",
                 ),
                 AgentTopologyNode(id="__end__", type="end"),
             ],
@@ -882,6 +880,15 @@ register_agent(
                 # Approved → fusion → end.
                 AgentTopologyEdge(source="critic", target="fusion", conditional=True),
                 AgentTopologyEdge(source="fusion", target="__end__"),
+            ],
+            groups=[
+                AgentTopologyGroup(
+                    id="research_ensemble",
+                    type="ensemble",
+                    config_model=ResearchMembersConfig,
+                    instance_count_field="council_size",
+                    label="Council ensemble",
+                ),
             ],
         ),
         tools=["web_search"],

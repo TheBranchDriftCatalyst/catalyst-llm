@@ -89,16 +89,51 @@ class AgentTopologyEdge:
 
 
 @dataclass
+class AgentTopologyGroup:
+    """A first-class group container with its own config.
+
+    Groups own the SHARED config for an ensemble of homogeneous member
+    nodes (e.g. a council of N parallel researchers). The runtime
+    spawns N identical members from the group's config_model; the UI
+    renders the group as a container with:
+      - A header band displaying the group's config form
+      - N auto-generated member node cards inside (count driven by
+        the field named in `instance_count_field`)
+
+    Per-member overrides are NOT supported in v1 — every member reads
+    the SAME group config (matches the catalyst-langgraph runtime which
+    fans out N identical asyncio.gather calls). The 'pin per-member'
+    flow can be added later without a wire-shape break.
+
+    For backwards-compatible group_type rendering (the old dashed
+    actor_critic_loop wrapper), groups with no config_model just
+    paint the visual container; the constituent nodes keep their own
+    configs as before.
+    """
+
+    id: str
+    type: GroupType
+    config_model: type[BaseModel] | None = None
+    instance_count_field: str | None = None
+    label: str | None = None
+
+
+@dataclass
 class AgentTopology:
     """Static topology snapshot for the Engine tab to render.
 
     Populated at registration time rather than extracted dynamically
     from a built graph — graph shape doesn't depend on the LLM, and
     static descriptors avoid an HTTP roundtrip per /api/agents call.
+
+    `groups[]` declares ensemble / loop containers that own their own
+    config. Nodes inside a group are member-templates rendered N
+    times in the UI but back a single shared config bucket.
     """
 
     nodes: list[AgentTopologyNode]
     edges: list[AgentTopologyEdge]
+    groups: list[AgentTopologyGroup] = field(default_factory=list)
 
 
 @dataclass
@@ -179,16 +214,61 @@ def validate_overrides(
     return validated.model_dump(exclude_unset=True)
 
 
+def _get_group(
+    agent_id: str, group_id: str
+) -> AgentTopologyGroup | None:
+    desc = AGENTS.get(agent_id)
+    if not desc:
+        return None
+    return next(
+        (g for g in desc.topology.groups if g.id == group_id), None
+    )
+
+
+def group_default_config(agent_id: str, group_id: str) -> dict[str, Any]:
+    """Materialise the default value of every field on a group's config.
+
+    Returns `{}` for groups with no `config_model` (visual-only
+    containers such as the legacy actor-critic-loop wrapper).
+    """
+    group = _get_group(agent_id, group_id)
+    if not group or group.config_model is None:
+        return {}
+    return group.config_model().model_dump()
+
+
+def validate_group_overrides(
+    agent_id: str, group_id: str, partial: dict[str, Any]
+) -> dict[str, Any]:
+    """Validate an incoming partial config against a group's Pydantic model.
+
+    Mirrors `validate_overrides` but keyed by group_id. Used when the
+    wire shape carries `agent_config[<agent>][<group>][...]` for
+    ensemble groups — the group, not its member-template node, owns
+    the shared config.
+    """
+    if not partial:
+        return {}
+    group = _get_group(agent_id, group_id)
+    if not group or group.config_model is None:
+        return {}
+    validated = group.config_model.model_validate(partial)
+    return validated.model_dump(exclude_unset=True)
+
+
 __all__ = [
     "AgentDescriptor",
     "AgentTopology",
     "AgentTopologyNode",
     "AgentTopologyEdge",
+    "AgentTopologyGroup",
     "AGENTS",
     "register_agent",
     "get_agent",
     "node_default_config",
     "validate_overrides",
+    "group_default_config",
+    "validate_group_overrides",
 ]
 
 

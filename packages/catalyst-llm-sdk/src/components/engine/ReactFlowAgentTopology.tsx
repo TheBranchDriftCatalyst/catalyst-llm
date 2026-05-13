@@ -46,6 +46,7 @@ import { Activity, CircleDot, Flag, History, Users, Wrench } from "lucide-react"
 import type {
   AgentConfigSchema,
   AgentTopology,
+  AgentTopologyGroup,
   AgentTopologyNode,
   GroupType,
 } from "../../agent/events.js";
@@ -120,6 +121,47 @@ function computeAgentNodeSize(
 function getNodeSize(node: AgentTopologyNode): { w: number; h: number } {
   if (node.type === "agent") return computeAgentNodeSize(node.config_schema);
   return FIXED_NODE_SIZES[node.type];
+}
+
+// Width + height for an ensemble-group card. Slightly wider than a
+// regular agent card (it has a 'members' section beneath the form)
+// and uses the schema's `maximum` on the instance-count field as the
+// upper bound so the card doesn't resize on every instance-count
+// change. Internal scroll handles smaller counts.
+const ENSEMBLE_GROUP_WIDTH = 340;
+const ENSEMBLE_HEADER_PX = 24;
+const ENSEMBLE_ROW_PX = 28;
+const ENSEMBLE_MEMBER_ROW_PX = 22;
+const ENSEMBLE_MEMBERS_OVERHEAD_PX = 28;
+const ENSEMBLE_VERTICAL_PADDING_PX = 24;
+const ENSEMBLE_MAX_HEIGHT = 480;
+
+function computeEnsembleGroupSize(
+  group: AgentTopologyGroup,
+): { w: number; h: number } {
+  const props = group.config_schema?.properties ?? {};
+  // Skip ui.widget="hidden" fields — NodeInlineConfig filters them so
+  // they don't take vertical space.
+  const visibleFieldCount = Object.values(props).filter(
+    (f) => f.ui?.widget !== "hidden",
+  ).length;
+  // Upper-bound instance count: from the schema's `maximum` on the
+  // count field, falling back to 8. Cards size for the worst case so
+  // re-renders don't cause dagre to relayout the canvas.
+  const countField = group.instance_count_field;
+  const maxCount =
+    countField && props[countField]?.maximum != null
+      ? Math.min(props[countField].maximum ?? 8, 12)
+      : 8;
+  const h = Math.min(
+    ENSEMBLE_HEADER_PX +
+      visibleFieldCount * ENSEMBLE_ROW_PX +
+      ENSEMBLE_MEMBERS_OVERHEAD_PX +
+      maxCount * ENSEMBLE_MEMBER_ROW_PX +
+      ENSEMBLE_VERTICAL_PADDING_PX,
+    ENSEMBLE_MAX_HEIGHT,
+  );
+  return { w: ENSEMBLE_GROUP_WIDTH, h };
 }
 
 const RANK_SEP = 60;
@@ -221,8 +263,35 @@ interface CommonNodeData extends Record<string, unknown> {
   onStartTestRun?: () => void;
 }
 
+/** Map a member-template-node id → the ensemble group it belongs to.
+ * Only includes groups with a non-null config_schema (the new
+ * configured-ensemble shape); legacy group_type wrappers go through a
+ * different rendering path. */
+function buildEnsembleByMemberId(
+  topology: AgentTopology,
+): Map<string, AgentTopologyGroup> {
+  const out = new Map<string, AgentTopologyGroup>();
+  for (const g of topology.groups ?? []) {
+    if (!g.config_schema) continue;
+    for (const n of topology.nodes) {
+      if (n.group_id === g.id) out.set(n.id, g);
+    }
+  }
+  return out;
+}
+
+function getRenderedNodeSize(
+  node: AgentTopologyNode,
+  ensembleByMember: Map<string, AgentTopologyGroup>,
+): { w: number; h: number } {
+  const eg = ensembleByMember.get(node.id);
+  if (eg) return computeEnsembleGroupSize(eg);
+  return getNodeSize(node);
+}
+
 function layoutWithDagre(
   topology: AgentTopology,
+  ensembleByMember: Map<string, AgentTopologyGroup>,
 ): Record<string, { x: number; y: number }> {
   const g = new dagre.graphlib.Graph();
   g.setGraph({
@@ -235,7 +304,7 @@ function layoutWithDagre(
   g.setDefaultEdgeLabel(() => ({}));
 
   for (const n of topology.nodes) {
-    const size = getNodeSize(n);
+    const size = getRenderedNodeSize(n, ensembleByMember);
     g.setNode(n.id, { width: size.w, height: size.h });
   }
   for (const e of topology.edges) {
@@ -246,7 +315,7 @@ function layoutWithDagre(
   const out: Record<string, { x: number; y: number }> = {};
   for (const n of topology.nodes) {
     const d = g.node(n.id) as { x: number; y: number };
-    const size = getNodeSize(n);
+    const size = getRenderedNodeSize(n, ensembleByMember);
     // dagre reports centre points; reactflow uses top-left corners.
     out[n.id] = { x: d.x - size.w / 2, y: d.y - size.h / 2 };
   }
@@ -580,12 +649,157 @@ function GroupContainerNode({ data }: NodeProps) {
   );
 }
 
+// ─── EnsembleGroupCard ──────────────────────────────────────────────
+// First-class container for ensemble groups (topology.groups[] entries
+// with config_schema set). Owns the SHARED per-member config form +
+// renders N member-preview cards inside (count driven by the live
+// value of the group's instance_count_field).
+//
+// Per-member overrides are NOT supported in v1 — every member reads
+// the same group config. Matches the catalyst-langgraph runtime
+// which fans out N identical asyncio.gather calls.
+
+interface EnsembleGroupData extends Record<string, unknown> {
+  agentId: string;
+  /** The group's id — also the engineStore key for this group's
+   * config bucket + the reactflow node id (so edges that targeted
+   * the legacy member node still attach here). */
+  groupId: string;
+  schema: AgentConfigSchema | null;
+  defaults: Record<string, unknown> | null;
+  instanceCountField: string | null;
+  label: string | null;
+  selectedNodeId: string | undefined;
+  activeNodeId: string | undefined;
+  size: { w: number; h: number };
+  onOpenPromptSheet?: (entityId: string) => void;
+}
+
+function EnsembleGroupCard({ data }: NodeProps) {
+  const d = data as EnsembleGroupData;
+  const selected = d.selectedNodeId === d.groupId;
+  const active = d.activeNodeId === d.groupId;
+
+  // Live overrides keyed by groupId (engineStore's second-level key
+  // accepts either a node_id OR a group_id — same shape).
+  const groupOverrides = useEngineStore(
+    (s) => s.configs[d.agentId]?.[d.groupId],
+  );
+  const overrides = groupOverrides ?? EMPTY_OBJ;
+  const setField = useEngineStore((s) => s.setField);
+
+  if (!d.schema) {
+    return (
+      <div
+        className="rounded-lg border-2 border-dashed border-amber-400/60 bg-amber-500/[0.06] p-3"
+        style={{ width: d.size.w, height: d.size.h }}
+      >
+        <Handle type="target" position={Position.Top} />
+        ensemble: no schema
+        <Handle type="source" position={Position.Bottom} />
+      </div>
+    );
+  }
+
+  // Merge overrides over defaults.
+  const schemaProps = d.schema.properties ?? {};
+  const defaults = d.defaults ?? {};
+  const overrideKeys = new Set(Object.keys(overrides));
+  const values: Record<string, unknown> = {};
+  for (const fieldName of Object.keys(schemaProps)) {
+    values[fieldName] = overrideKeys.has(fieldName)
+      ? overrides[fieldName]
+      : defaults[fieldName];
+  }
+
+  // Live instance count from the group's config — bounded.
+  const instanceCount = d.instanceCountField
+    ? Math.max(
+        1,
+        Math.min(
+          12,
+          Number(values[d.instanceCountField] ?? defaults[d.instanceCountField] ?? 1),
+        ),
+      )
+    : 1;
+
+  const memberModel =
+    typeof values.model === "string" ? (values.model as string) : "";
+  const memberModelShort =
+    memberModel.length > 24 ? `${memberModel.slice(0, 23)}…` : memberModel;
+
+  return (
+    <div
+      className={cn(
+        "flex flex-col gap-2 rounded-lg border-2 p-2 shadow-sm transition-all",
+        "border-amber-400/60 bg-amber-500/[0.06]",
+        selected &&
+          "ring-2 ring-primary/60 ring-offset-1 ring-offset-background",
+        active && "ring-2 ring-primary animate-pulse",
+      )}
+      style={{ width: d.size.w, height: d.size.h }}
+      title={`${d.label ?? d.groupId}: ${instanceCount} member${instanceCount === 1 ? "" : "s"}`}
+    >
+      <Handle type="target" position={Position.Top} />
+
+      {/* Group header — label + member count + group id chip */}
+      <div className="flex shrink-0 items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-200">
+          <Users className="h-3 w-3" aria-hidden="true" />
+          {d.label ?? d.groupId}
+        </div>
+        <span className="rounded-sm border border-amber-500/40 bg-amber-500/15 px-1.5 py-0.5 font-mono text-[10px] text-amber-100">
+          {instanceCount}×
+        </span>
+      </div>
+
+      {/* Group's shared config form. Edits write to engineStore keyed
+       * by the group id; the wire payload places these under
+       * agent_config[agent][groupId]. */}
+      <NodeInlineConfig
+        schema={d.schema}
+        values={values}
+        overrideKeys={overrideKeys}
+        onChange={(field, value) =>
+          setField(d.agentId, d.groupId, field, value)
+        }
+        onOpenPromptSheet={() => d.onOpenPromptSheet?.(d.groupId)}
+        className="shrink-0"
+      />
+
+      {/* N member-preview cards. Read-only by design — they all share
+       * the group's config above. Compact card per member showing
+       * member index + the shared model id. */}
+      <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto rounded-md border border-amber-500/30 bg-amber-500/[0.04] p-1.5">
+        {Array.from({ length: instanceCount }, (_, i) => (
+          <div
+            key={i}
+            className="flex items-center gap-1.5 rounded border border-border/40 bg-card/60 px-1.5 py-1 text-[10px]"
+            title={`Member ${i + 1} of ${instanceCount}`}
+          >
+            <Activity className="h-2.5 w-2.5 shrink-0 text-amber-200/80" aria-hidden="true" />
+            <span className="shrink-0 font-mono text-amber-200/70">
+              #{i + 1}
+            </span>
+            <span className="truncate font-mono text-muted-foreground">
+              {memberModelShort || "(no model)"}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <Handle type="source" position={Position.Bottom} />
+    </div>
+  );
+}
+
 const NODE_TYPES = {
   start: StartEndChip,
   end: StartEndChip,
   tools: ToolsNodeCard,
   agent: AgentNodeCard,
   groupContainer: GroupContainerNode,
+  ensembleGroup: EnsembleGroupCard,
 };
 
 // Edge colors. The catalyst theme stores --accent / --foreground as
@@ -721,9 +935,27 @@ export function ReactFlowAgentTopology({
   onStartTestRun,
   className,
 }: ReactFlowAgentTopologyProps) {
-  const positions = useMemo(() => layoutWithDagre(topology), [topology]);
+  // Map of member-template-node id → ensemble group descriptor for any
+  // group that owns its own config_schema. Members of such groups are
+  // rendered as ONE EnsembleGroupCard at the template node's id; we
+  // skip emitting them as plain agent cards in the nodes builder
+  // below.
+  const ensembleByMember = useMemo(
+    () => buildEnsembleByMemberId(topology),
+    [topology],
+  );
+
+  const positions = useMemo(
+    () => layoutWithDagre(topology, ensembleByMember),
+    [topology, ensembleByMember],
+  );
 
   // ─── Group containers ─────────────────────────────────────────────
+  // Legacy compound-container layout for groups that DON'T own their
+  // own config_schema (e.g. plain `actor_critic_loop` wrappers). Groups
+  // with a config_schema render as a single first-class EnsembleGroupCard
+  // instead and skip this path entirely.
+  //
   // Cluster topology.nodes by `group_id` and synthesise one container
   // node per cluster. The container's bounding box is the axis-aligned
   // hull of its children (plus padding + a label band on top); each
@@ -739,6 +971,9 @@ export function ReactFlowAgentTopology({
   const groupedLayout = useMemo(() => {
     const groupBuckets = new Map<string, { type: GroupType; members: AgentTopologyNode[] }>();
     for (const n of topology.nodes) {
+      // Skip members of first-class ensemble groups — they render as a
+      // single EnsembleGroupCard, not as wrapped child nodes.
+      if (ensembleByMember.has(n.id)) continue;
       if (n.group_id && n.group_type) {
         let bucket = groupBuckets.get(n.group_id);
         if (!bucket) {
@@ -794,7 +1029,7 @@ export function ReactFlowAgentTopology({
       }
     }
     return { groups, childAdjustments };
-  }, [topology.nodes, positions]);
+  }, [topology.nodes, positions, ensembleByMember]);
 
   const nodes: Node[] = useMemo(() => {
     const out: Node[] = [];
@@ -816,6 +1051,33 @@ export function ReactFlowAgentTopology({
       });
     }
     for (const n of topology.nodes) {
+      // First-class ensemble groups: emit ONE EnsembleGroupCard at the
+      // template node's id. The group's config form lives in the card;
+      // edges that targeted the template node still attach because we
+      // keep the same id.
+      const ensembleGroup = ensembleByMember.get(n.id);
+      if (ensembleGroup) {
+        out.push({
+          id: n.id,
+          type: "ensembleGroup",
+          position: positions[n.id] ?? { x: 0, y: 0 },
+          data: {
+            agentId,
+            groupId: ensembleGroup.id,
+            schema: ensembleGroup.config_schema,
+            defaults: ensembleGroup.config_defaults,
+            instanceCountField: ensembleGroup.instance_count_field ?? null,
+            label: ensembleGroup.label ?? null,
+            selectedNodeId,
+            activeNodeId,
+            size: computeEnsembleGroupSize(ensembleGroup),
+            onOpenPromptSheet,
+          } satisfies EnsembleGroupData,
+          draggable: false,
+          selectable: true,
+        });
+        continue;
+      }
       const adj = groupedLayout.childAdjustments.get(n.id);
       const base: Node = {
         id: n.id,
@@ -866,6 +1128,7 @@ export function ReactFlowAgentTopology({
     onOpenRunsSheet,
     onStartTestRun,
     groupedLayout,
+    ensembleByMember,
   ]);
 
   const edges: Edge[] = useMemo(

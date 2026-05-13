@@ -57,7 +57,7 @@ from ..events import (
     ToolCallEnd,
     ToolCallStart,
 )
-from ..agents import AGENTS, validate_overrides
+from ..agents import AGENTS, validate_group_overrides, validate_overrides
 from ..graph import build_graph
 from ..persistence import get_event_store
 from ..tools import ALL_TOOLS
@@ -278,11 +278,21 @@ async def _produce_agent_events(
         main_overrides = validate_overrides(
             "main", "agent", _resolve_prompt_ref(main_raw.get("agent") or {})
         )
+        # Research's per-member shared config moved off the `members`
+        # node onto the `research_ensemble` GROUP. The wire shape is
+        # therefore agent_config["research"]["research_ensemble"][...]
+        # for the members template, not [...]["members"][...] anymore.
+        # The downstream ContextVar key stays "members" since the
+        # runtime (research.py:_load_configs) reads it that way — we
+        # adapt at the validation boundary so the runtime contract
+        # doesn't have to know about groups.
         validated_research = {
-            "members": validate_overrides(
+            "members": validate_group_overrides(
                 "research",
-                "members",
-                _resolve_prompt_ref(research_raw.get("members") or {}),
+                "research_ensemble",
+                _resolve_prompt_ref(
+                    research_raw.get("research_ensemble") or {}
+                ),
             ),
             "critic": validate_overrides(
                 "research",
@@ -832,9 +842,53 @@ class AgentTopologyEdgeOut(BaseModel):
     )
 
 
+class AgentTopologyGroupOut(BaseModel):
+    """One container group in an Agent's topology — wire format.
+
+    Groups own SHARED config for an ensemble of homogeneous member
+    nodes (e.g. a research council). `config_schema` + `config_defaults`
+    are present when the group owns config (ensembles); they're null
+    when the group is a pure visual container (legacy actor-critic-loop
+    wrapper). `instance_count_field` names the field on the group's
+    config_model whose live value drives how many member cards the UI
+    renders inside the container.
+    """
+
+    id: str = Field(description="Stable group id used as the entity key in `agent_config` overrides.")
+    type: Literal["ensemble", "actor_critic_loop"] = Field(
+        description="Visual style. `ensemble` renders as a translucent container with N member cards inside; `actor_critic_loop` is a dashed wrapper (legacy).",
+    )
+    config_schema: Optional[dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "JSON Schema for the group's tunables (output of "
+            "`config_model.model_json_schema()`). When present, the UI "
+            "renders a form on the group's header band; the same form "
+            "drives the SHARED config that every member card reads. "
+            "`null` for groups with no group-owned config."
+        ),
+    )
+    config_defaults: Optional[dict[str, Any]] = Field(
+        default=None,
+        description="Materialised default values for the group's config. `null` when no `config_schema`.",
+    )
+    instance_count_field: Optional[str] = Field(
+        default=None,
+        description="Name of the field on this group's config whose live value drives how many visual member cards the UI renders inside the container.",
+    )
+    label: Optional[str] = Field(
+        default=None,
+        description="Human-friendly title shown on the group's header band (e.g. 'Council ensemble').",
+    )
+
+
 class AgentTopologyOut(BaseModel):
     nodes: list[AgentTopologyNodeOut]
     edges: list[AgentTopologyEdgeOut]
+    groups: list[AgentTopologyGroupOut] = Field(
+        default_factory=list,
+        description="Container groups with their own shared config (ensembles, loops).",
+    )
 
 
 class AgentDescriptorOut(BaseModel):
@@ -926,6 +980,25 @@ async def list_agents() -> ListAgentsResponse:
                             conditional=e.conditional,
                         )
                         for e in desc.topology.edges
+                    ],
+                    groups=[
+                        AgentTopologyGroupOut(
+                            id=g.id,
+                            type=g.type,
+                            config_schema=(
+                                g.config_model.model_json_schema()
+                                if g.config_model is not None
+                                else None
+                            ),
+                            config_defaults=(
+                                g.config_model().model_dump()
+                                if g.config_model is not None
+                                else None
+                            ),
+                            instance_count_field=g.instance_count_field,
+                            label=g.label,
+                        )
+                        for g in desc.topology.groups
                     ],
                 ),
             )

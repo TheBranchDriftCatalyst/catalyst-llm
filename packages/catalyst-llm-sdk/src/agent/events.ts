@@ -200,10 +200,36 @@ export interface AgentTopologyEdge {
   conditional: boolean;
 }
 
+/**
+ * A first-class container group with optional shared config. Groups
+ * own the SHARED per-member config for an ensemble (e.g. a research
+ * council's model/temperature/system_prompt + count knob); the UI
+ * renders the group as a container with a header band carrying the
+ * config form, plus N member cards inside (count = the live value
+ * of `instance_count_field`).
+ *
+ * `config_schema` / `config_defaults` are null when the group is a
+ * pure visual wrapper without group-owned config (legacy
+ * actor-critic-loop containers).
+ */
+export interface AgentTopologyGroup {
+  id: string;
+  type: GroupType;
+  config_schema: AgentConfigSchema | null;
+  config_defaults: Record<string, unknown> | null;
+  instance_count_field?: string | null;
+  label?: string | null;
+}
+
 /** Static topology snapshot for the Engine tab to render. */
 export interface AgentTopology {
   nodes: AgentTopologyNode[];
   edges: AgentTopologyEdge[];
+  /** First-class container groups. Nodes in a group share its `id`
+   * via their own `group_id`. Empty when the agent has no groups
+   * (today: `main` has none; `research` declares `research_ensemble`;
+   * `extraction` declares `ner_ensemble_group`). */
+  groups?: AgentTopologyGroup[];
 }
 
 /**
