@@ -5,7 +5,7 @@
  */
 import type { ElementType } from "react";
 import { Braces, CircleAlert } from "lucide-react";
-import { cn } from "./utils.js";
+import { cn } from "../utils.js";
 import type { JsonCheck } from "./compare-stats.js";
 
 export function JsonBadge({ check }: { check: JsonCheck }) {

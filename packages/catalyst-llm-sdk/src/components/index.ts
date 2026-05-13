@@ -93,9 +93,9 @@ export {
   PromptExplorerSheet,
   type PromptExplorerSheetProps,
 } from "./PromptExplorerSheet.js";
-export { CompareView, type CompareViewProps } from "./CompareView.js";
-export { CompareGraphs, type CompareGraphsProps } from "./CompareGraphs.js";
-export { lineDiff, wordDiff, type Change as DiffChange } from "./diff.js";
+export { CompareView, type CompareViewProps } from "./compare/CompareView.js";
+export { CompareGraphs, type CompareGraphsProps } from "./compare/CompareGraphs.js";
+export { lineDiff, wordDiff, type Change as DiffChange } from "./compare/diff.js";
 export { ParameterControls, type ParameterControlsProps } from "./ParameterControls.js";
 export { ResponseViewer, type ResponseViewerProps } from "./ResponseViewer.js";
 export { SystemPromptEditor, type SystemPromptEditorProps } from "./SystemPromptEditor.js";

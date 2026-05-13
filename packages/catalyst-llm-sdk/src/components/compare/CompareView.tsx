@@ -23,26 +23,26 @@ import {
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Textarea } from "@thebranchdriftcatalyst/catalyst-ui/ui/textarea";
 import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
-import type { ChatParams, ModelWithRouting } from "../client/index.js";
-import { useModels } from "../react/hooks.js";
+import type { ChatParams, ModelWithRouting } from "../../client/index.js";
+import { useModels } from "../../react/hooks.js";
 import {
   useCompare,
   useCompareStore,
   type CompareMode,
   type CompareRun,
-} from "../react/useCompare.js";
+} from "../../react/useCompare.js";
 import {
   formatUsd,
   formatTokens,
   formatMs,
   formatRate,
-} from "../react/useChatCost.js";
-import { ModelMultiSelect } from "./ModelMultiSelect.js";
-import { ModelInfoCard } from "./ModelInfoCard.js";
-import { PromptPresets, SystemPromptPresets } from "./PromptPresets.js";
+} from "../../react/useChatCost.js";
+import { ModelMultiSelect } from "../ModelMultiSelect.js";
+import { ModelInfoCard } from "../ModelInfoCard.js";
+import { PromptPresets, SystemPromptPresets } from "../PromptPresets.js";
 import { CompareGraphs } from "./CompareGraphs.js";
-import { RenderedContent } from "./RenderedContent.js";
-import { cn } from "./utils.js";
+import { RenderedContent } from "../RenderedContent.js";
+import { cn } from "../utils.js";
 import { ResponseColumn } from "./compare-response-column.js";
 import { ResultsTable } from "./compare-results-table.js";
 

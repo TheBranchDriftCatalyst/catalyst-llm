@@ -14,20 +14,20 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import type { ModelWithRouting } from "../client/index.js";
+import type { ModelWithRouting } from "../../client/index.js";
 import {
   formatMs,
   formatRate,
   formatTokens,
   formatUsd,
-} from "../react/useChatCost.js";
-import type { CompareRun } from "../react/useCompare.js";
-import { ModelInfoCard } from "./ModelInfoCard.js";
-import { RenderedContent } from "./RenderedContent.js";
+} from "../../react/useChatCost.js";
+import type { CompareRun } from "../../react/useCompare.js";
+import { ModelInfoCard } from "../ModelInfoCard.js";
+import { RenderedContent } from "../RenderedContent.js";
 import { checkJson, statsForRun } from "./compare-stats.js";
 import { JsonBadge, MiniPinRow, type MiniPin } from "./compare-stats-ui.js";
 import { DiffPane } from "./compare-diff-pane.js";
-import { cn } from "./utils.js";
+import { cn } from "../utils.js";
 
 export interface ResponseColumnProps {
   modelId: string;

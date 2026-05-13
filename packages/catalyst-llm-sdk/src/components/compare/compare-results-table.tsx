@@ -10,22 +10,22 @@ import {
   ChevronRight,
   X,
 } from "lucide-react";
-import type { ModelWithRouting } from "../client/index.js";
+import type { ModelWithRouting } from "../../client/index.js";
 import {
   formatMs,
   formatRate,
   formatTokens,
   formatUsd,
-} from "../react/useChatCost.js";
-import type { CompareRun } from "../react/useCompare.js";
-import { RenderedContent } from "./RenderedContent.js";
+} from "../../react/useChatCost.js";
+import type { CompareRun } from "../../react/useCompare.js";
+import { RenderedContent } from "../RenderedContent.js";
 import {
   checkJson,
   statsForRun,
   type PerRunStats,
 } from "./compare-stats.js";
 import { JsonBadge } from "./compare-stats-ui.js";
-import { cn } from "./utils.js";
+import { cn } from "../utils.js";
 
 export interface ResultsTableProps {
   modelIds: string[];

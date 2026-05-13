@@ -2,8 +2,8 @@
  * Pure compare-mode stats helpers — JSON-validity check + per-run
  * cost/throughput maths. No React, no JSX.
  */
-import type { ModelWithRouting } from "../client/index.js";
-import type { CompareRun } from "../react/useCompare.js";
+import type { ModelWithRouting } from "../../client/index.js";
+import type { CompareRun } from "../../react/useCompare.js";
 
 export interface PerRunStats {
   cost: number;
