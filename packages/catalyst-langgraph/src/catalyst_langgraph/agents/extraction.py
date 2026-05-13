@@ -31,6 +31,8 @@ edges (dashed accent).
 """
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from . import (
@@ -119,35 +121,54 @@ class ExtractionNerEnsembleConfig(BaseModel):
 
 class ExtractionConsensusConfig(BaseModel):
     """Tunables for the ``consensus`` node — quorum vote over per-encoder
-    mention sets, with PII override handling."""
+    mention sets, with a looser threshold for PII-typed mentions.
+
+    Mirrors catalyst-data's ``catalyst_exgraph.ensemble.ConsensusVoter``
+    shape (strategy + threshold) so the same operator intuition carries
+    across the Dagster pipeline and this Engine view. The runtime
+    converts threshold → quorum via ``ceil(strategy_threshold *
+    encoder_count)`` at apply time.
+    """
 
     model_config = {
         "extra": "ignore",
         "json_schema_extra": {"agent_id": "extraction", "node_id": "consensus"},
     }
 
-    quorum: int = Field(
-        default=2,
-        ge=1,
-        le=8,
-        title="Quorum",
+    strategy: Literal["majority", "unanimous", "any"] = Field(
+        default="majority",
+        title="Strategy",
         description=(
-            "Minimum encoders that must agree on a mention for it to pass. "
-            "Default = ceil(encoder_count/2); set ≥ encoder_count for "
-            "unanimity, set 1 to accept any encoder's call."
+            "Consensus voting strategy. `majority` accepts mentions seen "
+            "by ≥ threshold·N encoders; `unanimous` requires all N to "
+            "agree; `any` accepts any single encoder's call. Maps to "
+            "catalyst-exgraph's ConsensusVoter.strategy."
         ),
-        json_schema_extra={"ui": {"step": 1}},
     )
-    pii_quorum: int = Field(
-        default=1,
-        ge=1,
-        le=8,
-        title="PII quorum",
+    threshold: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        title="Threshold",
         description=(
-            "Looser quorum for PII-typed mentions — typically 1 so a "
-            "single encoder catching a PII mention is enough to flag it."
+            "Fraction of encoders that must agree on a mention for it to "
+            "pass under the `majority` strategy. Ignored by `unanimous` "
+            "(forced to 1.0) and `any` (forced to >0). Maps to "
+            "catalyst-exgraph's ConsensusVoter.threshold."
         ),
-        json_schema_extra={"ui": {"step": 1}},
+        json_schema_extra={"ui": {"step": 0.05}},
+    )
+    pii_threshold: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        title="PII threshold",
+        description=(
+            "Looser threshold for PII-typed mentions — 0 accepts any "
+            "single encoder's PII call, matching the safe default that a "
+            "single hit on a PII mention should still flag it."
+        ),
+        json_schema_extra={"ui": {"step": 0.05}},
     )
 
 

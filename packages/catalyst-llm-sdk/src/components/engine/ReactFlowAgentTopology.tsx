@@ -138,26 +138,25 @@ const ENSEMBLE_MAX_HEIGHT = 480;
 
 function computeEnsembleGroupSize(
   group: AgentTopologyGroup,
+  memberSchema: AgentConfigSchema | null,
 ): { w: number; h: number } {
-  const props = group.config_schema?.properties ?? {};
+  const groupProps = group.config_schema?.properties ?? {};
+  const memberProps = memberSchema?.properties ?? {};
   // Skip ui.widget="hidden" fields — NodeInlineConfig filters them so
   // they don't take vertical space.
-  const visibleFieldCount = Object.values(props).filter(
+  const visibleGroupFields = Object.values(groupProps).filter(
     (f) => f.ui?.widget !== "hidden",
   ).length;
-  // Upper-bound instance count: from the schema's `maximum` on the
-  // count field, falling back to 8. Cards size for the worst case so
-  // re-renders don't cause dagre to relayout the canvas.
-  const countField = group.instance_count_field;
-  const maxCount =
-    countField && props[countField]?.maximum != null
-      ? Math.min(props[countField].maximum ?? 8, 12)
-      : 8;
+  const visibleMemberFields = Object.values(memberProps).filter(
+    (f) => f.ui?.widget !== "hidden",
+  ).length;
+  // Member form gets its own sub-header strip (~24px) when present.
+  const memberHeaderPx = visibleMemberFields > 0 ? 28 : 0;
   const h = Math.min(
     ENSEMBLE_HEADER_PX +
-      visibleFieldCount * ENSEMBLE_ROW_PX +
-      ENSEMBLE_MEMBERS_OVERHEAD_PX +
-      maxCount * ENSEMBLE_MEMBER_ROW_PX +
+      visibleGroupFields * ENSEMBLE_ROW_PX +
+      memberHeaderPx +
+      visibleMemberFields * ENSEMBLE_ROW_PX +
       ENSEMBLE_VERTICAL_PADDING_PX,
     ENSEMBLE_MAX_HEIGHT,
   );
@@ -275,7 +274,7 @@ function getRenderedNodeSize(
   ensembleByMember: Map<string, AgentTopologyGroup>,
 ): { w: number; h: number } {
   const eg = ensembleByMember.get(node.id);
-  if (eg) return computeEnsembleGroupSize(eg);
+  if (eg) return computeEnsembleGroupSize(eg, node.config_schema);
   return getNodeSize(node);
 }
 
@@ -613,17 +612,22 @@ function GroupContainerNode({ data }: NodeProps) {
 
 interface EnsembleGroupData extends Record<string, unknown> {
   agentId: string;
-  /** The group's id — also the engineStore key for this group's
-   * config bucket. */
+  /** The group's id — engineStore key for the ensemble-orchestration
+   * config bucket (council_size, etc). */
   groupId: string;
-  /** The id of the template member node (e.g. "members"). The reactflow
+  /** The template member node's id (e.g. "members"). The reactflow
    * node uses this id so edges still attach; selection / event
-   * attribution (NodeRunsList, prompt sheets, run-store activeNode)
-   * routes through this same id since the runtime emits events under
-   * the template node, not the group. */
+   * attribution routes through this same id since the runtime emits
+   * events under the template node, not the group. Also the
+   * engineStore key for per-member LLM tunables. */
   templateNodeId: string;
+  /** Group config schema (ensemble orchestration — council_size). */
   schema: AgentConfigSchema | null;
   defaults: Record<string, unknown> | null;
+  /** Per-member template config schema (model, temperature, …) read
+   * from the member node's own descriptor. */
+  memberSchema: AgentConfigSchema | null;
+  memberDefaults: Record<string, unknown> | null;
   instanceCountField: string | null;
   label: string | null;
   selectedNodeId: string | undefined;
@@ -641,13 +645,21 @@ function EnsembleGroupCard({ data }: NodeProps) {
   const selected = d.selectedNodeId === d.templateNodeId;
   const active = d.activeNodeId === d.templateNodeId;
 
-  // Live overrides keyed by groupId (engineStore's second-level key
-  // accepts either a node_id OR a group_id — same shape).
-  const groupOverrides = useEngineStore(
+  const setField = useEngineStore((s) => s.setField);
+
+  // Group-level overrides (ensemble orchestration — council_size).
+  const groupOverridesRaw = useEngineStore(
     (s) => s.configs[d.agentId]?.[d.groupId],
   );
-  const overrides = groupOverrides ?? EMPTY_OBJ;
-  const setField = useEngineStore((s) => s.setField);
+  const groupOverrides = groupOverridesRaw ?? EMPTY_OBJ;
+
+  // Per-member template overrides (model, temperature, …) keyed by the
+  // template node id, NOT the group id. Edits to the member form below
+  // write here.
+  const memberOverridesRaw = useEngineStore(
+    (s) => s.configs[d.agentId]?.[d.templateNodeId],
+  );
+  const memberOverrides = memberOverridesRaw ?? EMPTY_OBJ;
 
   if (!d.schema) {
     return (
@@ -662,15 +674,28 @@ function EnsembleGroupCard({ data }: NodeProps) {
     );
   }
 
-  // Merge overrides over defaults.
-  const schemaProps = d.schema.properties ?? {};
-  const defaults = d.defaults ?? {};
-  const overrideKeys = new Set(Object.keys(overrides));
-  const values: Record<string, unknown> = {};
-  for (const fieldName of Object.keys(schemaProps)) {
-    values[fieldName] = overrideKeys.has(fieldName)
-      ? overrides[fieldName]
-      : defaults[fieldName];
+  // Merge group overrides over group defaults.
+  const groupSchemaProps = d.schema.properties ?? {};
+  const groupDefaults = d.defaults ?? {};
+  const groupOverrideKeys = new Set(Object.keys(groupOverrides));
+  const groupValues: Record<string, unknown> = {};
+  for (const fieldName of Object.keys(groupSchemaProps)) {
+    groupValues[fieldName] = groupOverrideKeys.has(fieldName)
+      ? groupOverrides[fieldName]
+      : groupDefaults[fieldName];
+  }
+
+  // Merge member overrides over member defaults (when the template
+  // node has its own schema). The form below renders only when both
+  // are present; otherwise the card degrades to the group-only form.
+  const memberSchemaProps = d.memberSchema?.properties ?? {};
+  const memberDefaults = d.memberDefaults ?? {};
+  const memberOverrideKeys = new Set(Object.keys(memberOverrides));
+  const memberValues: Record<string, unknown> = {};
+  for (const fieldName of Object.keys(memberSchemaProps)) {
+    memberValues[fieldName] = memberOverrideKeys.has(fieldName)
+      ? memberOverrides[fieldName]
+      : memberDefaults[fieldName];
   }
 
   // Live instance count from the group's config — bounded.
@@ -679,15 +704,14 @@ function EnsembleGroupCard({ data }: NodeProps) {
         1,
         Math.min(
           12,
-          Number(values[d.instanceCountField] ?? defaults[d.instanceCountField] ?? 1),
+          Number(
+            groupValues[d.instanceCountField] ??
+              groupDefaults[d.instanceCountField] ??
+              1,
+          ),
         ),
       )
     : 1;
-
-  const memberModel =
-    typeof values.model === "string" ? (values.model as string) : "";
-  const memberModelShort =
-    memberModel.length > 24 ? `${memberModel.slice(0, 23)}…` : memberModel;
 
   return (
     <div
@@ -703,7 +727,7 @@ function EnsembleGroupCard({ data }: NodeProps) {
     >
       <Handle type="target" position={Position.Top} />
 
-      {/* Group header — label + member count + group id chip + runs */}
+      {/* Group header — label + Nx badge + runs button */}
       <div className="flex shrink-0 items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-200">
           <Users className="h-3 w-3" aria-hidden="true" />
@@ -721,13 +745,12 @@ function EnsembleGroupCard({ data }: NodeProps) {
         </div>
       </div>
 
-      {/* Group's shared config form. Edits write to engineStore keyed
-       * by the group id; the wire payload places these under
-       * agent_config[agent][groupId]. */}
+      {/* Group form — ensemble-level orchestration only (council_size).
+       * Writes to engineStore keyed by the group id. */}
       <NodeInlineConfig
         schema={d.schema}
-        values={values}
-        overrideKeys={overrideKeys}
+        values={groupValues}
+        overrideKeys={groupOverrideKeys}
         onChange={(field, value) =>
           setField(d.agentId, d.groupId, field, value)
         }
@@ -735,26 +758,29 @@ function EnsembleGroupCard({ data }: NodeProps) {
         className="shrink-0"
       />
 
-      {/* N member-preview cards. Read-only by design — they all share
-       * the group's config above. Compact card per member showing
-       * member index + the shared model id. */}
-      <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto rounded-md border border-amber-500/30 bg-amber-500/[0.04] p-1.5">
-        {Array.from({ length: instanceCount }, (_, i) => (
-          <div
-            key={i}
-            className="flex items-center gap-1.5 rounded border border-border/40 bg-card/60 px-1.5 py-1 text-[10px]"
-            title={`Member ${i + 1} of ${instanceCount}`}
-          >
-            <Activity className="h-2.5 w-2.5 shrink-0 text-amber-200/80" aria-hidden="true" />
-            <span className="shrink-0 font-mono text-amber-200/70">
-              #{i + 1}
-            </span>
-            <span className="truncate font-mono text-muted-foreground">
-              {memberModelShort || "(no model)"}
-            </span>
+      {/* Member-template form — per-member LLM tunables (model,
+       * temperature, system_prompt, …). Writes to engineStore keyed
+       * by the template node id. Shared by all N members. */}
+      {d.memberSchema && (
+        <>
+          <div className="flex shrink-0 items-center gap-1.5 border-t border-amber-500/20 pt-2 text-[10px] font-bold uppercase tracking-wider text-amber-200/80">
+            <Activity className="h-3 w-3" aria-hidden="true" />
+            subagent · template
           </div>
-        ))}
-      </div>
+          <NodeInlineConfig
+            schema={d.memberSchema}
+            values={memberValues}
+            overrideKeys={memberOverrideKeys}
+            onChange={(field, value) =>
+              setField(d.agentId, d.templateNodeId, field, value)
+            }
+            onOpenPromptSheet={() =>
+              d.onOpenPromptSheet?.(d.templateNodeId)
+            }
+            className="shrink-0"
+          />
+        </>
+      )}
 
       <Handle type="source" position={Position.Bottom} />
     </div>
@@ -1035,11 +1061,13 @@ export function ReactFlowAgentTopology({
             templateNodeId: n.id,
             schema: ensembleGroup.config_schema,
             defaults: ensembleGroup.config_defaults,
+            memberSchema: n.config_schema,
+            memberDefaults: n.config_defaults,
             instanceCountField: ensembleGroup.instance_count_field ?? null,
             label: ensembleGroup.label ?? null,
             selectedNodeId,
             activeNodeId,
-            size: computeEnsembleGroupSize(ensembleGroup),
+            size: computeEnsembleGroupSize(ensembleGroup, n.config_schema),
             onOpenPromptSheet,
             onOpenRunsSheet,
           } satisfies EnsembleGroupData,

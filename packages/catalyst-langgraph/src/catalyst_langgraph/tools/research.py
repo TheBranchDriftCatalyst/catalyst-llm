@@ -222,22 +222,23 @@ class Critique(BaseModel):
     )
 
 
-class ResearchMembersConfig(BaseModel):
-    """Tunables for the `members` node — the parallel council researchers.
+class ResearchEnsembleConfig(BaseModel):
+    """Tunables for the `research_ensemble` GROUP — the ensemble-level
+    orchestration knobs.
 
-    `council_size` lives here (not on `__start__`) because the count
-    is conceptually a member-population knob; the fan-out shape is part
-    of how a member is dispatched.
+    Only orchestration lives here (council_size). The LLM-call tunables
+    (model, temperature, system_prompt, recursion_limit, max_tokens)
+    moved onto the per-member `members` node config; the runtime merges
+    both before applying. This keeps the ensemble container's UI form
+    minimal (just the fan-out knob) and surfaces each subagent's
+    settings as the canonical place to tune model/temperature etc.
     """
 
     model_config = {
         "extra": "ignore",
-        "json_schema_extra": {"agent_id": "research", "node_id": "members"},
+        "json_schema_extra": {"agent_id": "research", "node_id": "research_ensemble"},
     }
 
-    # Council ensemble. N=1 is the base case — single researcher, no
-    # fusion. Cap at 8 because cloud rate limits + we rarely need more
-    # diverse drafts than that for research questions.
     council_size: int = Field(
         default=1,
         ge=1,
@@ -250,6 +251,23 @@ class ResearchMembersConfig(BaseModel):
         ),
         json_schema_extra={"ui": {"step": 1}},
     )
+
+
+class ResearchMemberConfig(BaseModel):
+    """Per-member LLM tunables for the `members` node — applied to EACH
+    council researcher.
+
+    The runtime treats this as a shared template (every member runs with
+    the same config). Operator can later override individual members by
+    expanding the per-member overrides surface; for now it's one form
+    that fans out to N identical calls.
+    """
+
+    model_config = {
+        "extra": "ignore",
+        "json_schema_extra": {"agent_id": "research", "node_id": "members"},
+    }
+
     model: str = Field(
         default=DEFAULT_RESEARCH_MODEL,
         title="Model",
@@ -291,6 +309,22 @@ class ResearchMembersConfig(BaseModel):
         title="System prompt ref",
         description="PromptStore id; resolved via request.prompt_overrides when set.",
         json_schema_extra={"ui": {"widget": "hidden"}},
+    )
+
+
+class ResearchMembersConfig(ResearchMemberConfig):
+    """Combined runtime view of the council member config — the per-member
+    LLM tunables PLUS the ensemble's `council_size`. The runtime
+    (_load_configs / build_graph_for_members) reads this single
+    flattened shape; the server merges `members` + `research_ensemble`
+    overrides into one dict before stashing in research_overrides."""
+
+    council_size: int = Field(
+        default=1,
+        ge=1,
+        le=8,
+        title="Council size",
+        json_schema_extra={"ui": {"step": 1}},
     )
 
 
@@ -834,17 +868,20 @@ register_agent(
         topology=AgentTopology(
             nodes=[
                 AgentTopologyNode(id="__start__", type="start"),
-                # `members` is the per-member TEMPLATE node — it has no
-                # config_model of its own. The shared per-member config
-                # (model, temperature, system_prompt, recursion_limit,
-                # max_tokens, council_size) lives on the
-                # `research_ensemble` group below. The UI renders the
-                # group as a container with the config form on its
-                # header and N member cards inside (count = the live
-                # value of council_size).
+                # `members` is the per-member TEMPLATE node — it owns
+                # the per-member LLM tunables (model, temperature,
+                # system_prompt, recursion_limit, max_tokens). The
+                # ensemble-level fan-out knob (council_size) lives on
+                # the `research_ensemble` group below. The UI renders
+                # the group as a container with the group form
+                # (council_size) on top, the member-template form
+                # (LLM tunables) below it, and N member previews
+                # underneath. The runtime merges both layers before
+                # applying.
                 AgentTopologyNode(
                     id="members",
                     type="agent",
+                    config_model=ResearchMemberConfig,
                     group_id="research_ensemble",
                 ),
                 AgentTopologyNode(id="web_search", type="tools"),
@@ -885,7 +922,7 @@ register_agent(
                 AgentTopologyGroup(
                     id="research_ensemble",
                     type="ensemble",
-                    config_model=ResearchMembersConfig,
+                    config_model=ResearchEnsembleConfig,
                     instance_count_field="council_size",
                     label="Council ensemble",
                 ),

@@ -278,22 +278,24 @@ async def _produce_agent_events(
         main_overrides = validate_overrides(
             "main", "agent", _resolve_prompt_ref(main_raw.get("agent") or {})
         )
-        # Research's per-member shared config moved off the `members`
-        # node onto the `research_ensemble` GROUP. The wire shape is
-        # therefore agent_config["research"]["research_ensemble"][...]
-        # for the members template, not [...]["members"][...] anymore.
-        # The downstream ContextVar key stays "members" since the
-        # runtime (research.py:_load_configs) reads it that way — we
-        # adapt at the validation boundary so the runtime contract
-        # doesn't have to know about groups.
+        # Research config splits across TWO layers:
+        #   * `research_ensemble` (group) → council_size only
+        #   * `members` (node)            → per-member LLM tunables
+        # The runtime (_load_configs) reads ONE flattened dict, so we
+        # validate each layer independently then merge. Group settings
+        # win on collision (council_size only lives on the group).
+        member_overrides = validate_overrides(
+            "research",
+            "members",
+            _resolve_prompt_ref(research_raw.get("members") or {}),
+        )
+        ensemble_overrides = validate_group_overrides(
+            "research",
+            "research_ensemble",
+            _resolve_prompt_ref(research_raw.get("research_ensemble") or {}),
+        )
         validated_research = {
-            "members": validate_group_overrides(
-                "research",
-                "research_ensemble",
-                _resolve_prompt_ref(
-                    research_raw.get("research_ensemble") or {}
-                ),
-            ),
+            "members": {**member_overrides, **ensemble_overrides},
             "critic": validate_overrides(
                 "research",
                 "critic",
