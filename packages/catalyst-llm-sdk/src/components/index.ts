@@ -25,6 +25,23 @@ export {
   type TestRunBodyProps,
 } from "./engine/panels/TestRunBody.js";
 export {
+  AgentsListPanel,
+  type AgentsListPanelProps,
+} from "./engine/panels/AgentsListPanel.js";
+export {
+  EventsPanel,
+  type EventsPanelProps,
+} from "./engine/panels/EventsPanel.js";
+export {
+  TestRunPanel,
+  type TestRunPanelProps,
+} from "./engine/panels/TestRunPanel.js";
+export { NodeDetailPanel } from "./engine/panels/NodeDetailPanel.js";
+export {
+  TerminalPanel,
+  type TerminalPanelProps,
+} from "./engine/panels/TerminalPanel.js";
+export {
   AgentConfigForm,
   type AgentConfigFormProps,
 } from "./engine/AgentConfigForm.js";
@@ -39,6 +56,14 @@ export type {
   PanelContext,
   NodeStatus,
 } from "./engine/panel-types.js";
+
+// ============================================================
+// page-shell hooks — operator rail-assignment persistence
+// ============================================================
+export {
+  useItemRails,
+  type RailMap,
+} from "./page-shell/hooks/useItemRails.js";
 
 // ============================================================
 // chat — message rendering, panel, tabs, response viewer
