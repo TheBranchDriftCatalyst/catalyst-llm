@@ -1,0 +1,27 @@
+# Mirror of .gitignore — keeps the Tilt docker_build context lean.
+# Without this, Tilt sends the entire src/ tree (including any local
+# .venv/ that springs up under nested dump dirs) to the daemon.
+.venv/
+**/.venv/
+*.egg-info/
+__pycache__/
+**/__pycache__/
+.pytest_cache/
+**/.pytest_cache/
+.ruff_cache/
+**/.ruff_cache/
+.uv_cache/
+**/.uv_cache/
+uv.lock
+**/uv.lock
+.git/
+.DS_Store
+**/.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Local artifacts
+*.log
+*.pid
