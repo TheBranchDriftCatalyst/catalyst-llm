@@ -18,8 +18,6 @@ import {
   BarChart3,
   ChevronRight,
   ChevronDown,
-  Braces,
-  CircleAlert,
   RotateCcw,
 } from "lucide-react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
@@ -46,152 +44,19 @@ import { lineDiff } from "./diff.js";
 import { CompareGraphs } from "./CompareGraphs.js";
 import { RenderedContent } from "./RenderedContent.js";
 import { cn } from "./utils.js";
+import {
+  checkJson,
+  statsForRun,
+  type JsonCheck,
+  type PerRunStats,
+} from "./compare-stats.js";
+import {
+  JsonBadge,
+  MiniPinRow,
+  type MiniPin,
+} from "./compare-stats-ui.js";
 
 const REASONING_LEVELS = ["low", "medium", "high"] as const;
-
-interface PerRunStats {
-  cost: number;
-  ttftMs: number | null;
-  tokensPerSec: number | null;
-  latencyMs: number | null;
-  inputTokens: number;
-  outputTokens: number;
-}
-
-interface JsonCheck {
-  /** `null` when the text is empty or still streaming. */
-  ok: boolean | null;
-  /** Whether the JSON came from raw text or stripped fences. */
-  source?: "raw" | "fenced";
-  /** Parse error message if not ok. */
-  error?: string;
-}
-
-/**
- * Attempt to parse the response text as JSON. Tries raw first; on failure,
- * looks for the first ```json … ``` (or unlabeled) fenced block and tries
- * that. We do this for parity with how models commonly wrap structured
- * output even when asked not to — the badge then honestly reports whether
- * the model held the format contract (raw) vs. cheated with fences.
- */
-function checkJson(text: string, isStreaming: boolean): JsonCheck {
-  const trimmed = text.trim();
-  if (!trimmed || isStreaming) return { ok: null };
-  try {
-    JSON.parse(trimmed);
-    return { ok: true, source: "raw" };
-  } catch (rawErr) {
-    // Look for fenced block: ```json\n...\n``` or ```\n...\n```
-    const fenceMatch = trimmed.match(
-      /```(?:json)?\s*\n?([\s\S]*?)\n?```/i,
-    );
-    if (fenceMatch) {
-      try {
-        JSON.parse(fenceMatch[1].trim());
-        return { ok: true, source: "fenced" };
-      } catch {
-        /* fall through */
-      }
-    }
-    return { ok: false, error: (rawErr as Error).message };
-  }
-}
-
-function JsonBadge({ check }: { check: JsonCheck }) {
-  if (check.ok === null) return null;
-  if (check.ok) {
-    return (
-      <span
-        title={
-          check.source === "raw"
-            ? "Response is valid JSON (parsed raw)"
-            : "Response is valid JSON, but wrapped in a markdown fence"
-        }
-        className={cn(
-          "inline-flex items-center gap-0.5 rounded-sm border px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider",
-          check.source === "raw"
-            ? "border-primary/50 bg-primary/15 text-primary"
-            : "border-yellow-600/50 bg-yellow-500/15 text-yellow-500",
-        )}
-      >
-        <Braces className="h-2.5 w-2.5" />
-        {check.source === "raw" ? "json" : "json (fenced)"}
-      </span>
-    );
-  }
-  return (
-    <span
-      title={check.error ? `Invalid JSON: ${check.error}` : "Invalid JSON"}
-      className="inline-flex items-center gap-0.5 rounded-sm border border-destructive/50 bg-destructive/15 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider text-destructive"
-    >
-      <CircleAlert className="h-2.5 w-2.5" />
-      not json
-    </span>
-  );
-}
-
-function statsForRun(
-  run: CompareRun,
-  model: ModelWithRouting | undefined,
-): PerRunStats {
-  const inTok = run.meta?.usage?.prompt_tokens ?? 0;
-  const outTok = run.meta?.usage?.completion_tokens ?? 0;
-  const inCost = model?.metadata?.input_cost_per_token ?? 0;
-  const outCost = model?.metadata?.output_cost_per_token ?? 0;
-  const ttftMs =
-    run.firstTokenTime && run.streamStartTime
-      ? run.firstTokenTime - run.streamStartTime
-      : null;
-  const genMs =
-    run.firstTokenTime && run.streamEndTime
-      ? run.streamEndTime - run.firstTokenTime
-      : null;
-  const tokensPerSec =
-    genMs && genMs > 0 && outTok > 0 ? (outTok / genMs) * 1000 : null;
-  const latencyMs =
-    run.streamStartTime && run.streamEndTime
-      ? run.streamEndTime - run.streamStartTime
-      : null;
-  return {
-    cost: inCost * inTok + outCost * outTok,
-    ttftMs,
-    tokensPerSec,
-    latencyMs,
-    inputTokens: inTok,
-    outputTokens: outTok,
-  };
-}
-
-interface MiniPin {
-  icon: React.ElementType;
-  label: string;
-  value: string;
-  emphasis?: "default" | "primary" | "muted";
-}
-
-function MiniPinRow({ pins }: { pins: MiniPin[] }) {
-  return (
-    <div className="flex flex-wrap items-center gap-1 text-[10px]">
-      {pins.map(({ icon: Icon, label, value, emphasis = "default" }) => (
-        <span
-          key={label}
-          className={cn(
-            "inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 font-mono tabular-nums",
-            emphasis === "primary"
-              ? "border-primary/50 bg-primary/10 text-primary"
-              : emphasis === "muted"
-                ? "border-border/40 bg-muted/30 text-muted-foreground"
-                : "border-border/60 bg-card/40",
-          )}
-        >
-          <Icon className="h-2.5 w-2.5" />
-          <span className="opacity-70 uppercase tracking-wider">{label}</span>
-          <span className="font-semibold">{value}</span>
-        </span>
-      ))}
-    </div>
-  );
-}
 
 function ResponseColumn({
   modelId,
