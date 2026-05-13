@@ -9,12 +9,12 @@ import {
   Cloud,
 } from "lucide-react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
-import type { ModelWithRouting, EndpointType } from "../client/index.js";
-import { useModels } from "../react/hooks.js";
-import { fuzzyFilter } from "./fuzzy.js";
-import { useListboxKeyboard } from "./useListboxKeyboard.js";
-import { useFocusTrap } from "./useFocusTrap.js";
-import { cn } from "./utils.js";
+import type { ModelWithRouting, EndpointType } from "../../client/index.js";
+import { useModels } from "../../react/hooks.js";
+import { fuzzyFilter } from "../fuzzy.js";
+import { useListboxKeyboard } from "../useListboxKeyboard.js";
+import { useFocusTrap } from "../useFocusTrap.js";
+import { cn } from "../utils.js";
 
 const ICON_FOR: Record<EndpointType, React.ElementType> = {
   mac: Monitor,

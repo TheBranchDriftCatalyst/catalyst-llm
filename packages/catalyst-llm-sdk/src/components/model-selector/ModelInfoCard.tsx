@@ -13,9 +13,9 @@ import {
   Scale,
 } from "lucide-react";
 import { Badge } from "@thebranchdriftcatalyst/catalyst-ui/ui/badge";
-import type { ModelWithRouting } from "../client/index.js";
-import { effectiveMetadata } from "../client/modelHints.js";
-import { cn } from "./utils.js";
+import type { ModelWithRouting } from "../../client/index.js";
+import { effectiveMetadata } from "../../client/modelHints.js";
+import { cn } from "../utils.js";
 
 export interface ModelInfoCardProps {
   model: ModelWithRouting;

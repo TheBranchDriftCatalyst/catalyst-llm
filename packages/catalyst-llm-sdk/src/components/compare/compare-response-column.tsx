@@ -22,7 +22,7 @@ import {
   formatUsd,
 } from "../../react/useChatCost.js";
 import type { CompareRun } from "../../react/useCompare.js";
-import { ModelInfoCard } from "../ModelInfoCard.js";
+import { ModelInfoCard } from "../model-selector/ModelInfoCard.js";
 import { RenderedContent } from "../RenderedContent.js";
 import { checkJson, statsForRun } from "./compare-stats.js";
 import { JsonBadge, MiniPinRow, type MiniPin } from "./compare-stats-ui.js";

@@ -25,7 +25,7 @@ import { useLLMContext } from "../../../react/LLMProvider.js";
 import { useEngineRunStore } from "../../../react/engineRunStore.js";
 import { useEngineStore } from "../../../react/engineStore.js";
 import type { AgentDescriptor } from "../../../agent/events.js";
-import { ModelMicroSwitcher } from "../../ModelMicroSwitcher.js";
+import { ModelMicroSwitcher } from "../../model-selector/ModelMicroSwitcher.js";
 import { cn } from "../../utils.js";
 
 export interface TestRunBodyProps {

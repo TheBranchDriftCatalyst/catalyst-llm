@@ -3,13 +3,13 @@ import { Search, RefreshCw, Monitor, Server, Cloud, X } from "lucide-react";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
-import type { ModelWithRouting } from "../client/index.js";
-import { useModels } from "../react/hooks.js";
+import type { ModelWithRouting } from "../../client/index.js";
+import { useModels } from "../../react/hooks.js";
 import { ModelInfoCard } from "./ModelInfoCard.js";
-import { fuzzyFilter } from "./fuzzy.js";
-import { useListboxKeyboard } from "./useListboxKeyboard.js";
-import { useFocusTrap } from "./useFocusTrap.js";
-import { cn } from "./utils.js";
+import { fuzzyFilter } from "../fuzzy.js";
+import { useListboxKeyboard } from "../useListboxKeyboard.js";
+import { useFocusTrap } from "../useFocusTrap.js";
+import { cn } from "../utils.js";
 
 export interface ModelSelectorRichProps {
   value: string;

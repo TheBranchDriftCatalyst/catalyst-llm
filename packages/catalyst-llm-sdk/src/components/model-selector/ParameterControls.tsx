@@ -2,9 +2,9 @@ import type { ComponentType } from "react";
 import { Slider as RawSlider } from "@thebranchdriftcatalyst/catalyst-ui/ui/slider";
 import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
 import { Brain } from "lucide-react";
-import type { ChatParams, ModelWithRouting } from "../client/index.js";
-import { effectiveMetadata } from "../client/modelHints.js";
-import { cn } from "./utils.js";
+import type { ChatParams, ModelWithRouting } from "../../client/index.js";
+import { effectiveMetadata } from "../../client/modelHints.js";
+import { cn } from "../utils.js";
 
 // catalyst-ui's Slider extends Radix's SliderPrimitive.Root, but Radix's
 // peer-dep types aren't resolvable from this consumer without bringing the

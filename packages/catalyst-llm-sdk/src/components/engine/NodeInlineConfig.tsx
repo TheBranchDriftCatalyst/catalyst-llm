@@ -33,7 +33,7 @@ import type {
   AgentFieldSchema,
 } from "../../agent/events.js";
 import { usePromptStore } from "../../react/promptStore.js";
-import { ModelMicroSwitcher } from "../ModelMicroSwitcher.js";
+import { ModelMicroSwitcher } from "../model-selector/ModelMicroSwitcher.js";
 import { cn } from "../utils.js";
 
 // Same cast shape AgentConfigForm uses — catalyst-ui's Slider extends

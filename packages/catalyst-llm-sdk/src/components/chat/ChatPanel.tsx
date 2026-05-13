@@ -15,14 +15,14 @@ import {
 } from "lucide-react";
 import { useChatStore, type Chat } from "../../react/chat/index.js";
 import { ChatMessage } from "./ChatMessage.js";
-import { ModelSelector } from "../ModelSelector.js";
-import { ModelSelectorRich } from "../ModelSelectorRich.js";
-import { ModelInfoCard } from "../ModelInfoCard.js";
+import { ModelSelector } from "../model-selector/ModelSelector.js";
+import { ModelSelectorRich } from "../model-selector/ModelSelectorRich.js";
+import { ModelInfoCard } from "../model-selector/ModelInfoCard.js";
 import { CostPins } from "../CostPins.js";
 import { ContextMeter } from "../ContextMeter.js";
-import { ParameterControls } from "../ParameterControls.js";
+import { ParameterControls } from "../model-selector/ParameterControls.js";
 import { SystemPromptEditor } from "../prompts/SystemPromptEditor.js";
-import { ResponseViewer } from "../ResponseViewer.js";
+import { ResponseViewer } from "../chat/ResponseViewer.js";
 import {
   PromptPresets,
   SystemPromptPresets,

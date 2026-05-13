@@ -43,20 +43,20 @@ export {
 } from "./chat/ReasoningBlock.js";
 export { ChatPanel, type ChatPanelProps } from "./chat/ChatPanel.js";
 export { ChatTabs, type ChatTabsProps } from "./chat/ChatTabs.js";
-export { ModelSelector, type ModelSelectorProps } from "./ModelSelector.js";
+export { ModelSelector, type ModelSelectorProps } from "./model-selector/ModelSelector.js";
 export {
   ModelSelectorRich,
   type ModelSelectorRichProps,
-} from "./ModelSelectorRich.js";
+} from "./model-selector/ModelSelectorRich.js";
 export {
   ModelMicroSwitcher,
   type ModelMicroSwitcherProps,
-} from "./ModelMicroSwitcher.js";
+} from "./model-selector/ModelMicroSwitcher.js";
 export {
   ModelMultiSelect,
   type ModelMultiSelectProps,
-} from "./ModelMultiSelect.js";
-export { ModelInfoCard, type ModelInfoCardProps } from "./ModelInfoCard.js";
+} from "./model-selector/ModelMultiSelect.js";
+export { ModelInfoCard, type ModelInfoCardProps } from "./model-selector/ModelInfoCard.js";
 export { CostPins, type CostPinsProps } from "./CostPins.js";
 export { ContextMeter, type ContextMeterProps } from "./ContextMeter.js";
 export {
@@ -96,8 +96,8 @@ export {
 export { CompareView, type CompareViewProps } from "./compare/CompareView.js";
 export { CompareGraphs, type CompareGraphsProps } from "./compare/CompareGraphs.js";
 export { lineDiff, wordDiff, type Change as DiffChange } from "./compare/diff.js";
-export { ParameterControls, type ParameterControlsProps } from "./ParameterControls.js";
-export { ResponseViewer, type ResponseViewerProps } from "./ResponseViewer.js";
+export { ParameterControls, type ParameterControlsProps } from "./model-selector/ParameterControls.js";
+export { ResponseViewer, type ResponseViewerProps } from "./chat/ResponseViewer.js";
 export { SystemPromptEditor, type SystemPromptEditorProps } from "./prompts/SystemPromptEditor.js";
 export { ConnectionStatus, type ConnectionStatusProps } from "./chat/ConnectionStatus.js";
 export { fuzzyScore, fuzzyFilter } from "./fuzzy.js";

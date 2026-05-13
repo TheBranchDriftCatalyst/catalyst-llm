@@ -37,8 +37,8 @@ import {
   formatMs,
   formatRate,
 } from "../../react/useChatCost.js";
-import { ModelMultiSelect } from "../ModelMultiSelect.js";
-import { ModelInfoCard } from "../ModelInfoCard.js";
+import { ModelMultiSelect } from "../model-selector/ModelMultiSelect.js";
+import { ModelInfoCard } from "../model-selector/ModelInfoCard.js";
 import { PromptPresets, SystemPromptPresets } from "../prompts/PromptPresets.js";
 import { CompareGraphs } from "./CompareGraphs.js";
 import { RenderedContent } from "../RenderedContent.js";
