@@ -9,10 +9,10 @@ import {
 } from "lucide-react";
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
 import { usePromptStore } from "../../react/promptStore.js";
-import { fuzzyFilter } from "../fuzzy.js";
-import { useFocusTrap } from "../useFocusTrap.js";
-import { useListboxKeyboard } from "../useListboxKeyboard.js";
-import { cn } from "../utils.js";
+import { fuzzyFilter } from "../shared/fuzzy.js";
+import { useFocusTrap } from "../shared/useFocusTrap.js";
+import { useListboxKeyboard } from "../shared/useListboxKeyboard.js";
+import { cn } from "../shared/utils.js";
 import {
   DEFAULT_PRESETS,
   SYSTEM_PRESETS,

@@ -23,7 +23,7 @@ import type {
   GroupType,
 } from "../../../agent/events.js";
 import { useEngineStore } from "../../../react/engineStore.js";
-import { cn } from "../../utils.js";
+import { cn } from "../../shared/utils.js";
 import { NodeInlineConfig } from "../NodeInlineConfig.js";
 
 // Group-container visual styling. Keeps tone parity with NODE_VISUAL

@@ -34,7 +34,7 @@ import type {
 } from "../../agent/events.js";
 import { usePromptStore } from "../../react/promptStore.js";
 import { ModelMicroSwitcher } from "../model-selector/ModelMicroSwitcher.js";
-import { cn } from "../utils.js";
+import { cn } from "../shared/utils.js";
 
 // Same cast shape AgentConfigForm uses — catalyst-ui's Slider extends
 // Radix SliderPrimitive.Root, but the peer-dep types don't resolve

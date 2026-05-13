@@ -19,7 +19,7 @@
  */
 import { useMemo, useState } from "react";
 import { Radar, BarChart3 } from "lucide-react";
-import { cn } from "../../components/utils.js";
+import { cn } from "../../components/shared/utils.js";
 
 export interface PerModelSummary {
   model: string;

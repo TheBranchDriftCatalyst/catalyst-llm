@@ -18,7 +18,7 @@
 import { useMemo } from "react";
 import { Trophy } from "lucide-react";
 import type { CompareRun } from "../../react/useCompare.js";
-import { cn } from "../utils.js";
+import { cn } from "../shared/utils.js";
 
 export interface CompareGraphsProps {
   /** Model ids that are currently selected for comparison. */

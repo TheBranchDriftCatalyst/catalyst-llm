@@ -12,7 +12,7 @@ import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
 import { Monitor, Server, Cloud, RefreshCw } from "lucide-react";
 import type { ModelWithRouting } from "../../client/index.js";
 import { useModels } from "../../react/hooks.js";
-import { cn } from "../utils.js";
+import { cn } from "../shared/utils.js";
 
 export interface ModelSelectorProps {
   value: string;

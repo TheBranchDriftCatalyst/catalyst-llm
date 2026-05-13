@@ -5,7 +5,7 @@
  */
 import { useMemo } from "react";
 import { lineDiff } from "./diff.js";
-import { cn } from "../utils.js";
+import { cn } from "../shared/utils.js";
 
 export interface DiffPaneProps {
   reference: string;

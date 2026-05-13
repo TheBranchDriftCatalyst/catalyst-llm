@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Brain, ChevronRight } from "lucide-react";
-import { cn } from "../utils.js";
+import { cn } from "../shared/utils.js";
 
 export interface ReasoningBlockProps {
   /** The raw text inside the <think>...</think> tags (no tags). */

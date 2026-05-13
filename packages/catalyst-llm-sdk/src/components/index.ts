@@ -34,7 +34,7 @@ export {
 } from "./engine/AgentConfigForm.js";
 export { ChatMessage, type ChatMessageProps } from "./chat/ChatMessage.js";
 export { ToolCallCard, type ToolCallCardProps } from "./chat/ToolCallCard.js";
-export { RenderedContent, type RenderedContentProps } from "./RenderedContent.js";
+export { RenderedContent, type RenderedContentProps } from "./shared/RenderedContent.js";
 export {
   ReasoningBlock,
   splitReasoning,
@@ -100,4 +100,4 @@ export { ParameterControls, type ParameterControlsProps } from "./model-selector
 export { ResponseViewer, type ResponseViewerProps } from "./chat/ResponseViewer.js";
 export { SystemPromptEditor, type SystemPromptEditorProps } from "./prompts/SystemPromptEditor.js";
 export { ConnectionStatus, type ConnectionStatusProps } from "./chat/ConnectionStatus.js";
-export { fuzzyScore, fuzzyFilter } from "./fuzzy.js";
+export { fuzzyScore, fuzzyFilter } from "./shared/fuzzy.js";

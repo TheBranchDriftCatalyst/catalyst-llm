@@ -3,7 +3,7 @@ import { Bot, RefreshCw, Wrench } from "lucide-react";
 import type { AgentDescriptor } from "../../../agent/events.js";
 import { useEngineStore } from "../../../react/engineStore.js";
 import { SidePanelItem } from "../../page-shell/SidePanelItem.js";
-import { cn } from "../../utils.js";
+import { cn } from "../../shared/utils.js";
 
 export interface AgentsListPanelProps {
   agents: AgentDescriptor[];

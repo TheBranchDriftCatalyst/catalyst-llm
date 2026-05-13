@@ -34,7 +34,7 @@ import type {
   AgentFieldSchema,
 } from "../../agent/events.js";
 import { ModelSelector } from "../model-selector/ModelSelector.js";
-import { cn } from "../utils.js";
+import { cn } from "../shared/utils.js";
 
 // catalyst-ui's Slider extends Radix's SliderPrimitive.Root, but Radix's
 // peer-dep types don't resolve cleanly from this consumer. Mirror the

@@ -3,7 +3,7 @@ import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Plus, X, Columns3 } from "lucide-react";
 import { useChatStore } from "../../react/chat/index.js";
 import { useCompareStore } from "../../react/useCompare.js";
-import { cn } from "../utils.js";
+import { cn } from "../shared/utils.js";
 
 export interface ChatTabsProps {
   /**

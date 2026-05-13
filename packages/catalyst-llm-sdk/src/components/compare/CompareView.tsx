@@ -41,8 +41,8 @@ import { ModelMultiSelect } from "../model-selector/ModelMultiSelect.js";
 import { ModelInfoCard } from "../model-selector/ModelInfoCard.js";
 import { PromptPresets, SystemPromptPresets } from "../prompts/PromptPresets.js";
 import { CompareGraphs } from "./CompareGraphs.js";
-import { RenderedContent } from "../RenderedContent.js";
-import { cn } from "../utils.js";
+import { RenderedContent } from "../shared/RenderedContent.js";
+import { cn } from "../shared/utils.js";
 import { ResponseColumn } from "./compare-response-column.js";
 import { ResultsTable } from "./compare-results-table.js";
 

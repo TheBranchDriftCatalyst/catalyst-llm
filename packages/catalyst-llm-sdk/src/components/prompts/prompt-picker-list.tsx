@@ -22,7 +22,7 @@ import {
 import { Input } from "@thebranchdriftcatalyst/catalyst-ui/ui/input";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import type { CustomPreset } from "../../react/promptStore.js";
-import { cn } from "../utils.js";
+import { cn } from "../shared/utils.js";
 
 export const CATEGORY_META = {
   user: { label: "User prompt", Icon: User, hint: "Pre-fills the chat textarea" },

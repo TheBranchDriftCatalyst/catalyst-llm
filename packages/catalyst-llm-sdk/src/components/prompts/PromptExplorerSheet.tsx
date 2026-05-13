@@ -48,7 +48,7 @@ import {
   presetToDraft,
   type PromptDraft,
 } from "./prompt-edit-form.js";
-import { cn } from "../utils.js";
+import { cn } from "../shared/utils.js";
 
 export interface PromptExplorerSheetProps {
   agentId: string;

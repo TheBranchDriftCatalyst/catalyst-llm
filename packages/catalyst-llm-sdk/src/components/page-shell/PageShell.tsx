@@ -26,7 +26,7 @@
  */
 import type { ReactNode } from "react";
 import { Splitter } from "./Splitter.js";
-import { cn } from "../utils.js";
+import { cn } from "../shared/utils.js";
 import "./styles.css";
 
 export interface PageShellProps {

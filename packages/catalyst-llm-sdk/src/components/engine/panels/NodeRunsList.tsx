@@ -20,7 +20,7 @@ import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, History, Loader2, Play, XCircle } from "lucide-react";
 import type { RunByNodeRow } from "../../../agent/events.js";
 import { useLLMContext } from "../../../react/LLMProvider.js";
-import { cn } from "../../utils.js";
+import { cn } from "../../shared/utils.js";
 
 export interface NodeRunsListProps {
   /** Informational — see file header. Forwarded to the API as

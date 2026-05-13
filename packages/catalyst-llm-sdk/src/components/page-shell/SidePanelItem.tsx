@@ -18,7 +18,7 @@ import {
   type ReactNode,
 } from "react";
 import { ChevronDown, ChevronRight, GripVertical } from "lucide-react";
-import { cn } from "../utils.js";
+import { cn } from "../shared/utils.js";
 import {
   SIDEPANEL_ITEM_DND_TYPE,
   itemCollapsedStorageKey as itemCollapsedStorageKeyInternal,

@@ -3,7 +3,7 @@ import type { Chat } from "../../react/chat/index.js";
 import type { ModelWithRouting } from "../../client/index.js";
 import { effectiveMetadata } from "../../client/modelHints.js";
 import { formatTokens } from "../../react/useChatCost.js";
-import { cn } from "../utils.js";
+import { cn } from "../shared/utils.js";
 
 export interface ContextMeterProps {
   chat: Chat | undefined;

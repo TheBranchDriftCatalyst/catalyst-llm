@@ -7,7 +7,7 @@ import {
   serializePromptFile,
 } from "../../react/promptFile.js";
 import { BUILTIN_SEEDS } from "./prompt-seeds.js";
-import { cn } from "../utils.js";
+import { cn } from "../shared/utils.js";
 import { PromptPickerList, EmptyState } from "./prompt-picker-list.js";
 import {
   EMPTY_PROMPT_DRAFT,

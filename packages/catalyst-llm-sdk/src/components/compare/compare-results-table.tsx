@@ -18,14 +18,14 @@ import {
   formatUsd,
 } from "../../react/useChatCost.js";
 import type { CompareRun } from "../../react/useCompare.js";
-import { RenderedContent } from "../RenderedContent.js";
+import { RenderedContent } from "../shared/RenderedContent.js";
 import {
   checkJson,
   statsForRun,
   type PerRunStats,
 } from "./compare-stats.js";
 import { JsonBadge } from "./compare-stats-ui.js";
-import { cn } from "../utils.js";
+import { cn } from "../shared/utils.js";
 
 export interface ResultsTableProps {
   modelIds: string[];

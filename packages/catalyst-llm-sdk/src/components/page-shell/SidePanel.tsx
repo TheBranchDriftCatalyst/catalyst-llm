@@ -12,7 +12,7 @@ import {
   type ReactNode,
 } from "react";
 import { Splitter } from "./Splitter.js";
-import { cn } from "../utils.js";
+import { cn } from "../shared/utils.js";
 import {
   SIDEPANEL_ITEM_DND_TYPE,
   SidePanelCtx,

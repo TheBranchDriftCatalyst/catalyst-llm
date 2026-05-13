@@ -17,7 +17,7 @@ import {
   formatRate,
 } from "../../react/useChatCost.js";
 import { useModels } from "../../react/hooks.js";
-import { cn } from "../utils.js";
+import { cn } from "../shared/utils.js";
 
 export interface CostPinsProps {
   chat: Chat | undefined;

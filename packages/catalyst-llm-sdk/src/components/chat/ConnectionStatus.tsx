@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLLM } from "../../react/hooks.js";
-import { cn } from "../utils.js";
+import { cn } from "../shared/utils.js";
 
 export interface ConnectionStatusProps {
   /** Polling interval in ms; 0 disables polling. Defaults to 30s. */

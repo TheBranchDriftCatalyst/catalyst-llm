@@ -6,10 +6,10 @@ import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
 import type { ModelWithRouting } from "../../client/index.js";
 import { useModels } from "../../react/hooks.js";
 import { ModelInfoCard } from "./ModelInfoCard.js";
-import { fuzzyFilter } from "../fuzzy.js";
-import { useListboxKeyboard } from "../useListboxKeyboard.js";
-import { useFocusTrap } from "../useFocusTrap.js";
-import { cn } from "../utils.js";
+import { fuzzyFilter } from "../shared/fuzzy.js";
+import { useListboxKeyboard } from "../shared/useListboxKeyboard.js";
+import { useFocusTrap } from "../shared/useFocusTrap.js";
+import { cn } from "../shared/utils.js";
 
 export interface ModelSelectorRichProps {
   value: string;

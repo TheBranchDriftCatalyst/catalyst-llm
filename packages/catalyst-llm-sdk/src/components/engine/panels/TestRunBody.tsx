@@ -26,7 +26,7 @@ import { useEngineRunStore } from "../../../react/engineRunStore.js";
 import { useEngineStore } from "../../../react/engineStore.js";
 import type { AgentDescriptor } from "../../../agent/events.js";
 import { ModelMicroSwitcher } from "../../model-selector/ModelMicroSwitcher.js";
-import { cn } from "../../utils.js";
+import { cn } from "../../shared/utils.js";
 
 export interface TestRunBodyProps {
   agent: AgentDescriptor;

@@ -30,7 +30,7 @@ import type { AgentDescriptor } from "../../agent/events.js";
 import { useAgents } from "../../react/hooks.js";
 import { useEngineStore } from "../../react/engineStore.js";
 import { useEngineRunStore } from "../../react/engineRunStore.js";
-import { cn } from "../utils.js";
+import { cn } from "../shared/utils.js";
 import { PromptExplorerSheet } from "../prompts/PromptExplorerSheet.js";
 import { PageShell } from "../page-shell/PageShell.js";
 import { SidePanel } from "../page-shell/SidePanel.js";

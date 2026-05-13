@@ -29,8 +29,8 @@ import {
 } from "../prompts/PromptPresets.js";
 import { getPresetsForModel } from "../prompts/prompt-seeds.js";
 import { useModels, useAvailableTools, type AvailableTool } from "../../react/hooks.js";
-import { useFocusTrap } from "../useFocusTrap.js";
-import { cn } from "../utils.js";
+import { useFocusTrap } from "../shared/useFocusTrap.js";
+import { cn } from "../shared/utils.js";
 
 export interface ChatPanelProps {
   chat: Chat;

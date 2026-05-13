@@ -39,7 +39,7 @@ import type {
   AgentTopologyNode,
   GroupType,
 } from "../../../agent/events.js";
-import { cn } from "../../utils.js";
+import { cn } from "../../shared/utils.js";
 import {
   GROUP_LABEL_BAND,
   GROUP_PADDING,
