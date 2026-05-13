@@ -9,9 +9,11 @@ export {
 } from "./page-shell/SidePanelItem.js";
 
 // ============================================================
-// engine — agent topology + run viewer
+// engine — agent topology + run-viewer primitives
+//
+// The page-level composition (EnginePage) lives in the consumer app.
+// SDK ships rail panels + topology + adapters + sheet bodies.
 // ============================================================
-export { EnginePage, type EnginePageProps } from "./engine/EnginePage.js";
 export {
   ReactFlowAgentTopology,
   type ReactFlowAgentTopologyProps,
