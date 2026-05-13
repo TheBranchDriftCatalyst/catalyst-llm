@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { EnginePage } from "../pages/EnginePage";
+import { EnginePage } from "../../pages/EnginePage";
 
 /** §F — State persistence across reload.
  * Every layout interaction (collapse, drag, splitter resize) writes to

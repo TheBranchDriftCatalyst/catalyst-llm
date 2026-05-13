@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { EnginePage } from "../pages/EnginePage";
+import { EnginePage } from "../../pages/EnginePage";
 
 /** §E — Engine-specific item rendering. Backend-independent: we assert
  * the chrome renders even when /api/agents is unreachable (empty state)

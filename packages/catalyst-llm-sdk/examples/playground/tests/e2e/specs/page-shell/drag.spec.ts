@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { EnginePage } from "../pages/EnginePage";
+import { EnginePage } from "../../pages/EnginePage";
 
 /** §D — Cross-rail + within-rail drag. Synthetic HTML5 DragEvents +
  * custom MIME live in `helpers/dnd.ts`; tests stay declarative through

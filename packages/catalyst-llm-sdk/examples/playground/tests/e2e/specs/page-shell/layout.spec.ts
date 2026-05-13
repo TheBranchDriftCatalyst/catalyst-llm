@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { EnginePage } from "../pages/EnginePage";
+import { EnginePage } from "../../pages/EnginePage";
 
 /** §A rail splitters + §B SidePanelItem collapse / expand. */
 
