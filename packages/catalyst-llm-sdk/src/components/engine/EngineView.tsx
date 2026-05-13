@@ -195,6 +195,13 @@ export function EngineView({ className }: EngineViewProps) {
               icon={<Play className="h-3 w-3" />}
               defaultGrow
               openSignal={testRunOpenSignal}
+              headerRight={
+                selected ? (
+                  <span className="font-mono text-[10px] normal-case tracking-normal text-foreground">
+                    {selected.id}
+                  </span>
+                ) : undefined
+              }
             >
               {selected ? (
                 <div className="flex h-full min-h-0 flex-col p-2">

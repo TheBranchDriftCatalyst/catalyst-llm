@@ -112,20 +112,14 @@ export function TestRunSheet({ agent, className }: TestRunSheetProps) {
   ]);
 
   return (
-    <div className={cn("flex h-full min-h-0 flex-col gap-3", className)}>
+    <div className={cn("flex h-full min-h-0 flex-col gap-2", className)}>
       {/* ── Top: prompt input + model + Run/Stop ──────────────────── */}
       <div className="flex shrink-0 flex-col gap-2">
-        <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-          <span className="font-mono text-foreground">{agent.id}</span>
-          <span className="text-[10px] uppercase tracking-wider">
-            test run · dispatches through the langgraph flow
-          </span>
-        </div>
         <Textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
-          placeholder={`Ask ${agent.id} something…  (⌘/Ctrl+Enter to run)`}
-          rows={4}
+          placeholder={`Ask ${agent.id} something… (⌘/Ctrl+Enter)`}
+          rows={3}
           className="font-mono text-xs"
           onKeyDown={(e) => {
             if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && canRun) {

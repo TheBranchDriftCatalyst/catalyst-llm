@@ -84,9 +84,9 @@ export function PageShell({
             orientation="vertical"
             cssVar="--page-col-right"
             storageKey={`catalyst-llm-sdk:${storageNamespace}:col-right`}
-            defaultPx={360}
-            minPx={240}
-            maxPx={720}
+            defaultPx={480}
+            minPx={320}
+            maxPx={800}
             invert
             style={{ gridColumn: 4, gridRow: 1 }}
           />
