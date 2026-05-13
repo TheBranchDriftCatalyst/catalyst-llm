@@ -1,5 +1,5 @@
 /**
- * TestRunSheet — dispatch a one-off chat request through an Agent
+ * TestRunBody — dispatch a one-off chat request through an Agent
  * directly from the Engine tab, without leaving the topology view.
  *
  * Triggered by clicking the __start__ chip on an Agent's topology.
@@ -21,19 +21,19 @@ import { useCallback, useMemo, useState } from "react";
 import { Button } from "@thebranchdriftcatalyst/catalyst-ui/ui/button";
 import { Textarea } from "@thebranchdriftcatalyst/catalyst-ui/ui/textarea";
 import { Play, Square, Wrench } from "lucide-react";
-import { useLLMContext } from "../../react/LLMProvider.js";
-import { useEngineRunStore } from "../../react/engineRunStore.js";
-import { useEngineStore } from "../../react/engineStore.js";
-import type { AgentDescriptor } from "../../agent/events.js";
-import { ModelMicroSwitcher } from "../ModelMicroSwitcher.js";
-import { cn } from "../utils.js";
+import { useLLMContext } from "../../../react/LLMProvider.js";
+import { useEngineRunStore } from "../../../react/engineRunStore.js";
+import { useEngineStore } from "../../../react/engineStore.js";
+import type { AgentDescriptor } from "../../../agent/events.js";
+import { ModelMicroSwitcher } from "../../ModelMicroSwitcher.js";
+import { cn } from "../../utils.js";
 
-export interface TestRunSheetProps {
+export interface TestRunBodyProps {
   agent: AgentDescriptor;
   className?: string;
 }
 
-export function TestRunSheet({ agent, className }: TestRunSheetProps) {
+export function TestRunBody({ agent, className }: TestRunBodyProps) {
   const { agentClient } = useLLMContext();
   const setField = useEngineStore((s) => s.setField);
 

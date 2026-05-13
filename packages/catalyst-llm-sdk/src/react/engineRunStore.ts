@@ -2,13 +2,11 @@
  * Engine test-run store — keeps a running dispatch alive across UI
  * navigation.
  *
- * Originally the TestRunSheet held the entire run state in local
- * useState; when the sheet closed (Esc, switch agents, click out)
- * the component unmounted and the state vanished. The server-side
- * stream kept running but nothing was consuming its events. Lift
- * the state here so the sheet (and any other watcher — the topology
- * needs the active node id to drive its pulse highlight) can read
- * the live state, and a re-mount picks up where it left off.
+ * Run state is held here (rather than inside the rail-item body)
+ * because the body can unmount (collapsed item, switched agent) while
+ * the server-side dispatch keeps streaming. Lifting the state up
+ * means any subscriber (topology pulse highlight, sheet body, etc.)
+ * can read the live run, and a re-mount picks up where it left off.
  *
  * Per-agent keying: at most one in-flight test run per Agent at a
  * time. Starting a new run while one is in flight aborts the old

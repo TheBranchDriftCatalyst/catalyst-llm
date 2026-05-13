@@ -6,11 +6,11 @@ export {
 export {
   NodeRunsList,
   type NodeRunsListProps,
-} from "./engine/NodeRunsList.js";
+} from "./engine/panels/NodeRunsList.js";
 export {
-  TestRunSheet,
-  type TestRunSheetProps,
-} from "./engine/TestRunSheet.js";
+  TestRunBody,
+  type TestRunBodyProps,
+} from "./engine/panels/TestRunBody.js";
 export { PageShell, type PageShellProps } from "./page-shell/PageShell.js";
 export { SidePanel, type SidePanelProps } from "./page-shell/SidePanel.js";
 export {

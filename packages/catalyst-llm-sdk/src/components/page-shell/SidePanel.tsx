@@ -52,13 +52,31 @@ function discoverItems(children: ReactNode): DiscoveredItem[] {
         visit((child.props as { children?: ReactNode }).children);
         return;
       }
-      if (child.type !== SidePanelItem) return;
-      const props = child.props as SidePanelItemProps;
-      out.push({
-        id: props.id,
-        defaultCollapsed: props.defaultCollapsed ?? false,
-        element: child as ReactElement<SidePanelItemProps>,
-      });
+      // Direct <SidePanelItem> — read id/defaultCollapsed from its props.
+      if (child.type === SidePanelItem) {
+        const props = child.props as SidePanelItemProps;
+        out.push({
+          id: props.id,
+          defaultCollapsed: props.defaultCollapsed ?? false,
+          element: child as ReactElement<SidePanelItemProps>,
+        });
+        return;
+      }
+      // Wrapper component that renders a SidePanelItem internally —
+      // recognised by a static `itemId` (and optional `defaultCollapsed`)
+      // attached to its function. Lets pages compose rail items as
+      // reusable components without losing discoverability.
+      const t = child.type as
+        | { itemId?: string; defaultCollapsed?: boolean }
+        | string;
+      if (typeof t === "function" && typeof (t as { itemId?: string }).itemId === "string") {
+        const meta = t as { itemId: string; defaultCollapsed?: boolean };
+        out.push({
+          id: meta.itemId,
+          defaultCollapsed: meta.defaultCollapsed ?? false,
+          element: child as ReactElement<SidePanelItemProps>,
+        });
+      }
     });
   };
   visit(children);

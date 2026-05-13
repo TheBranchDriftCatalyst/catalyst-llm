@@ -66,7 +66,7 @@ export interface ReactFlowAgentTopologyProps {
   selectedNodeId?: string;
   /** Node id currently executing during a live run. Renders as a
    * pulsing brighter ring; distinct from `selectedNodeId` (which is
-   * operator-clicked, static). Driven by TestRunSheet's streamed
+   * operator-clicked, static). Driven by TestRunBody's streamed
    * event attribution. */
   activeNodeId?: string;
   /** Fires on node click (with node id) AND on pane click (with `undefined`). */
@@ -80,7 +80,7 @@ export interface ReactFlowAgentTopologyProps {
   onOpenRunsSheet?: (nodeId: string) => void;
   /** Called when the __start__ chip is clicked. EnginePage flips
    * sheetContext to `{ kind: "test-run", agentId }` and renders the
-   * TestRunSheet so the operator can dispatch a one-shot chat request
+   * TestRunBody so the operator can dispatch a one-shot chat request
    * through this Agent's flow without leaving the Engine tab. */
   onStartTestRun?: () => void;
   className?: string;
@@ -334,7 +334,7 @@ function StartEndChip({ data }: NodeProps) {
     </>
   );
   // Make the start chip a real button when a test-run dispatcher is
-  // wired up — clicking it opens the TestRunSheet for this agent. The
+  // wired up — clicking it opens the TestRunBody for this agent. The
   // .nodrag/.nopan guard stops reactflow from interpreting the click
   // as the start of a canvas drag.
   if (runnable) {
