@@ -190,3 +190,15 @@ __all__ = [
     "node_default_config",
     "validate_overrides",
 ]
+
+
+# ── Agent registrations — import for side effect ────────────────────
+# Each sibling module calls `register_agent(...)` at import time. The
+# `main` chat agent is registered from `..graph`; `research` from
+# `..tools.research`; both are pulled in by the server bootstrap path
+# already. The `extraction` agent has no runtime in this package (the
+# pipeline ships in catalyst-data/libs/catalyst-exgraph), so it doesn't
+# have a natural import edge into the server. Import it here at the
+# bottom of the registry module so the descriptor lands in AGENTS
+# whenever anyone imports the registry.
+from . import extraction  # noqa: E402, F401
