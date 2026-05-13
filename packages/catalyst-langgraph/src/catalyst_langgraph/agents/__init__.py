@@ -57,18 +57,15 @@ class AgentTopologyNode:
 
     Structural grouping (optional, UI-only):
 
-      `group_id` — nodes sharing the same group_id render inside the
-        same compound container on the Engine tab. Purely visual; the
-        underlying LangGraph state machine is unchanged.
-      `group_type` — sets the container's visual style. `ensemble`
-        renders as a faint container suggesting parallel copies;
-        `actor_critic_loop` renders with critic-feedback semantics
-        (dashed border around the loop's participants).
-      `instance_count_field` — names a field in *this* node's own
-        config_model whose live value determines how many "instance"
-        sub-cards to stamp inside the node card. Lets a single
-        `members` node visualise `council_size=N` as N stamps without
-        introducing N separately-configurable nodes.
+      `group_id` — when set, this node belongs to the group with the
+        matching id in `AgentTopology.groups`. First-class ensemble
+        groups (groups with their own `config_model`) render as a
+        single container card at the member node's position; legacy
+        `group_type` wrappers cluster all members under a compound
+        container instead.
+      `group_type` — DEPRECATED on nodes; lives on `AgentTopologyGroup`
+        now. Kept on the node only for the legacy compound-container
+        path until all groups migrate.
     """
 
     id: str
@@ -76,7 +73,6 @@ class AgentTopologyNode:
     config_model: type[BaseModel] | None = None
     group_type: Optional[GroupType] = None
     group_id: Optional[str] = None
-    instance_count_field: Optional[str] = None
 
 
 @dataclass

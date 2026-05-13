@@ -196,11 +196,6 @@ const GROUP_VISUAL: Record<
   },
 };
 
-// Cap on how many "instance" thumbnails we stamp inside an ensemble
-// member card. Beyond this we render a +N overflow chip — cheap visual
-// proxy for "more than fit on the card".
-const INSTANCE_STAMP_MAX = 6;
-
 // Per-type icon + visual tone. Tones colour the card border + a faint
 // background tint; the existing dagre view used the same palette so
 // the swap is visually continuous.
@@ -251,11 +246,6 @@ interface CommonNodeData extends Record<string, unknown> {
   toolList: string[];
   /** Called when the prompt-icon button on an agent node is clicked. */
   onOpenPromptSheet?: (nodeId: string) => void;
-  /** When set, names a field in this node's own schema whose live
-   * value drives the per-card instance-stamp row (e.g. members'
-   * `council_size` → N small avatar circles). Visual only — the
-   * stamps are NOT separately configurable nodes. */
-  instanceCountField?: string | null;
   /** Called when the runs-icon button on an agent / tools node is clicked. */
   onOpenRunsSheet?: (nodeId: string) => void;
   /** Called when the __start__ chip is clicked. Only set on the
@@ -528,22 +518,6 @@ function AgentNodeCard({ data }: NodeProps) {
       : defaults[fieldName];
   }
 
-  // Instance-count visualisation: when this node advertises an
-  // `instance_count_field`, render a small chip row of N stamps so
-  // the operator can SEE "council_size=3" as 3 thumbnails without
-  // reading the slider. Live override wins over schema default —
-  // bumping council_size in the inline form animates the stamps
-  // immediately. Cap at INSTANCE_STAMP_MAX with a +overflow chip.
-  const instanceField = d.instanceCountField;
-  const rawInstanceCount =
-    instanceField != null ? values[instanceField] : undefined;
-  const instanceCount =
-    typeof rawInstanceCount === "number" && Number.isFinite(rawInstanceCount)
-      ? Math.max(0, Math.floor(rawInstanceCount))
-      : 0;
-  const stampsToRender = Math.min(instanceCount, INSTANCE_STAMP_MAX);
-  const stampOverflow = Math.max(0, instanceCount - INSTANCE_STAMP_MAX);
-
   return (
     <div
       className={cn(
@@ -572,28 +546,6 @@ function AgentNodeCard({ data }: NodeProps) {
           className={overrideKeys.size > 0 ? "" : "ml-auto"}
         />
       </div>
-      {instanceField && instanceCount > 0 && (
-        <div
-          className="flex items-center gap-1 rounded-sm border border-primary/30 bg-primary/5 px-1.5 py-1 text-[10px] font-mono"
-          title={`${instanceCount} instances (live ${instanceField})`}
-        >
-          <Users className="h-3 w-3 shrink-0 text-primary/80" aria-hidden="true" />
-          <span className="text-primary/90">{instanceCount}</span>
-          <div className="flex items-center gap-0.5 ml-1">
-            {Array.from({ length: stampsToRender }).map((_, i) => (
-              <span
-                key={i}
-                className="block h-2.5 w-2.5 rounded-full border border-primary/60 bg-primary/30"
-              />
-            ))}
-            {stampOverflow > 0 && (
-              <span className="ml-0.5 text-[9px] text-primary/70">
-                +{stampOverflow}
-              </span>
-            )}
-          </div>
-        </div>
-      )}
       <NodeInlineConfig
         schema={d.schema}
         values={values}
@@ -662,9 +614,14 @@ function GroupContainerNode({ data }: NodeProps) {
 interface EnsembleGroupData extends Record<string, unknown> {
   agentId: string;
   /** The group's id — also the engineStore key for this group's
-   * config bucket + the reactflow node id (so edges that targeted
-   * the legacy member node still attach here). */
+   * config bucket. */
   groupId: string;
+  /** The id of the template member node (e.g. "members"). The reactflow
+   * node uses this id so edges still attach; selection / event
+   * attribution (NodeRunsList, prompt sheets, run-store activeNode)
+   * routes through this same id since the runtime emits events under
+   * the template node, not the group. */
+  templateNodeId: string;
   schema: AgentConfigSchema | null;
   defaults: Record<string, unknown> | null;
   instanceCountField: string | null;
@@ -673,12 +630,16 @@ interface EnsembleGroupData extends Record<string, unknown> {
   activeNodeId: string | undefined;
   size: { w: number; h: number };
   onOpenPromptSheet?: (entityId: string) => void;
+  /** Opens the per-node runs sheet keyed on `templateNodeId` — the
+   * runtime emits events under that id, so the runs query matches the
+   * actual event log. */
+  onOpenRunsSheet?: (nodeId: string) => void;
 }
 
 function EnsembleGroupCard({ data }: NodeProps) {
   const d = data as EnsembleGroupData;
-  const selected = d.selectedNodeId === d.groupId;
-  const active = d.activeNodeId === d.groupId;
+  const selected = d.selectedNodeId === d.templateNodeId;
+  const active = d.activeNodeId === d.templateNodeId;
 
   // Live overrides keyed by groupId (engineStore's second-level key
   // accepts either a node_id OR a group_id — same shape).
@@ -742,15 +703,22 @@ function EnsembleGroupCard({ data }: NodeProps) {
     >
       <Handle type="target" position={Position.Top} />
 
-      {/* Group header — label + member count + group id chip */}
+      {/* Group header — label + member count + group id chip + runs */}
       <div className="flex shrink-0 items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-200">
           <Users className="h-3 w-3" aria-hidden="true" />
           {d.label ?? d.groupId}
         </div>
-        <span className="rounded-sm border border-amber-500/40 bg-amber-500/15 px-1.5 py-0.5 font-mono text-[10px] text-amber-100">
-          {instanceCount}×
-        </span>
+        <div className="flex items-center gap-1">
+          <span className="rounded-sm border border-amber-500/40 bg-amber-500/15 px-1.5 py-0.5 font-mono text-[10px] text-amber-100">
+            {instanceCount}×
+          </span>
+          {d.onOpenRunsSheet && (
+            <RunsIconButton
+              onClick={() => d.onOpenRunsSheet?.(d.templateNodeId)}
+            />
+          )}
+        </div>
       </div>
 
       {/* Group's shared config form. Edits write to engineStore keyed
@@ -1064,6 +1032,7 @@ export function ReactFlowAgentTopology({
           data: {
             agentId,
             groupId: ensembleGroup.id,
+            templateNodeId: n.id,
             schema: ensembleGroup.config_schema,
             defaults: ensembleGroup.config_defaults,
             instanceCountField: ensembleGroup.instance_count_field ?? null,
@@ -1072,6 +1041,7 @@ export function ReactFlowAgentTopology({
             activeNodeId,
             size: computeEnsembleGroupSize(ensembleGroup),
             onOpenPromptSheet,
+            onOpenRunsSheet,
           } satisfies EnsembleGroupData,
           draggable: false,
           selectable: true,
@@ -1102,7 +1072,6 @@ export function ReactFlowAgentTopology({
           // which is wrong. The StartEndChip component double-checks
           // type === "start" before rendering the runnable variant.
           onStartTestRun: n.type === "start" ? onStartTestRun : undefined,
-          instanceCountField: n.instance_count_field ?? null,
         } satisfies CommonNodeData,
         draggable: false,
         selectable: true,

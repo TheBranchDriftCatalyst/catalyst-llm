@@ -819,16 +819,6 @@ class AgentTopologyNodeOut(BaseModel):
             "ungrouped nodes (start/end/standalone tools)."
         ),
     )
-    instance_count_field: Optional[str] = Field(
-        default=None,
-        description=(
-            "When set, names a field in this node's own `config_schema` "
-            "whose live value drives how many 'instance' sub-cards the "
-            "UI stamps inside the node — e.g. `council_size` on `members` "
-            "for the research ensemble. Visual only; sub-cards are not "
-            "separately configurable."
-        ),
-    )
 
 
 class AgentTopologyEdgeOut(BaseModel):
@@ -969,7 +959,6 @@ async def list_agents() -> ListAgentsResponse:
                             ),
                             group_type=n.group_type,
                             group_id=n.group_id,
-                            instance_count_field=n.instance_count_field,
                         )
                         for n in desc.topology.nodes
                     ],

@@ -170,18 +170,22 @@ export type GroupType = "ensemble" | "actor_critic_loop";
  *
  * `config_schema` (JSON Schema from the node's Pydantic class) and
  * `config_defaults` (no-arg instance dump) are non-null only for nodes
- * that actually consume operator-tweakable knobs — start/end terminals
- * and pure-dispatch tools nodes leave both as null.
+ * that actually consume operator-tweakable knobs — start/end terminals,
+ * pure-dispatch tools nodes, and ensemble-group MEMBER templates leave
+ * both as null. Group members read their config from the owning
+ * `AgentTopologyGroup` instead.
  *
- * Optional structural-grouping metadata (UI-only — does not affect the
- * runtime LangGraph state machine):
- *   - `group_id` — nodes sharing the same group_id render inside the
- *     same compound container on the Engine tab.
- *   - `group_type` — sets the container's visual style.
- *   - `instance_count_field` — when set, names a field in *this* node's
- *     own `config_schema` whose live value drives how many small
- *     "instance" sub-cards the UI stamps inside the node card. Visual
- *     only; the sub-cards are not separately configurable.
+ * Optional grouping metadata (UI-only — does not affect the runtime
+ * LangGraph state machine):
+ *   - `group_id` — when set, this node belongs to the group with the
+ *     matching id in `AgentTopology.groups[]`. First-class ensemble
+ *     groups (groups with their own `config_schema`) render as a
+ *     single container card at the member node's position; legacy
+ *     `group_type` wrappers cluster all members under a compound
+ *     container instead.
+ *   - `group_type` — DEPRECATED on nodes; lives on `AgentTopologyGroup`
+ *     now. Kept for the legacy compound-container path until all
+ *     groups migrate.
  */
 export interface AgentTopologyNode {
   id: string;
@@ -190,7 +194,6 @@ export interface AgentTopologyNode {
   config_defaults: Record<string, unknown> | null;
   group_type?: GroupType | null;
   group_id?: string | null;
-  instance_count_field?: string | null;
 }
 
 /** One edge between two topology nodes. */
