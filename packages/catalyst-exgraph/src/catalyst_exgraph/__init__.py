@@ -15,16 +15,25 @@ from catalyst_exgraph.config import PipelineConfig, StageConfig, chunk_stage_con
 from catalyst_exgraph.nodes.chunk import ChunkNode
 from catalyst_exgraph.pipeline import build_pipeline
 from catalyst_exgraph.protocol import ExtractionClient, ExtractionResult, StageResult
-from catalyst_exgraph.resource import ExtractionResource
 from catalyst_exgraph.stage import build_stage_graph
 from catalyst_exgraph.state import ExGraphState, ExGraphStatus
+
+# NOTE: `ExtractionResource` (Dagster ConfigurableResource) is NOT imported
+# here — it pulls in the `dagster` package which is an optional extra
+# (`pip install 'catalyst-exgraph[dagster]'`). Consumers that need the
+# Dagster integration import it explicitly:
+#
+#     from catalyst_exgraph.resource import ExtractionResource
+#
+# Keeping it out of the package init means catalyst-langgraph (which
+# only needs build_pipeline + config_schemas) can install
+# catalyst-exgraph without dagster's heavy dep tree.
 
 __all__ = [
     "ChunkNode",
     "ExGraphState",
     "ExGraphStatus",
     "ExtractionClient",
-    "ExtractionResource",
     "ExtractionResult",
     "PipelineConfig",
     "StageConfig",
