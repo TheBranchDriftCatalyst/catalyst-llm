@@ -27,6 +27,11 @@ dependencies = [
     # measure cost-per-run, and (eventually) replay individual steps.
     # Modelled on langgraph-dev's api/app/persistence/event_store.py.
     "duckdb>=1.0.0",
+    # Per-node Pydantic config schemas + extraction-domain models live
+    # in catalyst-exgraph. agents/extraction.py imports them at module
+    # load via the auto-import in agents/__init__.py. Path-source in
+    # dev; build into a wheel when we set up a private PyPI.
+    "catalyst-exgraph",
 ]
 
 [project.optional-dependencies]
@@ -50,6 +55,9 @@ markers = [
     "unit: tests with no external deps (no network, no services)",
     "integration: tests that touch local services (litellm proxy, ollama)",
 ]
+
+[tool.uv.sources]
+catalyst-exgraph = { path = "../catalyst-exgraph", editable = true }
 
 [tool.ruff]
 target-version = "py310"

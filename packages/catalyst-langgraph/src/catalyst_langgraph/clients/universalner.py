@@ -180,7 +180,7 @@ class UniversalNERClient:
         if "Mention" in schema_name:
             return await self._extract_mentions(raw_text, schema)
         elif "Proposition" in schema_name:
-            from catalyst_contracts.models.extraction_output import PropositionExtractionResult
+            from catalyst_exgraph.models.extraction_output import PropositionExtractionResult
 
             return PropositionExtractionResult(propositions=[])
         else:
@@ -188,7 +188,7 @@ class UniversalNERClient:
 
     async def _extract_mentions(self, raw_text: str, schema: type[BaseModel]) -> BaseModel:
         """Extract mentions by querying each entity type separately."""
-        from catalyst_contracts.models.extraction_output import MentionCandidate
+        from catalyst_exgraph.models.extraction_output import MentionCandidate
 
         logger.info(
             "universalner: extracting from %d chars, %d entity types",

@@ -317,7 +317,7 @@ class NuExtractClient:
             window_mentions = _entities_to_mentions(parsed, raw_text)
             all_mentions.update(window_mentions)
 
-        from catalyst_contracts.models.extraction_output import MentionCandidate
+        from catalyst_exgraph.models.extraction_output import MentionCandidate
 
         return schema(mentions=[MentionCandidate(**m) for m in all_mentions.values()])
 
@@ -359,7 +359,7 @@ class NuExtractClient:
                     }
                 )
 
-        from catalyst_contracts.models.extraction_output import PropositionCandidate
+        from catalyst_exgraph.models.extraction_output import PropositionCandidate
 
         return schema(propositions=[PropositionCandidate(**p) for p in propositions])
 
@@ -375,7 +375,7 @@ class NuExtractClient:
         response = await self._call_llm(prompt)
         parsed = self._parse_nuextract_output(response)
 
-        from catalyst_contracts.models.extraction_output import MentionCandidate
+        from catalyst_exgraph.models.extraction_output import MentionCandidate
 
         mentions = _entities_to_mentions(parsed, raw_text)
 

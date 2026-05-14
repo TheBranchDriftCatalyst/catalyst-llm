@@ -129,7 +129,7 @@ class GLiNERClient:
             return await self._extract_mentions(raw_text, schema)
         elif "Proposition" in schema_name:
             # GLiNER doesn't do relation extraction — return empty
-            from catalyst_contracts.models.extraction_output import PropositionExtractionResult
+            from catalyst_exgraph.models.extraction_output import PropositionExtractionResult
 
             return PropositionExtractionResult(propositions=[])
         else:
@@ -144,7 +144,7 @@ class GLiNERClient:
         span_end)``. The architecture caps at 384 tokens — without this,
         every entity past that point is silently dropped.
         """
-        from catalyst_contracts.models.extraction_output import MentionCandidate
+        from catalyst_exgraph.models.extraction_output import MentionCandidate
 
         model = self._get_model()
         # PII-trained model gets the PII-specific label vocab; everyone
