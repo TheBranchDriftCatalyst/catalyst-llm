@@ -11,7 +11,7 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
-from catalyst_contracts.models.extraction_output import (
+from catalyst_exgraph.models.extraction_output import (
     PropositionExtractionResult,
 )
 from catalyst_exgraph.config import spo_stage_config

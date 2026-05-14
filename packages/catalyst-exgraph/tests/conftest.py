@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from catalyst_contracts.models.extraction_output import (
+from catalyst_exgraph.models.extraction_output import (
     MentionCandidate,
     MentionExtractionResult,
     PropositionCandidate,

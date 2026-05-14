@@ -110,7 +110,7 @@ def ner_stage_config(
     ensemble_models: list[str] | None = None,
 ) -> StageConfig:
     """Create a standard NER (mention extraction) stage config."""
-    from catalyst_contracts.models.extraction_output import MentionExtractionResult
+    from catalyst_exgraph.models.extraction_output import MentionExtractionResult
 
     return StageConfig(
         stage_name="ner",
@@ -130,7 +130,7 @@ def spo_stage_config(
     skip: bool = False,
 ) -> StageConfig:
     """Create a standard SPO (proposition extraction) stage config."""
-    from catalyst_contracts.models.extraction_output import PropositionExtractionResult
+    from catalyst_exgraph.models.extraction_output import PropositionExtractionResult
 
     return StageConfig(
         stage_name="spo",

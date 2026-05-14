@@ -35,13 +35,13 @@ def test_skipped_stage_in_pipeline_stages_but_not_active(
 
 
 def test_ner_stage_config_uses_mention_extraction_schema(ner_config: StageConfig):
-    from catalyst_contracts.models.extraction_output import MentionExtractionResult
+    from catalyst_exgraph.models.extraction_output import MentionExtractionResult
 
     assert ner_config.extraction_schema is MentionExtractionResult
 
 
 def test_spo_stage_config_uses_proposition_extraction_schema(spo_config: StageConfig):
-    from catalyst_contracts.models.extraction_output import PropositionExtractionResult
+    from catalyst_exgraph.models.extraction_output import PropositionExtractionResult
 
     assert spo_config.extraction_schema is PropositionExtractionResult
 

@@ -265,7 +265,7 @@ async def test_all_skipped_stages_treated_as_empty_pipeline():
 @_PROMPT_PATCH
 async def test_three_stage_pipeline_chains_correctly(_prompt):
     """Three stages run in order, each receiving upstream context from prior stage."""
-    from catalyst_contracts.models.extraction_output import MentionExtractionResult
+    from catalyst_exgraph.models.extraction_output import MentionExtractionResult
 
     # Third stage reuses NER schema for simplicity
     custom_mentions = [

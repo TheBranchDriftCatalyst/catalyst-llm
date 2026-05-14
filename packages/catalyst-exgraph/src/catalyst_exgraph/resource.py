@@ -79,8 +79,8 @@ def _resolve_client(model: str, base_url: str | None = None, api_key: str | None
 
 def _build_mcp_client():
     """Build a DirectMCPClient with real validators."""
-    from catalyst_contracts.validators.mention_validator import validate_mentions
-    from catalyst_contracts.validators.proposition_validator import validate_propositions
+    from catalyst_exgraph.validators.mention_validator import validate_mentions
+    from catalyst_exgraph.validators.proposition_validator import validate_propositions
     from catalyst_langgraph.clients.mcp import DirectMCPClient
 
     class _ValidatorHandler:
