@@ -21,6 +21,11 @@ dependencies = [
     # via the same path or via a published wheel when we set up a
     # private PyPI.
     "catalyst-langgraph",
+    # Shared leaf types (MentionType, AlignmentType, ExtractionMethod,
+    # Provenance). Kept as its own ~97 LOC package because
+    # catalyst-data/libs/dagster-io also imports the module path
+    # `catalyst_contracts_core` cross-repo.
+    "catalyst-contracts-core",
 ]
 
 [project.optional-dependencies]
@@ -39,3 +44,4 @@ testpaths = ["tests"]
 
 [tool.uv.sources]
 catalyst-langgraph = { path = "../catalyst-langgraph", editable = true }
+catalyst-contracts-core = { path = "../catalyst-contracts-core", editable = true }
