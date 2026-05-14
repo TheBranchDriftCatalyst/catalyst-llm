@@ -21,11 +21,23 @@ COPY catalyst-contracts-core/ /app/catalyst-contracts-core/
 COPY catalyst-exgraph/ /app/catalyst-exgraph/
 COPY catalyst-langgraph/ /app/catalyst-langgraph/
 
-# Install dependencies in dependency order: leaf -> extraction -> server.
-# `--no-deps` on the path installs avoids re-resolving the transitive
-# tree; the catalyst-langgraph install at the end picks up everything
-# remaining from PyPI.
-RUN pip install --no-cache-dir /app/catalyst-contracts-core /app/catalyst-exgraph \
+# Install dependencies in dependency order. catalyst-exgraph ↔
+# catalyst-langgraph have a circular path-source dep (exgraph uses
+# catalyst_langgraph.clients.*; langgraph's agents/extraction.py
+# imports catalyst_exgraph.config_schemas). pip can't resolve the
+# cycle if it tries to fetch them from PyPI as part of the resolve,
+# so:
+#
+# 1. Install catalyst-contracts-core normally (it has no path deps).
+# 2. Install the two cyclic packages with --no-deps so pip skips
+#    their metadata's catalyst-* references.
+# 3. Run one more install pass for catalyst-langgraph (without
+#    --no-deps) to pull in the remaining PyPI deps (langgraph,
+#    fastapi, duckdb, ...). The catalyst-exgraph + catalyst-
+#    contracts-core requirements are already satisfied by the
+#    installs above.
+RUN pip install --no-cache-dir /app/catalyst-contracts-core \
+ && pip install --no-cache-dir --no-deps /app/catalyst-exgraph /app/catalyst-langgraph \
  && pip install --no-cache-dir /app/catalyst-langgraph
 
 WORKDIR /app/catalyst-langgraph
