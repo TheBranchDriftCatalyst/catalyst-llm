@@ -37,6 +37,60 @@ The extraction-domain agent graph. Provides:
 | `catalyst-data/packages/{congress-data,media-ingest,knowledge-graph,open-leaks}` | `ExtractionResource` (via the `dagster` extra). |
 | `catalyst-contracts-mcp` (MCP service) | `validators/*` for the 7 MCP tools. |
 
+## Integration
+
+### catalyst-langgraph (this monorepo, FastAPI server)
+
+Already wired. `catalyst_langgraph/agents/extraction.py` imports the
+per-node config_schemas + the topology metadata and registers an
+`AgentDescriptor`. `GET /api/agents` exposes it; the Engine UI in the
+playground renders + tunes its per-node configs live.
+
+Runtime dispatch via `POST /api/agents/extraction/stream` returns 501
+today — tracked under bd `llm-vfx`. When that lands the server will
+import `catalyst_exgraph.pipeline.build_pipeline` and dispatch with
+the operator's per-node config overrides.
+
+### catalyst-data codespaces (separate repo, Dagster code locations)
+
+Each of the 4 codespaces (`congress-data`, `media-ingest`,
+`knowledge-graph`, `open-leaks`) should add path-source deps:
+
+```toml
+# catalyst-data/packages/<codespace>/pyproject.toml
+
+[project]
+dependencies = [
+    "dagster>=1.13",
+    "dagster-io",                  # existing
+    "catalyst-exgraph",            # NEW — pipeline + types + validators
+    "catalyst-contracts-core",     # NEW — MentionType, AlignmentType, Provenance
+]
+
+[tool.uv.sources]
+catalyst-exgraph        = { path = "../../../../catalyst-llm/packages/catalyst-exgraph" }
+catalyst-contracts-core = { path = "../../../../catalyst-llm/packages/catalyst-contracts-core" }
+```
+
+Then in the codespace's definitions:
+
+```python
+from catalyst_exgraph import ExtractionResource
+from catalyst_exgraph.config_schemas import ExtractionChunkConfig
+
+resources = {"extraction": ExtractionResource(...)}
+```
+
+This wiring is tracked under bd `llm-le1` — a cross-repo follow-up
+to the llm-tqo consolidation that landed in catalyst-llm.
+
+### catalyst-contracts-mcp (this monorepo, optional MCP service)
+
+Standalone. Imports `catalyst_exgraph.validators.*` and exposes them
+as MCP tools. Dev work doesn't need it running — exgraph pipelines
+call the validators in-process. The MCP server is for OUTSIDE
+consumers (Claude Code, third-party LLMs).
+
 ## Layout
 
 ```
