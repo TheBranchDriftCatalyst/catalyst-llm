@@ -1,8 +1,9 @@
 # catalyst-langgraph — LangGraph agent service.
 #
 # Built locally by Tilt's docker_build('catalyst-llm/catalyst-langgraph', …)
-# and injected into the k3d dev cluster. Promotion to talos00 is tracked
-# as a follow-up beads issue (registry push required).
+# with context=./packages so this Dockerfile can pull in sibling
+# path-source deps (catalyst-exgraph, catalyst-contracts-core).
+# Injected into the k3d dev cluster.
 FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
@@ -11,11 +12,23 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Self-contained install: copy only what setuptools needs to build the
-# package, then install. Avoids needing a writable /app at runtime.
-COPY pyproject.toml README.md ./
-COPY src/ ./src/
-RUN pip install --no-cache-dir .
+# Layout under /app mirrors packages/ — the catalyst-langgraph
+# pyproject.toml declares catalyst-exgraph + catalyst-contracts-core
+# as path-source deps (../catalyst-exgraph, ../catalyst-contracts-core),
+# so we install everything together with --find-links pointing at
+# each sibling package's pyproject root.
+COPY catalyst-contracts-core/ /app/catalyst-contracts-core/
+COPY catalyst-exgraph/ /app/catalyst-exgraph/
+COPY catalyst-langgraph/ /app/catalyst-langgraph/
+
+# Install dependencies in dependency order: leaf -> extraction -> server.
+# `--no-deps` on the path installs avoids re-resolving the transitive
+# tree; the catalyst-langgraph install at the end picks up everything
+# remaining from PyPI.
+RUN pip install --no-cache-dir /app/catalyst-contracts-core /app/catalyst-exgraph \
+ && pip install --no-cache-dir /app/catalyst-langgraph
+
+WORKDIR /app/catalyst-langgraph
 
 EXPOSE 7078
 

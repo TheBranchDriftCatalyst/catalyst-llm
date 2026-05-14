@@ -79,12 +79,55 @@ docker_build(
 # ============================================
 # catalyst-langgraph — Python LangGraph agent service.
 # Owns the agent/tool loop the playground UI consumes via SSE.
+#
+# Build context covers the whole packages/ tree because the Dockerfile
+# COPYs three sibling path-source deps before installing:
+#   catalyst-contracts-core/  — leaf types (MentionType, Provenance)
+#   catalyst-exgraph/         — extraction pipeline + config schemas
+#   catalyst-langgraph/       — FastAPI server + chat runtime
+# The `only=[...]` filter keeps the transferred context tight so we
+# don't ship every package's node_modules / .venv / dist into the
+# daemon. The Dockerfile assumes /app/<package>/ for each.
 # ============================================
 docker_build(
     'catalyst-llm/catalyst-langgraph',
-    context='./packages/catalyst-langgraph',
+    context='./packages',
     dockerfile='./packages/catalyst-langgraph/Dockerfile',
+    only=[
+        'catalyst-contracts-core',
+        'catalyst-exgraph',
+        'catalyst-langgraph',
+    ],
+    ignore=[
+        '**/__pycache__/',
+        '**/.pytest_cache/',
+        '**/.venv/',
+        '**/*.egg-info/',
+    ],
 )
+
+# ============================================
+# Per-package pytest rail — manual triggers so the operator can verify
+# each Python package independently without rebuilding the Docker image.
+# Mirrors the existing `test:run` umbrella; these run in-place against
+# the dev workspace's editable installs.
+# ============================================
+def _py_test_resource(name, package_dir, extra_args=''):
+    local_resource(
+        name='test:py:' + name,
+        labels=_labels('test'),
+        cmd='cd ' + package_dir + ' && python -m pytest tests/ ' + extra_args,
+        deps=[package_dir + '/src', package_dir + '/tests'],
+        auto_init=False,
+        trigger_mode=TRIGGER_MODE_MANUAL,
+    )
+
+_py_test_resource('contracts-core', './packages/catalyst-contracts-core')
+_py_test_resource('exgraph', './packages/catalyst-exgraph',
+                  '--ignore=tests/test_pack_window_size.py')
+_py_test_resource('contracts-mcp', './packages/catalyst-contracts-mcp')
+_py_test_resource('langgraph', './packages/catalyst-langgraph',
+                  '-k "not test_discovery"')
 
 # ============================================
 # Cluster manifests (k8s/local overlay).
@@ -223,10 +266,10 @@ add_open_browser_button('playground', 'http://localhost:5174')
 # Unified test report rail.
 #
 #   test:run    — manual trigger, runs every package's test:unit and
-#                 collects junit XML into reports/junit/.
-#   test:render — re-renders reports/index.html via xunit-viewer when
+#                 collects junit XML into docs/reports/junit/.
+#   test:render — re-renders docs/reports/index.html via xunit-viewer when
 #                 any junit XML changes.
-#   test:serve  — serves reports/ over http://localhost:5180. Click
+#   test:serve  — serves docs/reports/ over http://localhost:5180. Click
 #                 the link in the Tilt UI to open the unified report.
 #
 # Manual triggers keep tests from running on every file save.
@@ -242,8 +285,8 @@ local_resource(
 local_resource(
     name='test:render',
     labels=_labels('test'),
-    cmd='npx --yes xunit-viewer -r reports/junit -o reports/index.html -t "Catalyst LLM — Test Report"',
-    deps=['reports/junit'],
+    cmd='npx --yes xunit-viewer -r docs/reports/junit -o docs/reports/index.html -t "Catalyst LLM — Test Report"',
+    deps=['docs/reports/junit'],
     auto_init=False,
     trigger_mode=TRIGGER_MODE_MANUAL,
 )
@@ -251,7 +294,7 @@ local_resource(
 local_resource(
     name='test:serve',
     labels=_labels('test'),
-    serve_cmd='python3 -m http.server 5180 --directory reports',
+    serve_cmd='python3 -m http.server 5180 --directory docs/reports',
     readiness_probe=probe(
         http_get=http_get_action(port=5180, path='/'),
         initial_delay_secs=1,
