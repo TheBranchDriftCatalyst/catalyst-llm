@@ -11,7 +11,18 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from dagster_io import event_store
+# dagster_io is an optional cross-repo lib (catalyst-data/libs/dagster-io)
+# that provides the audit event store. It's not installed in catalyst-
+# langgraph's Docker image — the FastAPI server visualises agent
+# topology + dispatches chat but doesn't write audit events to dagster.
+# In that environment audit events are appended to state["audit_events"]
+# only; the dagster-io tail-write becomes a no-op.
+try:
+    from dagster_io import event_store  # type: ignore
+    _HAS_DAGSTER_IO = True
+except ImportError:
+    event_store = None  # type: ignore
+    _HAS_DAGSTER_IO = False
 
 
 def _compact(item: dict[str, Any], stage: str) -> dict[str, Any]:
@@ -118,18 +129,19 @@ def make_audit_event(
         "details": details,
     }
 
-    event_store.append(
-        source="exgraph",
-        node_name=node_name,
-        status=status,
-        model=model,
-        doc_id=doc_id,
-        chunk_idx=chunk_idx,
-        chunk_id=chunk_id,
-        retry_count=retry_count,
-        evidence_window_id=evidence_window_id,
-        state=state_summary,
-        details={**details, "duration_s": duration_s} if duration_s is not None else details,
-    )
+    if _HAS_DAGSTER_IO:
+        event_store.append(
+            source="exgraph",
+            node_name=node_name,
+            status=status,
+            model=model,
+            doc_id=doc_id,
+            chunk_idx=chunk_idx,
+            chunk_id=chunk_id,
+            retry_count=retry_count,
+            evidence_window_id=evidence_window_id,
+            state=state_summary,
+            details={**details, "duration_s": duration_s} if duration_s is not None else details,
+        )
 
     return event

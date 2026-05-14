@@ -20,7 +20,16 @@ from catalyst_exgraph.nodes._audit import make_audit_event
 from catalyst_exgraph.nodes.spans import correct_candidate_spans
 from catalyst_exgraph.protocol import ExtractionClient
 from catalyst_exgraph.state import ExGraphState, ExGraphStatus
-from dagster_io import event_store
+
+# Optional cross-repo audit-event store; no-op stub when dagster_io
+# isn't installed (e.g. inside catalyst-langgraph's Docker image).
+try:
+    from dagster_io import event_store  # type: ignore
+except ImportError:
+    class _NoopEventStore:
+        def __getattr__(self, _name):
+            return lambda *a, **kw: None
+    event_store = _NoopEventStore()  # type: ignore
 
 logger = logging.getLogger(__name__)
 

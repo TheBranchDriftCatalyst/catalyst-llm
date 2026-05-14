@@ -51,7 +51,18 @@ from typing import Any
 
 from catalyst_exgraph.consensus_taxonomy import PII_TYPES, canonicalize_type
 from catalyst_exgraph.state import ExGraphState
-from dagster_io import event_store
+
+# Optional cross-repo audit-event store; catalyst-langgraph's Docker
+# image doesn't ship dagster_io. We fall back to a no-op stub so the
+# event_store.append/.emit_* call sites scattered through this module
+# don't need individual `if event_store is not None` guards.
+try:
+    from dagster_io import event_store  # type: ignore
+except ImportError:
+    class _NoopEventStore:
+        def __getattr__(self, _name):
+            return lambda *a, **kw: None
+    event_store = _NoopEventStore()  # type: ignore
 
 logger = logging.getLogger(__name__)
 

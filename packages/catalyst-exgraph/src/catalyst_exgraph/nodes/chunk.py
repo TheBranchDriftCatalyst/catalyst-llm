@@ -11,7 +11,16 @@ import time
 from typing import Any
 
 from catalyst_exgraph.nodes._audit import make_audit_event
-from dagster_io.chunking import ChunkConfig, chunk_text
+
+# dagster_io is an optional cross-repo lib. catalyst-langgraph's
+# Docker image doesn't ship it — that environment only needs the
+# node CLASSES (for AgentDescriptor topology registration), not the
+# chunking RUNTIME.
+try:
+    from dagster_io.chunking import ChunkConfig, chunk_text  # type: ignore
+except ImportError:
+    ChunkConfig = None  # type: ignore
+    chunk_text = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
