@@ -678,6 +678,54 @@ async def chat_stream(req: ChatStreamRequest) -> EventSourceResponse:
     return EventSourceResponse(gen())
 
 
+@app.post(
+    "/api/agents/{agent_id}/stream",
+    tags=["chat"],
+    summary="Generic agent-graph dispatch (one route per registered agent)",
+    description=(
+        "Generic stream endpoint that dispatches to a specific registered "
+        "agent by id. Today only `main` (chat-with-tools) has a runtime "
+        "wired up here; calling the route for `research` or `extraction` "
+        "returns 501 — the topology + config_schema for those agents IS "
+        "available on GET /api/agents (for Engine-UI visualisation and "
+        "Dagster reuse of the Pydantic config_models) but their runtime "
+        "dispatch is tracked under a separate bd issue."
+    ),
+    response_class=EventSourceResponse,
+)
+async def agent_stream(
+    agent_id: str, req: ChatStreamRequest
+) -> EventSourceResponse:
+    from fastapi import HTTPException
+
+    if agent_id not in AGENTS:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"unknown agent id '{agent_id}'. "
+                f"registered: {sorted(AGENTS.keys())}"
+            ),
+        )
+    if agent_id == "main":
+        # Dispatch through the same path as /api/chat/stream — the
+        # chat agent IS what builds the LangGraph that
+        # _stream_agent_events drives.
+        async def gen() -> AsyncIterator[dict[str, str]]:
+            async for ev in _stream_agent_events(request=req):
+                yield _to_sse(ev)
+
+        return EventSourceResponse(gen())
+    raise HTTPException(
+        status_code=501,
+        detail=(
+            f"agent '{agent_id}' is registered for visualisation and per-"
+            f"node config tuning but its runtime dispatch is not yet "
+            f"wired into the server. See bd issue tracking generic agent "
+            f"dispatch wiring (research_council + extraction runtimes)."
+        ),
+    )
+
+
 # ───────────────────────────────────────────────────────────────────────
 # Discovery — /api/models proxies LiteLLM, /api/tools mirrors what the
 # agent can call. UIs use these to populate dropdowns / toggles.
