@@ -24,73 +24,96 @@ import httpx
 from pydantic import BaseModel
 
 from catalyst_langgraph.clients._retry import retry_llm_call
+from catalyst_langgraph.label_packs import LabelPack, load_generic_label_pack
 
 logger = logging.getLogger(__name__)
 
-# NuExtract template categories → MentionType mapping.
-# NuExtract works best with ≤8 simple, well-named categories.
-# Too many categories cause the 3.8B model to degenerate.
-# Rare types (BOOK, STRATEGIC_ASSET, FINANCIAL_INSTRUMENT) are omitted —
-# they can be post-classified from OTHER if needed.
-NUEXTRACT_CATEGORIES = {
-    "Person": "PERSON",
-    "Organization": "ORG",
-    "Country": "GPE",
-    "Location": "LOC",
-    "Date": "DATE",
-    "Law": "LAW",
-    "Event": "EVENT",
-    "Money": "MONEY",
-    "Group": "NORP",
-}
 
-# Reverse: MentionType → category name (for building templates)
-MENTION_TYPE_TO_CATEGORY = {v: k for k, v in NUEXTRACT_CATEGORIES.items()}
-CATEGORY_TO_MENTION_TYPE = NUEXTRACT_CATEGORIES
+def _build_nuextract_template(template: dict[str, Any]) -> str:
+    """Serialise a label-pack template into the JSON string NuExtract consumes."""
+    return json.dumps(template)
 
 
-def _build_nuextract_template(categories: list[str] | None = None) -> str:
-    """Build the JSON template that nuextract uses to extract entities.
+def _walk_template_paths(template: dict[str, Any], prefix: str = "") -> dict[str, str]:
+    """Map every leaf path in a NuExtract template → its key string.
 
-    Uses ≤9 simple category names. NuExtract degenerates with too many categories.
+    Used at parse-time to project nested JSON output back to flat
+    ``(canonical_type, span)`` records. Path notation matches the
+    ``canonical_type_map`` keys in the label pack: dot-separated keys with
+    ``[]`` for list entries (e.g. ``"Bill.Cosponsors[].State"``).
     """
-    if categories is None:
-        categories = list(NUEXTRACT_CATEGORIES.keys())
-    return json.dumps({cat: [""] for cat in categories})
+    paths: dict[str, str] = {}
+    for key, value in template.items():
+        path = f"{prefix}.{key}" if prefix else key
+        if isinstance(value, dict):
+            paths.update(_walk_template_paths(value, path))
+        elif isinstance(value, list) and value and isinstance(value[0], dict):
+            paths.update(_walk_template_paths(value[0], f"{path}[]"))
+        else:
+            paths[path] = key
+    return paths
 
 
-def _entities_to_mentions(parsed: dict, raw_text: str) -> dict[tuple[str, str], dict]:
-    """Convert nuextract category output to deduplicated mention dicts with computed spans."""
+def _flatten_nuextract_output(
+    parsed: Any,
+    canonical_type_map: dict[str, str],
+    raw_text: str,
+    prefix: str = "",
+) -> dict[tuple[str, str], dict]:
+    """Walk parsed NuExtract output, emit deduped mentions keyed by ``(text_lower, canonical_type)``.
+
+    Handles arbitrary nesting: dicts, lists of strings, lists of dicts. Each
+    leaf value is matched against its path in ``canonical_type_map`` to
+    determine the mention's canonical_type.
+    """
     mentions: dict[tuple[str, str], dict] = {}
-    for category, entities in parsed.items():
-        mention_type = CATEGORY_TO_MENTION_TYPE.get(category, "OTHER")
-        if not isinstance(entities, list):
-            continue
-        for entity_text in entities:
-            if not isinstance(entity_text, str) or not entity_text.strip():
-                continue
-            entity_text = entity_text.strip()
 
-            spans = _compute_spans(raw_text, entity_text)
-            if spans:
-                span_start, span_end = spans[0]
+    def emit(text_value: str, path: str) -> None:
+        canonical_type = canonical_type_map.get(path, "OTHER")
+        text_value = text_value.strip()
+        if not text_value:
+            return
+        spans = _compute_spans(raw_text, text_value)
+        if spans:
+            span_start, span_end = spans[0]
+            surface = text_value
+        else:
+            lower_spans = _compute_spans(raw_text.lower(), text_value.lower())
+            if lower_spans:
+                span_start, span_end = lower_spans[0]
+                surface = raw_text[span_start:span_end]
             else:
-                lower_spans = _compute_spans(raw_text.lower(), entity_text.lower())
-                if lower_spans:
-                    span_start, span_end = lower_spans[0]
-                    entity_text = raw_text[span_start:span_end]
-                else:
-                    span_start, span_end = 0, 0
+                span_start, span_end = 0, 0
+                surface = text_value
+        key = (surface.lower(), canonical_type)
+        if key not in mentions:
+            mentions[key] = {
+                "text": surface,
+                "mention_type": canonical_type,
+                "span_start": span_start,
+                "span_end": span_end,
+                "confidence": 0.9,
+            }
 
-            key = (entity_text.lower(), mention_type)
-            if key not in mentions:
-                mentions[key] = {
-                    "text": entity_text,
-                    "mention_type": mention_type,
-                    "span_start": span_start,
-                    "span_end": span_end,
-                    "confidence": 0.9,
-                }
+    def walk(node: Any, path: str) -> None:
+        if isinstance(node, dict):
+            for k, v in node.items():
+                walk(v, f"{path}.{k}" if path else k)
+        elif isinstance(node, list):
+            list_path = f"{path}[]"
+            for entry in node:
+                if isinstance(entry, dict):
+                    walk(entry, list_path)
+                elif isinstance(entry, str):
+                    emit(entry, list_path)
+                # Ignore numeric/null list entries — those are typed fields
+                # (integer counts, dates) that aren't span-extractable.
+        elif isinstance(node, str):
+            emit(node, path)
+        # Ignore integers / booleans / nulls — they're typed-field values,
+        # not spans (e.g. RollCallVotes[].YeaCount = 218).
+
+    walk(parsed, prefix)
     return mentions
 
 
@@ -134,6 +157,7 @@ class NuExtractClient:
         base_url: str | None = None,
         model: str | None = None,
         timeout: int | None = None,
+        label_pack: LabelPack | None = None,
     ) -> None:
         raw_url = base_url or os.environ.get("LLM_BASE_URL", "http://localhost:11434/v1")
         self.base_url = raw_url.rstrip("/").removesuffix("/v1")
@@ -143,6 +167,10 @@ class NuExtractClient:
         self.is_v2 = "2" in self.model.lower().replace("nuextract1", "").replace("1.5", "")
         self.structured_method = "nuextract"
         self.temperature = 0.0
+
+        # Label pack provides the template + canonical_type_map. Fall back to
+        # the bundled generic pack when none is supplied.
+        self.label_pack = label_pack or load_generic_label_pack()
 
     @retry_llm_call(name="nuextract")
     async def _call_llm(self, prompt: str) -> str:
@@ -277,7 +305,7 @@ class NuExtractClient:
         return result
 
     async def _extract_mentions(self, raw_text: str, schema: type[BaseModel]) -> BaseModel:
-        """Extract entity mentions using nuextract's category template.
+        """Extract entity mentions using the label pack's NuExtract template.
 
         NuExtract 2.0 (8B, Qwen2.5): handles full text, uses ### Template: format
         with verbatim-string type annotations.
@@ -301,7 +329,17 @@ class NuExtractClient:
                 start += MAX_WINDOW_CHARS - OVERLAP_CHARS
             logger.info("nuextract: splitting %d chars into %d windows", len(raw_text), len(windows))
 
-        template = _build_nuextract_template()
+        template_obj = self.label_pack.nuextract.template
+        canonical_type_map = self.label_pack.nuextract.canonical_type_map
+        if not template_obj:
+            logger.warning(
+                "nuextract: label pack %r has no template; nothing to extract",
+                self.label_pack.name,
+            )
+            from catalyst_exgraph.models.extraction_output import MentionCandidate  # noqa: F401
+
+            return schema(mentions=[])
+        template = _build_nuextract_template(template_obj)
         all_mentions: dict[tuple[str, str], dict] = {}
 
         for window_offset, window_text in windows:
@@ -314,7 +352,7 @@ class NuExtractClient:
                 continue
 
             # Compute spans against FULL source text, not the window
-            window_mentions = _entities_to_mentions(parsed, raw_text)
+            window_mentions = _flatten_nuextract_output(parsed, canonical_type_map, raw_text)
             all_mentions.update(window_mentions)
 
         from catalyst_exgraph.models.extraction_output import MentionCandidate
@@ -366,17 +404,28 @@ class NuExtractClient:
     async def _extract_mentions_v2(self, raw_text: str, schema: type[BaseModel]) -> BaseModel:
         """NuExtract 2.0 extraction — uses ### Template: format with verbatim-string types.
 
-        The 8B model handles full text without sliding window.
+        The 8B model handles full text without sliding window. The template
+        comes from the label pack so domain-specific schemas (nested sponsor
+        objects, typed enums, etc.) flow through unchanged.
         """
-        # Build v2 template with verbatim-string type annotations
-        v2_template = json.dumps({cat: ["verbatim-string"] for cat in NUEXTRACT_CATEGORIES})
-        prompt = f"{raw_text}\n\n### Template:\n{v2_template}"
+        template_obj = self.label_pack.nuextract.template
+        canonical_type_map = self.label_pack.nuextract.canonical_type_map
+        if not template_obj:
+            logger.warning(
+                "nuextract v2: label pack %r has no template; nothing to extract",
+                self.label_pack.name,
+            )
+            from catalyst_exgraph.models.extraction_output import MentionCandidate  # noqa: F401
+
+            return schema(mentions=[])
+
+        prompt = f"{raw_text}\n\n### Template:\n{json.dumps(template_obj)}"
 
         response = await self._call_llm(prompt)
         parsed = self._parse_nuextract_output(response)
 
         from catalyst_exgraph.models.extraction_output import MentionCandidate
 
-        mentions = _entities_to_mentions(parsed, raw_text)
+        mentions = _flatten_nuextract_output(parsed, canonical_type_map, raw_text)
 
         return schema(mentions=[MentionCandidate(**m) for m in mentions.values()])

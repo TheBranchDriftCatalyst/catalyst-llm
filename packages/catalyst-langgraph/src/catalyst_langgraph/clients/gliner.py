@@ -6,8 +6,14 @@ it runs locally via Python, no serving endpoint needed. ~0.1s per extraction on 
 pip install gliner
 
 Usage:
-    client = GLiNERClient()
+    client = GLiNERClient()                         # generic label pack
+    client = GLiNERClient(label_pack=congress_pack) # domain-tailored labels
     result = await client.structured_output(MentionExtractionResult, messages)
+
+The label vocabulary, threshold, and window sizing all live in the LabelPack
+(see ``catalyst_langgraph.label_packs``).  Each label_text in the pack carries
+its canonical_type so the client emits ready-to-consensus output without a
+reverse-lookup table.
 """
 
 from __future__ import annotations
@@ -19,46 +25,9 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from catalyst_langgraph.label_packs import LabelPack, load_generic_label_pack, load_label_pack
+
 logger = logging.getLogger(__name__)
-
-# Map our MentionType enum to GLiNER label strings.
-# GLiNER works best with lowercase natural-language labels.
-MENTION_TYPE_TO_GLINER_LABEL = {
-    "PERSON": "person",
-    "ORG": "organization",
-    "GPE": "country or city",
-    "LOC": "location",
-    "DATE": "date",
-    "LAW": "law or legislation",
-    "EVENT": "event",
-    "MONEY": "money or financial amount",
-    "NORP": "political or national group",
-    "FACILITY": "facility or building",
-    "DOCUMENT": "document or report",
-    "BOOK": "book",
-    "ROLE": "role or job title",
-    "STRATEGIC_ASSET": "strategic asset",
-    "FINANCIAL_INSTRUMENT": "financial instrument",
-}
-
-GLINER_LABEL_TO_MENTION_TYPE = {v: k for k, v in MENTION_TYPE_TO_GLINER_LABEL.items()}
-
-# PII-specific label set for the urchade/gliner_multi_pii-v1 model.
-# When the model name contains "pii" we prompt with these instead of the
-# general NER labels — keeps the encoder focused on what it was trained for
-# and stops it from emitting noisy DATE/LAW/MONEY votes that the consensus
-# layer then has to filter (CD-lxcf follow-up).
-PII_GLINER_LABELS: list[str] = [
-    "person",  # names are PII
-    "phone number",
-    "email address",
-    "social security number",
-    "credit card number",
-    "address",
-    "date of birth",
-    "passport number",
-    "driver's license",
-]
 
 
 class GLiNERClient:
@@ -81,11 +50,35 @@ class GLiNERClient:
         threshold: float | None = None,
         window_tokens: int | None = None,
         window_overlap_tokens: int | None = None,
+        label_pack: LabelPack | None = None,
     ) -> None:
         self.model_name = model_name or os.environ.get("GLINER_MODEL", "urchade/gliner_medium-v2.1")
-        self.threshold = threshold or float(os.environ.get("GLINER_THRESHOLD", "0.5"))
-        self.window_tokens = window_tokens or int(os.environ.get("GLINER_WINDOW_TOKENS", "320"))
-        self.window_overlap_tokens = window_overlap_tokens or int(os.environ.get("GLINER_WINDOW_OVERLAP_TOKENS", "32"))
+
+        # Label pack drives the prompt. When the caller didn't pass one,
+        # auto-select: gliner-pii model name → bundled pii pack, otherwise
+        # the bundled generic pack. Explicit pack argument always wins.
+        if label_pack is None:
+            if "pii" in self.model_name.lower():
+                label_pack = load_label_pack(None, "pii")
+            else:
+                label_pack = load_generic_label_pack()
+        self.label_pack = label_pack
+        gliner_cfg = self.label_pack.gliner
+
+        # Constructor args still beat the pack so per-call overrides work.
+        self.threshold = (
+            threshold
+            if threshold is not None
+            else float(os.environ.get("GLINER_THRESHOLD", str(gliner_cfg.threshold)))
+        )
+        self.window_tokens = window_tokens or int(
+            os.environ.get("GLINER_WINDOW_TOKENS", str(gliner_cfg.window_tokens))
+        )
+        self.window_overlap_tokens = window_overlap_tokens or int(
+            os.environ.get("GLINER_WINDOW_OVERLAP_TOKENS", str(gliner_cfg.window_overlap_tokens))
+        )
+        self.flat_ner = gliner_cfg.flat_ner
+
         self._model = None
         # Expose for compatibility with code that reads these
         self.model = self.model_name
@@ -147,23 +140,44 @@ class GLiNERClient:
         from catalyst_exgraph.models.extraction_output import MentionCandidate
 
         model = self._get_model()
-        # PII-trained model gets the PII-specific label vocab; everyone
-        # else gets the full general-NER label set.
-        labels = PII_GLINER_LABELS if "pii" in self.model_name.lower() else list(MENTION_TYPE_TO_GLINER_LABEL.values())
+
+        # Label pack drives the prompt. label_text → canonical_type map lets
+        # us emit the consensus-ready type directly without a reverse lookup.
+        label_to_canonical = self.label_pack.gliner.labels
+        labels = list(label_to_canonical.keys())
+        if not labels:
+            logger.warning(
+                "gliner: label pack %r has no gliner labels; nothing to extract",
+                self.label_pack.name,
+            )
+            return schema(mentions=[])
 
         windows = list(self._iter_windows(raw_text))
         logger.info(
-            "gliner: extracting from %d chars (%d window%s) with %d labels",
+            "gliner: pack=%s, %d chars (%d window%s), %d labels, threshold=%.2f, flat=%s",
+            self.label_pack.name,
             len(raw_text),
             len(windows),
             "" if len(windows) == 1 else "s",
             len(labels),
+            self.threshold,
+            self.flat_ner,
         )
         t0 = time.perf_counter()
         entities: list[dict[str, Any]] = []
         for window_text, window_offset in windows:
-            for e in model.predict_entities(window_text, labels, threshold=self.threshold):
-                # Translate spans back to the original raw_text frame.
+            # Pass flat_ner to GLiNER when the model supports it; older
+            # GLiNER versions ignore unknown kwargs gracefully.
+            try:
+                preds = model.predict_entities(
+                    window_text,
+                    labels,
+                    threshold=self.threshold,
+                    flat_ner=self.flat_ner,
+                )
+            except TypeError:
+                preds = model.predict_entities(window_text, labels, threshold=self.threshold)
+            for e in preds:
                 entities.append(
                     {
                         "text": e["text"],
@@ -186,7 +200,7 @@ class GLiNERClient:
                 continue
             seen_spans.add(span_key)
 
-            mention_type = GLINER_LABEL_TO_MENTION_TYPE.get(e["label"], "OTHER")
+            mention_type = label_to_canonical.get(e["label"], "OTHER")
             mentions.append(
                 MentionCandidate(
                     text=e["text"],

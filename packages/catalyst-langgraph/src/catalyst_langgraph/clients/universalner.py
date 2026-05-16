@@ -29,23 +29,9 @@ import httpx
 from pydantic import BaseModel
 
 from catalyst_langgraph.clients._retry import retry_llm_call
+from catalyst_langgraph.label_packs import LabelPack, load_generic_label_pack
 
 logger = logging.getLogger(__name__)
-
-# Map our MentionType to natural-language entity type descriptions
-# that UniversalNER was trained on
-MENTION_TYPE_TO_QUERY = {
-    "PERSON": "person",
-    "ORG": "organization",
-    "GPE": "country, state, or city",
-    "LOC": "location",
-    "DATE": "date",
-    "LAW": "law or legislation",
-    "EVENT": "event",
-    "MONEY": "monetary value",
-    "NORP": "political group, nationality, or religion",
-    "FACILITY": "facility or building",
-}
 
 
 def _compute_spans(text: str, entity_text: str) -> list[tuple[int, int]]:
@@ -85,6 +71,7 @@ class UniversalNERClient:
         base_url: str | None = None,
         model: str | None = None,
         timeout: int | None = None,
+        label_pack: LabelPack | None = None,
     ) -> None:
         raw_url = base_url or os.environ.get("LLM_BASE_URL", "http://localhost:11434/v1")
         self.base_url = raw_url.rstrip("/").removesuffix("/v1")
@@ -92,6 +79,9 @@ class UniversalNERClient:
         self.timeout = timeout or int(os.environ.get("LLM_TIMEOUT", "300"))
         self.structured_method = "universalner"
         self.temperature = 0.0
+
+        # Label pack drives queries + assistant prime + char budget.
+        self.label_pack = label_pack or load_generic_label_pack()
 
     @retry_llm_call(name="universalner")
     async def _call_ollama(self, messages: list[dict]) -> str:
@@ -122,7 +112,9 @@ class UniversalNERClient:
                 "content": "A virtual assistant answers questions from a user based on the provided text.",
             },
             {"role": "user", "content": f"Text: {text}"},
-            {"role": "assistant", "content": "I've read this text."},
+            # assistant_prime stays verbatim from the pack — it's part of
+            # UniNER's training distribution. Paraphrasing degrades recall.
+            {"role": "assistant", "content": self.label_pack.universalner.assistant_prime},
             {"role": "user", "content": f"What describes {entity_type_query} in the text?"},
         ]
 
@@ -187,52 +179,82 @@ class UniversalNERClient:
             raise ValueError(f"UniversalNERClient doesn't support schema: {schema_name}")
 
     async def _extract_mentions(self, raw_text: str, schema: type[BaseModel]) -> BaseModel:
-        """Extract mentions by querying each entity type separately."""
+        """Extract mentions by querying each entity type separately.
+
+        The label pack maps canonical_type → [probe_queries]. Each probe is one
+        forward pass; results union under the canonical type. Multi-probe
+        queries (e.g. MEMBER → ["senator", "representative"]) catch
+        chamber-specific recall the generic "person" probe would miss.
+        """
         from catalyst_exgraph.models.extraction_output import MentionCandidate
 
+        queries_by_type = self.label_pack.universalner.queries
+        if not queries_by_type:
+            logger.warning(
+                "universalner: label pack %r has no queries; nothing to extract",
+                self.label_pack.name,
+            )
+            return schema(mentions=[])
+
+        # Truncate runaway chunks before they OOM the 7B model — the pack
+        # carries this budget so domain packs can tighten it for dense
+        # legislative text.
+        max_chars = self.label_pack.universalner.max_chars_per_call
+        if len(raw_text) > max_chars:
+            logger.info("universalner: truncating %d chars → %d", len(raw_text), max_chars)
+            raw_text_for_calls = raw_text[:max_chars]
+        else:
+            raw_text_for_calls = raw_text
+
+        n_calls = sum(len(probes) for probes in queries_by_type.values())
         logger.info(
-            "universalner: extracting from %d chars, %d entity types",
-            len(raw_text),
-            len(MENTION_TYPE_TO_QUERY),
+            "universalner: pack=%s, %d chars, %d types, %d total probes",
+            self.label_pack.name,
+            len(raw_text_for_calls),
+            len(queries_by_type),
+            n_calls,
         )
         t0 = time.perf_counter()
 
         all_mentions: dict[tuple[str, str], dict] = {}
 
-        for mention_type, query in MENTION_TYPE_TO_QUERY.items():
-            entities = await self._extract_entity_type(raw_text, query)
-            for entity_text in entities:
-                if not isinstance(entity_text, str) or not entity_text.strip():
-                    continue
-                entity_text = entity_text.strip()
+        for canonical_type, probes in queries_by_type.items():
+            for query in probes:
+                entities = await self._extract_entity_type(raw_text_for_calls, query)
+                for entity_text in entities:
+                    if not isinstance(entity_text, str) or not entity_text.strip():
+                        continue
+                    entity_text = entity_text.strip()
 
-                spans = _compute_spans(raw_text, entity_text)
-                if spans:
-                    span_start, span_end = spans[0]
-                else:
-                    lower_spans = _compute_spans(raw_text.lower(), entity_text.lower())
-                    if lower_spans:
-                        span_start, span_end = lower_spans[0]
-                        entity_text = raw_text[span_start:span_end]
+                    # Compute spans against the FULL raw_text so downstream
+                    # provenance survives truncation.
+                    spans = _compute_spans(raw_text, entity_text)
+                    if spans:
+                        span_start, span_end = spans[0]
                     else:
-                        span_start, span_end = 0, 0
+                        lower_spans = _compute_spans(raw_text.lower(), entity_text.lower())
+                        if lower_spans:
+                            span_start, span_end = lower_spans[0]
+                            entity_text = raw_text[span_start:span_end]
+                        else:
+                            span_start, span_end = 0, 0
 
-                key = (entity_text.lower(), mention_type)
-                if key not in all_mentions:
-                    all_mentions[key] = {
-                        "text": entity_text,
-                        "mention_type": mention_type,
-                        "span_start": span_start,
-                        "span_end": span_end,
-                        "confidence": 0.9,
-                    }
+                    key = (entity_text.lower(), canonical_type)
+                    if key not in all_mentions:
+                        all_mentions[key] = {
+                            "text": entity_text,
+                            "mention_type": canonical_type,
+                            "span_start": span_start,
+                            "span_end": span_end,
+                            "confidence": 0.9,
+                        }
 
         elapsed = time.perf_counter() - t0
         logger.info(
             "universalner: extracted %d mentions in %.3fs (%d calls)",
             len(all_mentions),
             elapsed,
-            len(MENTION_TYPE_TO_QUERY),
+            n_calls,
         )
 
         return schema(mentions=[MentionCandidate(**m) for m in all_mentions.values()])
