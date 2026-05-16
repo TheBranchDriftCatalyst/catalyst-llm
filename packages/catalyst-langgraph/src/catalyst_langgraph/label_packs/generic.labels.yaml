@@ -1,0 +1,107 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Generic Label Pack
+#
+# Default pack used when no domain pack is specified. This is the
+# direct YAML equivalent of the previously hardcoded label maps in
+# gliner.py / nuextract.py / universalner.py. Domain packs override it
+# wholesale (we don't merge — pack-or-default, not pack-plus-default).
+# ─────────────────────────────────────────────────────────────────────────────
+version: 1
+domain: generic
+description: >
+  General-purpose entity taxonomy aligned with the legacy MentionType enum
+  (PERSON, ORG, GPE, LOC, DATE, LAW, EVENT, MONEY, NORP, FACILITY, DOCUMENT,
+  BOOK, ROLE, STRATEGIC_ASSET, FINANCIAL_INSTRUMENT, OTHER).
+
+canonical_types:
+  - PERSON
+  - ORG
+  - GPE
+  - LOC
+  - DATE
+  - LAW
+  - EVENT
+  - MONEY
+  - NORP
+  - FACILITY
+  - DOCUMENT
+  - BOOK
+  - ROLE
+  - STRATEGIC_ASSET
+  - FINANCIAL_INSTRUMENT
+  - OTHER
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GLiNER — mirror of the legacy MENTION_TYPE_TO_GLINER_LABEL dict.
+# ─────────────────────────────────────────────────────────────────────────────
+gliner:
+  threshold: 0.5
+  flat_ner: true
+  window_tokens: 320
+  window_overlap_tokens: 32
+  labels:
+    "person":                       PERSON
+    "organization":                 ORG
+    "country or city":              GPE
+    "location":                     LOC
+    "date":                         DATE
+    "law or legislation":           LAW
+    "event":                        EVENT
+    "money or financial amount":    MONEY
+    "political or national group":  NORP
+    "facility or building":         FACILITY
+    "document or report":           DOCUMENT
+    "book":                         BOOK
+    "role or job title":            ROLE
+    "strategic asset":              STRATEGIC_ASSET
+    "financial instrument":         FINANCIAL_INSTRUMENT
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NuExtract — mirror of the legacy NUEXTRACT_CATEGORIES (flat, 9 keys).
+# ─────────────────────────────────────────────────────────────────────────────
+nuextract:
+  template:
+    Person:       ["verbatim-string"]
+    Organization: ["verbatim-string"]
+    Country:      ["verbatim-string"]
+    Location:     ["verbatim-string"]
+    Date:         ["verbatim-string"]
+    Law:          ["verbatim-string"]
+    Event:        ["verbatim-string"]
+    Money:        ["verbatim-string"]
+    Group:        ["verbatim-string"]
+  canonical_type_map:
+    "Person":       PERSON
+    "Organization": ORG
+    "Country":      GPE
+    "Location":     LOC
+    "Date":         DATE
+    "Law":          LAW
+    "Event":        EVENT
+    "Money":        MONEY
+    "Group":        NORP
+
+# ─────────────────────────────────────────────────────────────────────────────
+# UniversalNER — mirror of the legacy MENTION_TYPE_TO_QUERY dict.
+# ─────────────────────────────────────────────────────────────────────────────
+universalner:
+  assistant_prime: "I've read this text."
+  max_chars_per_call: 6000
+  queries:
+    PERSON:   ["person"]
+    ORG:      ["organization"]
+    GPE:      ["country, state, or city"]
+    LOC:      ["location"]
+    DATE:     ["date"]
+    LAW:      ["law or legislation"]
+    EVENT:    ["event"]
+    MONEY:    ["monetary value"]
+    NORP:     ["political group, nationality, or religion"]
+    FACILITY: ["facility or building"]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Regex — empty by default. Domain packs (e.g. congress) supply real patterns.
+# ─────────────────────────────────────────────────────────────────────────────
+regex:
+  patterns: {}
+  authoritative_for: []

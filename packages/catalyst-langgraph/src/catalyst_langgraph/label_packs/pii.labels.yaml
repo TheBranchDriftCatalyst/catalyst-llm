@@ -1,0 +1,83 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# PII Label Pack
+#
+# Used by gliner-pii (urchade/gliner_multi_pii-v1) and any other encoder
+# that should focus on personally-identifying information. Replaces the
+# legacy PII_GLINER_LABELS list in gliner.py.
+#
+# In the consensus voter, these types use K=1 quorum (single voter
+# suffices) since PII detection is the speciality of one encoder.
+# ─────────────────────────────────────────────────────────────────────────────
+version: 1
+domain: pii
+description: >
+  PII entity taxonomy for redaction and compliance workflows.
+
+canonical_types:
+  - PERSON
+  - PHONE_NUMBER
+  - EMAIL
+  - SSN
+  - CREDIT_CARD
+  - ADDRESS
+  - DOB
+
+gliner:
+  threshold: 0.5
+  flat_ner: true
+  window_tokens: 320
+  window_overlap_tokens: 32
+  labels:
+    "person":                  PERSON
+    "phone number":            PHONE_NUMBER
+    "email address":           EMAIL
+    "social security number":  SSN
+    "credit card number":      CREDIT_CARD
+    "address":                 ADDRESS
+    "date of birth":           DOB
+    "passport number":         SSN
+    "driver's license":        SSN
+
+nuextract:
+  template:
+    Person:           ["verbatim-string"]
+    PhoneNumber:      ["verbatim-string"]
+    EmailAddress:     ["verbatim-string"]
+    SSN:              ["verbatim-string"]
+    CreditCardNumber: ["verbatim-string"]
+    Address:          ["verbatim-string"]
+    DateOfBirth:      ["verbatim-string"]
+  canonical_type_map:
+    "Person":           PERSON
+    "PhoneNumber":      PHONE_NUMBER
+    "EmailAddress":     EMAIL
+    "SSN":              SSN
+    "CreditCardNumber": CREDIT_CARD
+    "Address":          ADDRESS
+    "DateOfBirth":      DOB
+
+universalner:
+  assistant_prime: "I've read this text."
+  max_chars_per_call: 6000
+  queries:
+    PERSON:       ["person"]
+    PHONE_NUMBER: ["phone number"]
+    EMAIL:        ["email address"]
+    SSN:          ["social security number"]
+    CREDIT_CARD:  ["credit card number"]
+    ADDRESS:      ["mailing address"]
+    DOB:          ["date of birth"]
+
+regex:
+  patterns:
+    PHONE_NUMBER:
+      - '\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b'
+    EMAIL:
+      - '\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'
+    SSN:
+      - '\b\d{3}-\d{2}-\d{4}\b'
+    CREDIT_CARD:
+      - '\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b'
+  authoritative_for:
+    - EMAIL
+    - SSN
