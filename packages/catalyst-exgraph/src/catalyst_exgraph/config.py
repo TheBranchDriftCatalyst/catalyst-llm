@@ -50,6 +50,12 @@ class StageConfig:
     Set per-stage or per-resource to use domain-specific prompts
     (e.g. k8s/media-ingest/prompts vs k8s/congress-data/prompts)."""
 
+    label_pack_id: str | None = None
+    """Label pack id resolved against prompt_dir then catalyst-langgraph's
+    bundled packs (generic, pii). Drives the per-encoder prompt vocabulary
+    (GLiNER labels, NuExtract template, UniversalNER queries, regex patterns).
+    When None, each encoder client falls back to the bundled 'generic' pack."""
+
     max_retries: int = 3
     """Max repair cycles. Set to 0 for encoder models (deterministic output)."""
 

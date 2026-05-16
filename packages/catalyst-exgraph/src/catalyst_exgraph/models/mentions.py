@@ -10,7 +10,12 @@ class MentionExtraction(BaseModel):
 
     text: str = Field(description="The exact surface form as it appears in the source text")
     mention_type: str = Field(
-        description="Entity type: PERSON, ORG, GPE, LOC, DATE, LAW, EVENT, MONEY, NORP, FACILITY, or OTHER"
+        description=(
+            "Canonical entity type from the active label pack. The bundled 'generic' "
+            "pack uses PERSON / ORG / GPE / LOC / DATE / LAW / EVENT / MONEY / NORP / "
+            "FACILITY / DOCUMENT / BOOK / ROLE / STRATEGIC_ASSET / FINANCIAL_INSTRUMENT / "
+            "OTHER. Domain packs (e.g. 'congress', 'pii') extend this universe."
+        )
     )
     span_start: int = Field(ge=0, description="Character offset where the mention starts in the source text")
     span_end: int = Field(description="Character offset where the mention ends in the source text")

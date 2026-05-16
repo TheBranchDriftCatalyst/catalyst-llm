@@ -37,12 +37,22 @@ from catalyst_exgraph.state import ExGraphState
 logger = logging.getLogger(__name__)
 
 
-def _resolve_client(model: str, base_url: str | None = None, api_key: str | None = None):
+def _resolve_client(
+    model: str,
+    base_url: str | None = None,
+    api_key: str | None = None,
+    label_pack: Any = None,
+):
     """Resolve model name to the appropriate extraction client.
 
     Centralizes client construction so all paths (v1, v2, benchmark, resource)
     go through one place. Explicitly passes base_url and api_key to avoid
     env var leakage from parent processes.
+
+    ``label_pack`` (when provided) flows into the NER-flavoured clients
+    (GLiNER, NuExtract, UniversalNER, regex) and drives their per-encoder
+    prompt vocabularies. The LLM client ignores it; LLM prompting goes
+    through the .prompt registry instead.
     """
     # GLiNER model name mapping
     GLINER_MODELS = {
@@ -54,19 +64,23 @@ def _resolve_client(model: str, base_url: str | None = None, api_key: str | None
     }
 
     model_lower = model.lower()
+    if model_lower in ("regex", "regex-ner") or model_lower.startswith("regex:"):
+        from catalyst_langgraph.clients.regex_ner import RegexNerClient
+
+        return RegexNerClient(label_pack=label_pack)
     if "gliner" in model_lower:
         from catalyst_langgraph.clients.gliner import GLiNERClient
 
         hf_model = GLINER_MODELS.get(model_lower, GLINER_MODELS.get(model, "urchade/gliner_medium-v2.1"))
-        return GLiNERClient(model_name=hf_model)
+        return GLiNERClient(model_name=hf_model, label_pack=label_pack)
     elif "nuextract" in model_lower:
         from catalyst_langgraph.clients.nuextract import NuExtractClient
 
-        return NuExtractClient(base_url=base_url, model=model)
+        return NuExtractClient(base_url=base_url, model=model, label_pack=label_pack)
     elif "universalner" in model_lower or "uniner" in model_lower:
         from catalyst_langgraph.clients.universalner import UniversalNERClient
 
-        return UniversalNERClient(base_url=base_url, model=model)
+        return UniversalNERClient(base_url=base_url, model=model, label_pack=label_pack)
     else:
         from catalyst_langgraph.clients.llm import LLMClient
 
@@ -112,6 +126,11 @@ class ExtractionResource(ConfigurableResource):
     """Directory containing .prompt files. Domain-specific prompts
     (e.g. 'k8s/media-ingest/prompts', 'k8s/congress-data/prompts')."""
 
+    label_pack_id: str = ""
+    """Label pack id (looked up under ``prompt_dir`` first, then catalyst-langgraph's
+    bundled packs). Drives encoder prompts: GLiNER labels, NuExtract template,
+    UniversalNER queries, regex patterns. Empty string → bundled 'generic' pack."""
+
     max_concurrency: int = 5
     """Max parallel chunk processing."""
 
@@ -149,7 +168,20 @@ class ExtractionResource(ConfigurableResource):
 
     def _is_encoder(self, model: str) -> bool:
         """Check if model is an encoder (no repair capability)."""
-        return any(x in model.lower() for x in ("gliner", "nuextract", "universalner", "uniner"))
+        return any(x in model.lower() for x in ("gliner", "nuextract", "universalner", "uniner", "regex"))
+
+    def _load_label_pack(self) -> Any:
+        """Load the label pack identified by ``label_pack_id`` (or generic).
+
+        Resolution: ``<prompt_dir>/<id>.labels.yaml`` first, then bundled
+        packs in catalyst-langgraph. Errors propagate — a misconfigured
+        pack_id should fail loudly rather than silently use the wrong vocab.
+        """
+        from catalyst_langgraph.label_packs import load_generic_label_pack, load_label_pack
+
+        if not self.label_pack_id:
+            return load_generic_label_pack()
+        return load_label_pack(self.prompt_dir or None, self.label_pack_id)
 
     def _build_ner_config(self) -> StageConfig:
         max_retries = 0 if self._is_encoder(self.ner_model) else self.ner_max_retries
@@ -165,6 +197,17 @@ class ExtractionResource(ConfigurableResource):
             max_retries=self.spo_max_retries,
         )
 
+    def _apply_stage_overrides(self, stage: StageConfig) -> StageConfig:
+        """Stamp prompt_dir + label_pack_id onto a frozen StageConfig."""
+        overrides: dict[str, Any] = {}
+        if self.prompt_dir:
+            overrides["prompt_dir"] = self.prompt_dir
+        if self.label_pack_id:
+            overrides["label_pack_id"] = self.label_pack_id
+        if not overrides:
+            return stage
+        return StageConfig(**{**stage.__dict__, **overrides})
+
     def extract_mentions(
         self,
         chunks: list,
@@ -179,12 +222,10 @@ class ExtractionResource(ConfigurableResource):
         Returns:
             ExtractionResult with .mentions populated.
         """
-        ner_config = self._build_ner_config()
-        if self.prompt_dir:
-            # Frozen dataclass — rebuild with prompt_dir
-            ner_config = StageConfig(**{**ner_config.__dict__, "prompt_dir": self.prompt_dir})
+        ner_config = self._apply_stage_overrides(self._build_ner_config())
 
-        client = _resolve_client(self.ner_model)
+        label_pack = self._load_label_pack()
+        client = _resolve_client(self.ner_model, label_pack=label_pack)
         mcp_client = _build_mcp_client()
         pipeline = build_pipeline([ner_config], client, mcp_client)
 
@@ -196,21 +237,13 @@ class ExtractionResource(ConfigurableResource):
         accepted_mentions: list | None = None,
         code_location: str = "",
     ) -> ExtractionResult:
-        """Extract propositions (SPO) only, using accepted mentions as context.
+        """Extract propositions (SPO) only, using accepted mentions as context."""
+        spo_config = self._apply_stage_overrides(self._build_spo_config())
 
-        Args:
-            chunks: List of TextChunk objects.
-            accepted_mentions: Pre-extracted mentions (from NER asset dep).
-            code_location: For metrics labeling.
-
-        Returns:
-            ExtractionResult with .assertions populated.
-        """
-        spo_config = self._build_spo_config()
-        if self.prompt_dir:
-            spo_config = StageConfig(**{**spo_config.__dict__, "prompt_dir": self.prompt_dir})
-
-        client = _resolve_client(self.spo_model)
+        # SPO uses an LLM client — label pack doesn't apply there, but we
+        # still load it so the resolver signature is uniform.
+        label_pack = self._load_label_pack()
+        client = _resolve_client(self.spo_model, label_pack=label_pack)
         mcp_client = _build_mcp_client()
         pipeline = build_pipeline([spo_config], client, mcp_client)
 
@@ -226,18 +259,13 @@ class ExtractionResource(ConfigurableResource):
         chunks: list,
         code_location: str = "",
     ) -> ExtractionResult:
-        """Extract both NER + SPO in one call (backward compat).
+        """Extract both NER + SPO in one call (backward compat)."""
+        ner_config = self._apply_stage_overrides(self._build_ner_config())
+        spo_config = self._apply_stage_overrides(self._build_spo_config())
 
-        Returns ExtractionResult with both .mentions and .assertions.
-        """
-        ner_config = self._build_ner_config()
-        spo_config = self._build_spo_config()
-        if self.prompt_dir:
-            ner_config = StageConfig(**{**ner_config.__dict__, "prompt_dir": self.prompt_dir})
-            spo_config = StageConfig(**{**spo_config.__dict__, "prompt_dir": self.prompt_dir})
-
-        ner_client = _resolve_client(self.ner_model)
-        spo_client = _resolve_client(self.spo_model)
+        label_pack = self._load_label_pack()
+        ner_client = _resolve_client(self.ner_model, label_pack=label_pack)
+        spo_client = _resolve_client(self.spo_model, label_pack=label_pack)
         clients = {"ner": ner_client, "spo": spo_client}
         mcp_client = _build_mcp_client()
 

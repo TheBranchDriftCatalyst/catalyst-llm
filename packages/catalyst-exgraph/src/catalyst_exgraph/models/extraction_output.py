@@ -20,7 +20,14 @@ class MentionCandidate(BaseModel):
 
     text: str = Field(description="The exact surface form as it appears in the source text")
     mention_type: str = Field(
-        description=("Entity type, one of: PERSON, ORG, GPE, LOC, DATE, LAW, EVENT, MONEY, NORP, FACILITY, OTHER")
+        description=(
+            "Canonical entity type from the active label pack. The bundled 'generic' "
+            "pack uses PERSON, ORG, GPE, LOC, DATE, LAW, EVENT, MONEY, NORP, FACILITY, "
+            "DOCUMENT, BOOK, ROLE, STRATEGIC_ASSET, FINANCIAL_INSTRUMENT, OTHER. "
+            "Domain packs extend this — e.g. the 'congress' pack adds BILL, "
+            "PUBLIC_LAW, COMMITTEE_REF, AMENDMENT, SECTION_REF, ROLL_CALL_VOTE, "
+            "VOTE_RESULT, SPONSOR_ROLE, POLICY_AREA, LAW_CITATION."
+        )
     )
     span_start: int = Field(
         ge=0,
