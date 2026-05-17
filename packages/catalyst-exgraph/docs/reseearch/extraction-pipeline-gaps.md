@@ -2,6 +2,12 @@
 
 This doc captures the two largest semantic gaps the ONTOLOGY (`catalyst-data/ONTOLOGY.md`) calls out and our current extraction pipeline does not fully address: **AMR parsing for hard sentences** (§3.3) and **temporal validity intervals** beyond the chunk's `temporal_start/end_ms`. Both are grounded in concrete congressional-text examples so the beads work that follows has a clear target.
 
+> **Status (current):**
+>
+> - **AMR-as-spine implementation: SHIPPED** — `catalyst_langgraph.clients.amr_parser.AmrParserClient` + `catalyst_exgraph.nodes.amr_project.AmrToAssertionNode` + per-domain `amr_frames` mapping in the LabelPack (`congress.labels.yaml`, `media.labels.yaml`). 79 tests across dev + QA suites green. Runnable MVP at `packages/catalyst-exgraph/examples/amr_congress_mvp.py`.
+> - **AMR complexity gate**: NOT IMPLEMENTED. Current path runs AMR on every sentence. A future complexity gate (run AMR only when SPO LLM produces low-confidence triples on sentences with negation/modality markers) is still open work. See bead llm-71u follow-ups.
+> - **Temporal validity intervals: NOT IMPLEMENTED**. Tracked at bead `llm-mln`. The data already exists on `congress_data.entities.Cosponsor.sponsorship_date/withdrawn_date` and `Term.start_year/end_year` — the missing piece is propagating it to `Assertion.qualifiers`.
+
 ---
 
 ## AMR — Abstract Meaning Representation (§3.3)

@@ -24,7 +24,7 @@ build/
 
 # Test reports (junit XML, coverage, xunit-viewer index, playwright HTML)
 .reports/
-reports/
+docs/reports/
 
 # Logs
 *.log
@@ -47,3 +47,13 @@ k8s/local/litellm-secrets.env
 # Playwright MCP scratch
 .playwright-mcp/
 engine-*.png
+
+# Python test/runtime caches (each tool ships its own internal .gitignore,
+# but listing here keeps the repo's intent explicit for new contributors).
+__pycache__/
+.pytest_cache/
+.hypothesis/
+.ruff_cache/
+.coverage
+.mypy_cache/
+.uv-cache/

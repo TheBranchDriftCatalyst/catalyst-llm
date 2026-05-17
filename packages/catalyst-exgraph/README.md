@@ -1,24 +1,36 @@
 # catalyst-exgraph
 
-Generic composable extraction graphs with MCP validation, ensemble
-support, and full provenance.
+Generic composable extraction graphs with MCP validation, multi-voter
+NER ensemble, AMR-as-spine proposition projection, and full provenance.
 
 ## What this is
 
 The extraction-domain agent graph. Provides:
 
 - **`build_pipeline()`** — chains configurable extract → validate →
-  repair stages into a unified LangGraph StateGraph.
+  repair stages into a unified LangGraph StateGraph (legacy SPO path).
+- **`build_ensemble_pipeline()`** — fan out across multiple NER
+  encoders (GLiNER, NuExtract, UniversalNER, Regex) and reach
+  consensus via `ConsensusNode` before downstream stages.
+- **`AmrToAssertionNode`** — greenfield AMR-as-spine projection.
+  Walks PENMAN graphs from `catalyst_langgraph.clients.amr_parser`,
+  applies `pack.amr_frames` to map PropBank frames → canonical
+  predicates, and emits `AmrAssertion` records with polarity,
+  modality, qualifiers, and entity-ID provenance. See
+  `examples/amr_congress_mvp.py` for an end-to-end demo.
 - **`ExtractionResource`** — Dagster `ConfigurableResource` for
   embedding the pipeline inside catalyst-data code locations
   (congress-data, media-ingest, knowledge-graph, open-leaks).
+  Accepts `prompt_dir` + `label_pack_id` so each code location
+  pins its domain pack (see catalyst-langgraph for the
+  `LabelPack` shape).
 - **`ConsensusVoter`** — N-model ensemble majority voting with
   configurable strategies.
 - **Models + validators** for the extraction-domain wire shapes
-  (mentions, propositions, spatial, math, concordance) — including
-  the `Provenance` base type and the `MentionType` / `AlignmentType`
-  / `ExtractionMethod` enums that the knowledge graph wires
-  downstream consume.
+  (mentions, propositions, AMR assertions, spatial, math,
+  concordance) — including the `Provenance` base type and the
+  `MentionType` / `AlignmentType` / `ExtractionMethod` enums that
+  the knowledge graph wires downstream consume.
 
 ## What this is NOT
 
@@ -97,13 +109,64 @@ consumers (Claude Code, third-party LLMs).
 src/catalyst_exgraph/
 ├── types.py              # MentionType, AlignmentType, ExtractionMethod
 ├── provenance.py         # Provenance base type
-├── models/               # extraction-output Pydantic shapes
-├── validators/           # contract validators
-├── nodes/                # 12 LangGraph node implementations
-├── config.py, state.py, protocol.py
+├── models/               # extraction-output Pydantic shapes:
+│   ├── extraction_output.py    # MentionCandidate, PropositionCandidate
+│   ├── amr_assertion.py        # AmrAssertion (greenfield AMR-spine output)
+│   ├── mentions.py             # MentionExtraction (validator I/O)
+│   └── ...                     # spatial, math, concordance, repair
+├── validators/           # contract validators (called from MCP server)
+├── nodes/                # LangGraph node implementations:
+│   ├── extract.py              # ExtractNode (legacy single-model SPO)
+│   ├── ner_ensemble.py         # NerEnsembleNode (4-voter fan-out)
+│   ├── consensus.py            # ConsensusNode (per-encoder mentions → canonical)
+│   ├── amr_project.py          # AmrToAssertionNode (PENMAN → AmrAssertion)
+│   ├── cluster.py, pack.py     # entity clustering + evidence packing
+│   ├── repair.py, validate.py  # validator + repair-loop nodes
+│   └── chunk.py, spans.py      # input prep + span correction
+├── config.py             # StageConfig (incl. prompt_dir + label_pack_id)
+├── state.py              # ExGraphState, status enums
+├── protocol.py           # ExtractionClient protocol
 ├── stage.py              # build_stage_graph()
-├── pipeline.py           # build_pipeline()
-├── resource.py           # Dagster ConfigurableResource
+├── pipeline.py           # build_pipeline + build_ensemble_pipeline
+├── resource.py           # ExtractionResource (Dagster)
 ├── ensemble.py           # EnsembleExtractNode, ConsensusVoter
 └── consensus_predicate.py, consensus_taxonomy.py, dispatch.py
 ```
+
+## Two extraction paths
+
+### Legacy: NER ensemble → SPO LLM
+
+```
+chunk → NER ensemble (4 voters) → consensus → cluster → pack
+                                                          → SPO LLM → validator → Assertion
+```
+
+Uses `proposition_extraction.prompt` to generate triples via a generative
+LLM. Controlled-vocab predicates enforced by the validator.
+
+### Greenfield: NER ensemble → AMR-as-spine
+
+```
+chunk → NER ensemble (4 voters) → consensus
+                                  → AMR parser  (catalyst-langgraph.clients.amr_parser)
+                                  → AmrToAssertionNode → AmrAssertion
+```
+
+AMR replaces the SPO LLM as the semantic spine. The projection node
+reads `pack.amr_frames.frames` to map PropBank frames to canonical
+predicates, applies `role_overrides` for non-standard argument
+structures (e.g. passive-voice `refer-01`), and emits `AmrAssertion`
+records with `polarity`, `modality`, `qualifiers`, and
+`canonical_entity_refs` resolved against the NER consensus.
+
+See `docs/reseearch/extraction-pipeline-gaps.md` for the design
+context and `examples/amr_congress_mvp.py` for a working demo.
+
+## Examples
+
+- `examples/amr_congress_mvp.py` — end-to-end AMR-spine MVP on a
+  hand-crafted congressional sentence with the real congress label
+  pack + real RegexNerClient + real `AmrToAssertionNode`. Shows
+  three assertions including a negated `report-01` ("the bill was
+  never reported"). Run with `uv run python examples/amr_congress_mvp.py`.
