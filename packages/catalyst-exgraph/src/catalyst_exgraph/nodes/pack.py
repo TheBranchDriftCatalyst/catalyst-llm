@@ -29,8 +29,24 @@ from typing import Any
 
 from catalyst_exgraph.nodes._audit import make_audit_event
 from catalyst_exgraph.state import EntityCluster, EvidenceWindow, ExGraphState
-from dagster_io import event_store
-from dagster_io.chunking import window_for_model
+
+# dagster_io is optional — catalyst-langgraph's Docker image doesn't ship
+# it. Fall back to a no-op stub for event_store and a constant-returning
+# stub for window_for_model so this module can be imported in dagster-free
+# environments (tests, ad-hoc CLI demos, the AMR pipeline integration).
+try:
+    from dagster_io import event_store  # type: ignore
+    from dagster_io.chunking import window_for_model  # type: ignore
+except ImportError:
+    class _NoopEventStore:
+        def __getattr__(self, _name):
+            return lambda *a, **kw: None
+
+    event_store = _NoopEventStore()  # type: ignore
+
+    def window_for_model(_model: str | None) -> int:  # type: ignore[no-redef]
+        """Fallback: returns the same default the real fn falls back to."""
+        return 4000
 
 logger = logging.getLogger(__name__)
 

@@ -157,9 +157,15 @@ class ClusterEntitiesNode:
     ) -> None:
         self.embedder = embedder
         if cache is None:
-            from dagster_io.embedding_cache import EmbeddingCache
+            try:
+                from dagster_io.embedding_cache import EmbeddingCache
 
-            cache = EmbeddingCache()
+                cache = EmbeddingCache()
+            except ImportError:
+                # dagster_io is optional — when absent, drop to a tiny
+                # dict-backed cache so the cluster node still functions in
+                # dagster-free contexts (tests, the AMR pipeline demo).
+                cache = _DictBackedEmbeddingCache()
         self.cache = cache
         self.proximity_radius = proximity_radius
         self.embed_merge_threshold = embed_merge_threshold
@@ -349,3 +355,22 @@ class ClusterEntitiesNode:
             groups[root].extend(c)
 
         return list(groups.values())
+
+
+class _DictBackedEmbeddingCache:
+    """Minimal in-memory cache used when ``dagster_io.embedding_cache``
+    isn't available (e.g. tests, the AMR-pipeline integration demo).
+
+    Matches the interface ClusterEntitiesNode needs: ``get(text)`` /
+    ``put(text, vec)``. No persistence; no eviction. The real EmbeddingCache
+    handles those — this is a degraded mode for dagster-free environments.
+    """
+
+    def __init__(self) -> None:
+        self._store: dict[str, Any] = {}
+
+    def get(self, text: str) -> Any:
+        return self._store.get(text)
+
+    def put(self, text: str, vec: Any) -> None:
+        self._store[text] = vec

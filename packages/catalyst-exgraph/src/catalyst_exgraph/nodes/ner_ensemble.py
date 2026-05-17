@@ -24,7 +24,18 @@ import httpx
 from catalyst_exgraph.config import StageConfig
 from catalyst_exgraph.protocol import ExtractionClient
 from catalyst_exgraph.state import ExGraphState
-from dagster_io import event_store
+
+# dagster_io is optional — catalyst-langgraph's Docker image doesn't ship
+# it. Fall back to a no-op stub so call sites don't need ``if event_store``
+# guards (mirrors the pattern in nodes/consensus.py + nodes/amr_project.py).
+try:
+    from dagster_io import event_store  # type: ignore
+except ImportError:
+    class _NoopEventStore:
+        def __getattr__(self, _name):
+            return lambda *a, **kw: None
+
+    event_store = _NoopEventStore()  # type: ignore
 
 logger = logging.getLogger(__name__)
 

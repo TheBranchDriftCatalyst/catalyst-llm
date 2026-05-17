@@ -256,6 +256,113 @@ def build_ensemble_pipeline(  # noqa: PLR0913
     return graph.compile()
 
 
+def build_amr_pipeline(  # noqa: PLR0913
+    encoders: list[StageConfig],
+    clients: dict[str, ExtractionClient],
+    mcp_client: Any,
+    amr_parser_client: Any,
+    label_pack: Any,
+    embedder: Any = None,
+    cache: Any = None,
+    chunk_config: ChunkConfig | None = None,
+    per_encoder_timeout_s: float = 60.0,
+    quorum: int | None = None,
+    per_type_quorum: dict[str, int] | None = None,
+    predicate: Any = None,
+) -> Any:
+    """Build the greenfield AMR-as-spine extraction pipeline.
+
+    Graph: [chunk →] ner_ensemble → consensus → cluster_entities → pack_evidence
+                                  → amr_parse → amr_project
+
+    This is the AMR-as-spine replacement for the legacy NER→SPO LLM path.
+    The AMR parser becomes the semantic spine; SPO triples are projected
+    deterministically from the AMR graph by ``AmrToAssertionNode`` using
+    the LabelPack's ``amr_frames`` table. No SPO LLM is invoked.
+
+    The first half (chunk → consensus → cluster → pack) is identical to
+    ``build_ensemble_pipeline`` so NER consensus is shared. The AMR parse
+    runs in parallel-eligible territory but for now is sequenced after
+    pack_evidence so the projection has consensus mentions available for
+    the entity-ref resolution step.
+
+    Args:
+        encoders: list of StageConfig — one per NER encoder.
+        clients: pre-resolved ExtractionClient instances keyed by encoder name.
+        mcp_client: MCP contract validation client (unused by AMR path,
+            kept for ensemble-node signature uniformity).
+        amr_parser_client: An ``AmrParserClient`` (or stub) — the seam that
+            decides whether amrlib is loaded, what splitter to use, etc.
+            Caller owns construction so dev/test paths can stub it.
+        label_pack: ``LabelPack`` with the ``amr_frames`` section populated.
+            Both encoder NER and AMR projection read this.
+        embedder, cache, chunk_config, per_encoder_timeout_s, quorum,
+            per_type_quorum, predicate: same as ``build_ensemble_pipeline``.
+
+    Returns:
+        Compiled LangGraph ready for ``ainvoke()``.
+    """
+    from catalyst_exgraph.nodes.amr_parse import AmrParseNode
+    from catalyst_exgraph.nodes.amr_project import AmrToAssertionNode
+    from catalyst_exgraph.nodes.cluster import ClusterEntitiesNode
+    from catalyst_exgraph.nodes.consensus import ConsensusNode
+    from catalyst_exgraph.nodes.ner_ensemble import NerEnsembleNode
+    from catalyst_exgraph.nodes.pack import PackEvidenceNode
+
+    encoder_names = [cfg.model_override or cfg.stage_name for cfg in encoders]
+
+    graph = StateGraph(ExGraphState)
+    node_names: list[str] = []
+
+    if chunk_config is not None:
+        from catalyst_exgraph.nodes.chunk import ChunkNode
+
+        graph.add_node("chunk", ChunkNode(chunk_config))
+        node_names.append("chunk")
+
+    graph.add_node(
+        "ner_ensemble",
+        NerEnsembleNode(
+            encoders=encoders,
+            clients=clients,
+            mcp_client=mcp_client,
+            per_encoder_timeout_s=per_encoder_timeout_s,
+        ),
+    )
+    node_names.append("ner_ensemble")
+
+    graph.add_node(
+        "consensus",
+        ConsensusNode(
+            encoders=encoder_names,
+            quorum=quorum,
+            per_type_quorum=per_type_quorum,
+            predicate=predicate,
+        ),
+    )
+    node_names.append("consensus")
+
+    graph.add_node("cluster_entities", ClusterEntitiesNode(embedder=embedder, cache=cache))
+    node_names.append("cluster_entities")
+
+    graph.add_node("pack_evidence", PackEvidenceNode())
+    node_names.append("pack_evidence")
+
+    # The two AMR-spine nodes — replace the legacy SPO LLM stage.
+    graph.add_node("amr_parse", AmrParseNode(client=amr_parser_client))
+    node_names.append("amr_parse")
+
+    graph.add_node("amr_project", AmrToAssertionNode(label_pack=label_pack))
+    node_names.append("amr_project")
+
+    graph.set_entry_point(node_names[0])
+    for i in range(len(node_names) - 1):
+        graph.add_edge(node_names[i], node_names[i + 1])
+    graph.add_edge(node_names[-1], END)
+
+    return graph.compile()
+
+
 def build_spo_pipeline(
     spo_config: StageConfig,
     client: ExtractionClient,

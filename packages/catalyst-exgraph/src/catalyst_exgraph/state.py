@@ -243,3 +243,35 @@ class ExGraphState(TypedDict, total=False):
     Each entry carries: text, canonical_type, vote_count, n_encoders,
     quorum, source_models, raw_mentions.  Persisted for HITL / DPO.
     """
+
+    # ── AMR-as-spine projection (greenfield path) ─────────────────────────────
+    amr_parses: list[Any]
+    """Per-sentence AmrSentenceParse records from AmrParseNode.
+
+    Each record carries the PENMAN string + char offsets + parse_duration_s
+    + parse_error. Sentences with parse_error set are skipped by the
+    projection node (the parser has already recorded the failure).
+
+    Typed as ``list[Any]`` to avoid an import cycle on the catalyst-langgraph
+    AmrSentenceParse dataclass; consumers should import the type explicitly.
+    """
+
+    amr_assertions: list[Any]
+    """AmrAssertion records produced by AmrToAssertionNode.
+
+    Each carries the canonical predicate (from pack.amr_frames), AMR-frame
+    provenance (amr_frame, amr_variable, amr_role_mapping), polarity,
+    modality, qualifiers, and canonical_entity_refs resolved against
+    state["consensus_mentions"].
+
+    Typed as ``list[Any]`` to avoid coupling state.py to the AmrAssertion
+    Pydantic model; consumers import the type explicitly.
+    """
+
+    amr_audit_events: list[dict[str, Any]]
+    """Audit events from the AMR projection path.
+
+    Separate from ``audit_events`` so the State Inspector can render the AMR
+    rail independently and so downstream serializers can filter on
+    ``source == "amr_project"`` without walking the legacy stream.
+    """
