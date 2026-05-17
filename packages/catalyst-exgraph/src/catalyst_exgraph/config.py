@@ -1,12 +1,15 @@
-"""Extraction pipeline configuration.
+"""Extraction stage configuration.
 
-StageConfig parameterizes a single extract→validate→repair loop.
-PipelineConfig composes multiple stages into a pipeline.
+``StageConfig`` parameterizes one NER stage (single encoder or ensemble).
+The legacy SPO stage + multi-stage ``PipelineConfig`` were removed when
+the AMR-as-spine refactor landed — the AMR pipeline composes nodes
+directly in ``build_amr_pipeline`` instead of running a generic
+extract→validate→repair loop.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
@@ -17,7 +20,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class StageConfig:
-    """Configuration for one extraction stage (NER or SPO).
+    """Configuration for one NER extraction stage.
 
     Each stage runs: extract → validate → repair(loop) for one extraction type.
     The stage is parameterized by the Pydantic output schema, prompt IDs, and
@@ -76,46 +79,21 @@ class StageConfig:
     """Minimum fraction of models that must agree for consensus."""
 
 
-@dataclass(frozen=True)
-class PipelineConfig:
-    """Configuration for a multi-stage extraction pipeline.
-
-    Stages are executed in order. Each stage's accepted output is available
-    to subsequent stages via upstream_context.
-    """
-
-    stages: list[StageConfig] = field(default_factory=list)
-    """Ordered list of extraction stages to execute."""
-
-    max_concurrency: int = 5
-    """Max parallel chunk processing."""
-
-    def get_stage(self, name: str) -> StageConfig | None:
-        """Look up a stage by name."""
-        for s in self.stages:
-            if s.stage_name == name:
-                return s
-        return None
-
-    @property
-    def stage_names(self) -> list[str]:
-        return [s.stage_name for s in self.stages]
-
-    @property
-    def active_stages(self) -> list[StageConfig]:
-        """Stages that are not skipped."""
-        return [s for s in self.stages if not s.skip]
-
-
 # ── Preset configs ────────────────────────────────────────────────────
 
 
 def ner_stage_config(
     model: str | None = None,
-    max_retries: int = 3,
+    max_retries: int = 0,
     ensemble_models: list[str] | None = None,
 ) -> StageConfig:
-    """Create a standard NER (mention extraction) stage config."""
+    """Create a NER (mention extraction) stage config.
+
+    Default ``max_retries=0`` matches encoder behaviour (deterministic
+    output; no repair loop). Set higher only if you're running an
+    LLM-backed NER model that benefits from validate/repair cycles —
+    but the AMR-as-spine path uses the encoder ensemble, so 0 is correct.
+    """
     from catalyst_exgraph.models.extraction_output import MentionExtractionResult
 
     return StageConfig(
@@ -130,26 +108,6 @@ def ner_stage_config(
     )
 
 
-def spo_stage_config(
-    model: str | None = None,
-    max_retries: int = 3,
-    skip: bool = False,
-) -> StageConfig:
-    """Create a standard SPO (proposition extraction) stage config."""
-    from catalyst_exgraph.models.extraction_output import PropositionExtractionResult
-
-    return StageConfig(
-        stage_name="spo",
-        extraction_schema=PropositionExtractionResult,
-        prompt_id="proposition_extraction",
-        validation_tool="validate_propositions",
-        repair_prompt_id="proposition_repair",
-        max_retries=max_retries,
-        model_override=model,
-        skip=skip,
-    )
-
-
 def chunk_stage_config(strategy: str = "recursive", **overrides) -> ChunkConfig:
     """Create a ChunkConfig with sensible defaults for pipeline chunking.
 
@@ -158,21 +116,10 @@ def chunk_stage_config(strategy: str = "recursive", **overrides) -> ChunkConfig:
         **overrides: Any ChunkConfig field overrides (e.g. model_context_tokens=128000).
 
     Returns:
-        ChunkConfig ready to pass to build_pipeline().
+        ChunkConfig ready to pass to build_amr_pipeline() / build_ensemble_pipeline().
     """
     from dagster_io.chunking import ChunkConfig
 
     return ChunkConfig(strategy=strategy, **overrides)
 
 
-def default_pipeline_config(
-    ner_model: str | None = None,
-    spo_model: str | None = None,
-) -> PipelineConfig:
-    """Create the standard NER→SPO pipeline config."""
-    return PipelineConfig(
-        stages=[
-            ner_stage_config(model=ner_model),
-            spo_stage_config(model=spo_model),
-        ],
-    )

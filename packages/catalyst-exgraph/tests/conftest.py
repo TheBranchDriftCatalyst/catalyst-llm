@@ -8,15 +8,10 @@ import pytest
 from catalyst_exgraph.models.extraction_output import (
     MentionCandidate,
     MentionExtractionResult,
-    PropositionCandidate,
-    PropositionExtractionResult,
 )
 from catalyst_exgraph.config import (
-    PipelineConfig,
     StageConfig,
-    default_pipeline_config,
     ner_stage_config,
-    spo_stage_config,
 )
 from catalyst_exgraph.protocol import StageResult
 from pydantic import BaseModel
@@ -54,20 +49,6 @@ class MockExtractionClient:
 
     async def structured_output(self, schema: type[BaseModel], messages: list[Any]) -> BaseModel:
         self.structured_calls.append((schema, messages))
-
-        if schema is MentionExtractionResult:
-            objs = [MentionCandidate(**m) for m in self._mention_data]
-            return MentionExtractionResult(mentions=objs)
-        elif schema is PropositionExtractionResult:
-            objs = [PropositionCandidate(**p) for p in self._proposition_data]
-            return PropositionExtractionResult(propositions=objs)
-
-        # Fallback: guess from message content
-        msg_text = " ".join(str(m) for m in messages).lower()
-        if "proposition" in msg_text or "triple" in msg_text:
-            objs = [PropositionCandidate(**p) for p in self._proposition_data]
-            return PropositionExtractionResult(propositions=objs)
-
         objs = [MentionCandidate(**m) for m in self._mention_data]
         return MentionExtractionResult(mentions=objs)
 
@@ -209,16 +190,6 @@ def ner_config() -> StageConfig:
     return ner_stage_config()
 
 
-@pytest.fixture
-def spo_config() -> StageConfig:
-    return spo_stage_config()
-
-
-@pytest.fixture
-def pipeline_config() -> PipelineConfig:
-    return default_pipeline_config()
-
-
 # ── StageResult fixtures ────────────────────────────────────────────────────
 
 
@@ -253,15 +224,22 @@ def configure_event_store(tmp_path):
 
     Closes any leaked module-global writer before and after the test so
     test isolation is maintained. ``autouse=True`` so every test in the
-    package gets this without opting in. Tests that need to inspect what
-    was emitted call ``event_store.read_events_for_test()`` to drain the
-    parquet shard back to a list of dicts.
+    package gets this without opting in.
+
+    When dagster_io isn't installed (catalyst-langgraph's Docker image
+    case, dev environments without the workspace install), the fixture
+    no-ops — the AMR pipeline + node modules all use the lazy-import
+    event_store stub and don't write events anywhere a real writer
+    would catch them. Tests that need event-stream assertions explicitly
+    install dagster_io.
     """
-    from dagster_io.bench import event_store
+    try:
+        from dagster_io.bench import event_store
+    except ImportError:
+        yield
+        return
 
     event_store.close()
     event_store.configure(run_id="test-run", run_dir=tmp_path)
-
     yield
-
     event_store.close()

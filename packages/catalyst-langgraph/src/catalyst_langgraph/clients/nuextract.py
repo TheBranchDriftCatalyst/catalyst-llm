@@ -268,13 +268,12 @@ class NuExtractClient:
         return await self._call_llm(full_prompt)
 
     async def structured_output(self, schema: type[BaseModel], messages: list[Any]) -> BaseModel:
-        """Extract structured data using nuextract's native template format.
+        """Extract entity mentions using NuExtract's typed JSON template.
 
-        Translates MentionExtractionResult / PropositionExtractionResult schemas
-        into nuextract's category-based template, calls the model, and converts
-        the response back into the expected Pydantic model.
+        NER-only. The earlier proposition path was removed when the
+        AMR-as-spine refactor landed (NuExtract is much better at NER
+        than at relation extraction; AMR projection replaces SPO).
         """
-        # Get the raw text from messages (HumanMessage content)
         raw_text = ""
         for m in messages:
             content = getattr(m, "content", str(m))
@@ -284,24 +283,21 @@ class NuExtractClient:
         if not raw_text:
             raw_text = str(messages[-1].content) if messages else ""
 
-        schema_name = schema.__name__
+        if "Mention" not in schema.__name__:
+            raise ValueError(
+                f"NuExtractClient only supports MentionExtractionResult; got {schema.__name__!r}"
+            )
+
         logger.info(
             "nuextract.structured_output: model=%s, schema=%s, input_len=%d",
             self.model,
-            schema_name,
+            schema.__name__,
             len(raw_text),
         )
         t0 = time.perf_counter()
-
-        if "Mention" in schema_name:
-            result = await self._extract_mentions(raw_text, schema)
-        elif "Proposition" in schema_name:
-            result = await self._extract_propositions(raw_text, messages, schema)
-        else:
-            raise ValueError(f"NuExtractClient doesn't support schema: {schema_name}")
-
+        result = await self._extract_mentions(raw_text, schema)
         elapsed = time.perf_counter() - t0
-        logger.info("nuextract.structured_output: done, schema=%s, duration=%.3fs", schema_name, elapsed)
+        logger.info("nuextract.structured_output: done, duration=%.3fs", elapsed)
         return result
 
     async def _extract_mentions(self, raw_text: str, schema: type[BaseModel]) -> BaseModel:
@@ -358,48 +354,6 @@ class NuExtractClient:
         from catalyst_exgraph.models.extraction_output import MentionCandidate
 
         return schema(mentions=[MentionCandidate(**m) for m in all_mentions.values()])
-
-    async def _extract_propositions(self, raw_text: str, messages: list[Any], schema: type[BaseModel]) -> BaseModel:
-        """Extract propositions using nuextract.
-
-        Propositions are harder for nuextract since it's designed for entity
-        extraction. We use a simple template with subject/predicate/object slots.
-        """
-        template = json.dumps(
-            {
-                "propositions": [
-                    {
-                        "subject": "",
-                        "predicate": "",
-                        "object": "",
-                    }
-                ]
-            }
-        )
-        prompt = f"<|input|>\n{raw_text}\n<|output|>\n{template}"
-
-        response = await self._call_llm(prompt)
-        parsed = self._parse_nuextract_output(response)
-
-        propositions = []
-        for p in parsed.get("propositions", []):
-            subj = p.get("subject", "").strip()
-            pred = p.get("predicate", "").strip()
-            obj = p.get("object", "").strip()
-            if subj and pred and obj:
-                propositions.append(
-                    {
-                        "subject": subj,
-                        "predicate": pred,
-                        "object": obj,
-                        "confidence": 0.8,
-                        "evidence": "",
-                    }
-                )
-
-        from catalyst_exgraph.models.extraction_output import PropositionCandidate
-
-        return schema(propositions=[PropositionCandidate(**p) for p in propositions])
 
     async def _extract_mentions_v2(self, raw_text: str, schema: type[BaseModel]) -> BaseModel:
         """NuExtract 2.0 extraction — uses ### Template: format with verbatim-string types.

@@ -101,12 +101,11 @@ class GLiNERClient:
         raise NotImplementedError("GLiNER is an encoder model, use structured_output() for extraction")
 
     async def structured_output(self, schema: type[BaseModel], messages: list[Any]) -> BaseModel:
-        """Run GLiNER extraction and return results as the expected Pydantic schema.
+        """Run GLiNER NER and return ``MentionExtractionResult``.
 
-        Handles MentionExtractionResult. For PropositionExtractionResult, returns
-        empty propositions (GLiNER doesn't do relation extraction).
+        GLiNER is an encoder — only mention extraction is supported.
+        Any other schema raises ValueError.
         """
-        # Extract raw text from messages
         raw_text = ""
         for m in messages:
             content = getattr(m, "content", str(m))
@@ -116,17 +115,9 @@ class GLiNERClient:
         if not raw_text:
             raw_text = str(messages[-1].content) if messages else ""
 
-        schema_name = schema.__name__
-
-        if "Mention" in schema_name:
+        if "Mention" in schema.__name__:
             return await self._extract_mentions(raw_text, schema)
-        elif "Proposition" in schema_name:
-            # GLiNER doesn't do relation extraction — return empty
-            from catalyst_exgraph.models.extraction_output import PropositionExtractionResult
-
-            return PropositionExtractionResult(propositions=[])
-        else:
-            raise ValueError(f"GLiNERClient doesn't support schema: {schema_name}")
+        raise ValueError(f"GLiNERClient only supports MentionExtractionResult; got {schema.__name__!r}")
 
     async def _extract_mentions(self, raw_text: str, schema: type[BaseModel]) -> BaseModel:
         """Run GLiNER NER on the text and convert to MentionExtractionResult.

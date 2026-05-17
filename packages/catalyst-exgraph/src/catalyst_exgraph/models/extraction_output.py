@@ -50,32 +50,3 @@ class MentionExtractionResult(BaseModel):
     """
 
     mentions: list[MentionCandidate] = Field(description="All named entity mentions extracted from the source text")
-
-
-class PropositionCandidate(BaseModel):
-    """A Subject-Predicate-Object triple extracted from text."""
-
-    subject: str = Field(description="The subject entity text (should match an accepted mention text)")
-    predicate: str = Field(description="The relationship verb or phrase (prefer snake_case, e.g., 'works_for')")
-    object: str = Field(description="The object entity text (should match an accepted mention text)")
-    confidence: float = Field(
-        ge=0.0,
-        le=1.0,
-        description="Confidence score for this proposition, between 0 and 1",
-    )
-    evidence: str = Field(
-        default="",
-        description="The source text span supporting this triple",
-    )
-
-
-class PropositionExtractionResult(BaseModel):
-    """Result of proposition extraction from text.
-
-    Return a JSON object with a ``propositions`` array containing all
-    Subject-Predicate-Object triples found in the source text.
-    """
-
-    propositions: list[PropositionCandidate] = Field(
-        description="All propositions (SPO triples) extracted from the source text"
-    )

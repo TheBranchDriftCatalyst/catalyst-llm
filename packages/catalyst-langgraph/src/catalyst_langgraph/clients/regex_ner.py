@@ -71,10 +71,7 @@ class RegexNerClient:
     async def structured_output(self, schema: type[BaseModel], messages: list[Any]) -> BaseModel:
         """Run all compiled patterns, dedupe by span+type, return mentions.
 
-        For PropositionExtractionResult, returns an empty list — regex doesn't
-        do relation extraction. This matches the GLiNER/UniversalNER
-        no-relations behaviour so the ensemble caller doesn't have to
-        branch on voter type.
+        Regex is NER-only. Any non-Mention schema raises ValueError.
         """
         raw_text = ""
         for m in messages:
@@ -85,15 +82,9 @@ class RegexNerClient:
         if not raw_text:
             raw_text = str(messages[-1].content) if messages else ""
 
-        schema_name = schema.__name__
-
-        if "Mention" in schema_name:
+        if "Mention" in schema.__name__:
             return self._extract_mentions(raw_text, schema)
-        if "Proposition" in schema_name:
-            from catalyst_exgraph.models.extraction_output import PropositionExtractionResult
-
-            return PropositionExtractionResult(propositions=[])
-        raise ValueError(f"RegexNerClient doesn't support schema: {schema_name}")
+        raise ValueError(f"RegexNerClient only supports MentionExtractionResult; got {schema.__name__!r}")
 
     def _extract_mentions(self, raw_text: str, schema: type[BaseModel]) -> BaseModel:
         from catalyst_exgraph.models.extraction_output import MentionCandidate

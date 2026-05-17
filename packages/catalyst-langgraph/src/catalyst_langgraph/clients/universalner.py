@@ -154,29 +154,11 @@ class UniversalNERClient:
         if not raw_text:
             raw_text = str(messages[-1].content) if messages else ""
 
-        # Detect repair calls: repair prompts contain validation feedback
-        # like "Fix the following" or JSON error details. In that case, re-use
-        # the original source text since UniversalNER can't parse repair prompts.
-        is_repair = any(
-            marker in raw_text.lower()
-            for marker in ["fix the following", "validation error", "span_mismatch", "mentions["]
-        )
-        if is_repair and hasattr(self, "_last_source_text"):
-            logger.info("universalner: repair call detected, re-using original source text")
-            raw_text = self._last_source_text
-        else:
-            self._last_source_text = raw_text
-
-        schema_name = schema.__name__
-
-        if "Mention" in schema_name:
+        if "Mention" in schema.__name__:
             return await self._extract_mentions(raw_text, schema)
-        elif "Proposition" in schema_name:
-            from catalyst_exgraph.models.extraction_output import PropositionExtractionResult
-
-            return PropositionExtractionResult(propositions=[])
-        else:
-            raise ValueError(f"UniversalNERClient doesn't support schema: {schema_name}")
+        raise ValueError(
+            f"UniversalNERClient only supports MentionExtractionResult; got {schema.__name__!r}"
+        )
 
     async def _extract_mentions(self, raw_text: str, schema: type[BaseModel]) -> BaseModel:
         """Extract mentions by querying each entity type separately.

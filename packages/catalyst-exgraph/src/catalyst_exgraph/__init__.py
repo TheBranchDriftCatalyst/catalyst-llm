@@ -1,21 +1,31 @@
-"""catalyst-exgraph: Generic composable extraction graphs.
+"""catalyst-exgraph: AMR-as-spine composable extraction graphs.
 
-Replaces the hardcoded NER→SPO pipeline in catalyst-langgraph-aio with
-configurable extract→validate→repair stages that compose into pipelines.
+Single-path extraction pipeline:
 
-Key features:
-- Generic stage graph: one extract→validate→repair loop, parameterized by StageConfig
-- Pipeline composition: chain stages (NER→SPO), per-stage model selection
-- Ensemble extraction: N models → consensus voting
-- Full provenance: every extraction tracks which model produced it
-- ExtractionResource: Dagster ConfigurableResource with extract_mentions/extract_assertions
+    chunk → NER ensemble (4 voters) → consensus → cluster → pack
+                                                            → AMR parse
+                                                            → AMR projection → AmrAssertion
+
+NER candidates from GLiNER / NuExtract / UniversalNER / Regex flow into a
+consensus voter; the consensus mentions anchor entity references for the
+AMR-to-assertion projection. There is no SPO LLM stage — predicates are
+projected deterministically from PropBank frames via the active label
+pack's ``amr_frames`` table (see ``catalyst_langgraph.label_packs``).
+
+Key entry points:
+  * ``build_amr_pipeline()`` — compiled LangGraph for the full pipeline.
+  * ``build_ensemble_pipeline()`` — NER-only half (no AMR projection).
+  * ``ExtractionResource`` (Dagster) — the consumer-facing wrapper.
+
+The legacy SPO LLM path (build_pipeline, build_spo_pipeline, EnsembleExtractNode,
+proposition_validator, _SPO_CAPTURE_BUFFER) was removed when the AMR-as-spine
+refactor landed. Roll-forward greenfield: no backward-compat shims.
 """
 
-from catalyst_exgraph.config import PipelineConfig, StageConfig, chunk_stage_config
+from catalyst_exgraph.config import StageConfig, chunk_stage_config, ner_stage_config
 from catalyst_exgraph.nodes.chunk import ChunkNode
-from catalyst_exgraph.pipeline import build_pipeline
+from catalyst_exgraph.pipeline import build_amr_pipeline, build_ensemble_pipeline
 from catalyst_exgraph.protocol import ExtractionClient, ExtractionResult, StageResult
-from catalyst_exgraph.stage import build_stage_graph
 from catalyst_exgraph.state import ExGraphState, ExGraphStatus
 
 # NOTE: `ExtractionResource` (Dagster ConfigurableResource) is NOT imported
@@ -24,10 +34,6 @@ from catalyst_exgraph.state import ExGraphState, ExGraphStatus
 # Dagster integration import it explicitly:
 #
 #     from catalyst_exgraph.resource import ExtractionResource
-#
-# Keeping it out of the package init means catalyst-langgraph (which
-# only needs build_pipeline + config_schemas) can install
-# catalyst-exgraph without dagster's heavy dep tree.
 
 __all__ = [
     "ChunkNode",
@@ -35,10 +41,10 @@ __all__ = [
     "ExGraphStatus",
     "ExtractionClient",
     "ExtractionResult",
-    "PipelineConfig",
     "StageConfig",
     "StageResult",
-    "build_pipeline",
-    "build_stage_graph",
+    "build_amr_pipeline",
+    "build_ensemble_pipeline",
     "chunk_stage_config",
+    "ner_stage_config",
 ]
