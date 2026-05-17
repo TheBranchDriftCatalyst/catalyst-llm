@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from catalyst_langgraph.label_packs.loader import (
     GENERIC_PACK_NAME,
+    AmrFrames,
     LabelPack,
     load_generic_label_pack,
     load_label_pack,
@@ -33,6 +34,7 @@ from catalyst_langgraph.label_packs.loader import (
 
 __all__ = [
     "GENERIC_PACK_NAME",
+    "AmrFrames",
     "LabelPack",
     "load_generic_label_pack",
     "load_label_pack",

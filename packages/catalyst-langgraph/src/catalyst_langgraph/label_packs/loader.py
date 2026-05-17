@@ -81,6 +81,37 @@ class RegexLabels:
 
 
 @dataclass(frozen=True)
+class AmrFrames:
+    """AMR PropBank frame → canonical predicate mapping.
+
+    AMR parsers emit predicate nodes labelled with PropBank frames
+    (introduce-01, refer-01, vote-01, …). The AMR-to-assertion
+    projection node walks each frame and looks up the canonical
+    predicate name from this map.
+
+    ``unknown_frame_action`` controls what happens when a frame isn't
+    in the table:
+      - "passthrough" — emit the frame as-is (e.g. canonical_predicate = "introduce-01")
+      - "novel"       — emit canonical_predicate = "NOVEL_{frame}", flag for review
+      - "drop"        — skip the assertion entirely
+
+    ``extended_predicates`` declares canonical predicate names emitted by
+    this pack that intentionally extend beyond the SPO prompt's controlled
+    vocabulary. The cross-validation QA test allows these as exceptions to
+    the subset rule. Adding a predicate here is an explicit contract: the
+    downstream validator must be taught to accept it.
+    """
+
+    frames: dict[str, str] = field(default_factory=dict)
+    unknown_frame_action: str = "novel"
+    # Argument-role overrides per frame — most frames use the default
+    # (:ARG0 = subject, :ARG1 = object), but some legislative frames
+    # have non-standard argument structures we want to flag.
+    role_overrides: dict[str, dict[str, str]] = field(default_factory=dict)
+    extended_predicates: frozenset[str] = field(default_factory=frozenset)
+
+
+@dataclass(frozen=True)
 class LabelPack:
     """A fully-loaded label pack for one extraction domain.
 
@@ -96,6 +127,7 @@ class LabelPack:
     nuextract: NuExtractLabels = field(default_factory=NuExtractLabels)
     universalner: UniversalNERLabels = field(default_factory=UniversalNERLabels)
     regex: RegexLabels = field(default_factory=RegexLabels)
+    amr_frames: AmrFrames = field(default_factory=AmrFrames)
     consensus: dict[str, Any] = field(default_factory=dict)
 
     def has_gliner_labels(self) -> bool:
@@ -109,6 +141,9 @@ class LabelPack:
 
     def has_regex_patterns(self) -> bool:
         return bool(self.regex.patterns)
+
+    def has_amr_frames(self) -> bool:
+        return bool(self.amr_frames.frames)
 
 
 def _parse_gliner(raw: dict[str, Any] | None) -> GLiNERLabels:
@@ -167,6 +202,37 @@ def _parse_regex(raw: dict[str, Any] | None) -> RegexLabels:
     )
 
 
+_VALID_UNKNOWN_FRAME_ACTIONS = {"passthrough", "novel", "drop"}
+
+
+def _parse_amr_frames(raw: dict[str, Any] | None) -> AmrFrames:
+    raw = raw or {}
+    # YAML treats ``frames:`` (with no children) as None; coerce defensively
+    # so a sloppy pack edit degrades to an empty map instead of crashing.
+    frames = dict(raw.get("frames") or {})
+    action = str(raw.get("unknown_frame_action", "novel"))
+    if action not in _VALID_UNKNOWN_FRAME_ACTIONS:
+        # Don't silently coerce — surface the typo so packs can be corrected.
+        raise ValueError(
+            f"amr_frames.unknown_frame_action must be one of "
+            f"{sorted(_VALID_UNKNOWN_FRAME_ACTIONS)}, got {action!r}"
+        )
+    # role_overrides is a nested dict (frame → role → semantic_slot); coerce
+    # both layers defensively so YAML quirks don't bleed into the dataclass.
+    overrides_raw = raw.get("role_overrides", {}) or {}
+    role_overrides: dict[str, dict[str, str]] = {}
+    for frame, mapping in overrides_raw.items():
+        role_overrides[frame] = {str(k): str(v) for k, v in (mapping or {}).items()}
+    extended_raw = raw.get("extended_predicates", []) or []
+    extended = frozenset(str(p) for p in extended_raw)
+    return AmrFrames(
+        frames=frames,
+        unknown_frame_action=action,
+        role_overrides=role_overrides,
+        extended_predicates=extended,
+    )
+
+
 def _load_from_path(path: Path, name: str) -> LabelPack:
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return LabelPack(
@@ -178,6 +244,7 @@ def _load_from_path(path: Path, name: str) -> LabelPack:
         nuextract=_parse_nuextract(raw.get("nuextract")),
         universalner=_parse_universalner(raw.get("universalner")),
         regex=_parse_regex(raw.get("regex")),
+        amr_frames=_parse_amr_frames(raw.get("amr_frames")),
         consensus=dict(raw.get("consensus", {})),
     )
 

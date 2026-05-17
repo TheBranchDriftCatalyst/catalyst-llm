@@ -105,3 +105,33 @@ def test_congress_pack_loads_if_available():
     assert "Bill.Sponsor.Name" in pack.nuextract.canonical_type_map
     # UniNER has multi-probe queries for PERSON
     assert len(pack.universalner.queries.get("PERSON", [])) >= 2
+
+
+def test_congress_pack_has_amr_frame_mappings():
+    """The real congress pack ships a PropBank-frame → canonical-predicate table
+    that the AMR-to-assertion projection node consumes downstream."""
+    candidate = Path(
+        "/Users/panda/catalyst-devspace/workspace/catalyst-data/"
+        "k8s/congress-data/prompts/congress.labels.yaml"
+    )
+    if not candidate.is_file():
+        pytest.skip("congress pack not present in this env")
+    pack = load_label_pack(candidate.parent, "congress")
+    assert pack.has_amr_frames()
+    # Core legislative frames map onto the canonical predicates from
+    # proposition_extraction.prompt (active voice, prompt vocab).
+    assert pack.amr_frames.frames["introduce-01"] == "introduces"
+    assert pack.amr_frames.frames["refer-01"] == "refers_to"
+    # vote-01 has no polarity-blind equivalent in the prompt vocab
+    # (votes_for / votes_against require :polarity); the pack maps it
+    # to the extension predicate `voted_on` as a neutral fallback.
+    assert pack.amr_frames.frames["vote-01"] == "voted_on"
+    assert "voted_on" in pack.amr_frames.extended_predicates
+    # have-org-role-91 carries a special ARG2 → role_value override so the
+    # projection node can convert the role title to a qualifier instead of
+    # emitting a spurious triple.
+    assert (
+        pack.amr_frames.role_overrides["have-org-role-91"]["ARG2"] == "role_value"
+    )
+    # Default unknown-frame policy = surface as NOVEL_* for review.
+    assert pack.amr_frames.unknown_frame_action == "novel"

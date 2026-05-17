@@ -38,6 +38,15 @@ dependencies = [
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
+    # Property-based testing — used by tests/test_amr_parser_qa.py to
+    # fuzz invariants on the AmrParserClient splitter/offset bookkeeping.
+    "hypothesis>=6.0",
+]
+# Optional AMR parser dep. amrlib is t5-based and pulls a ~500 MB
+# checkpoint on first model load — opt-in only. The AmrParserClient
+# constructor succeeds without it; only parse() requires the import.
+amr = [
+    "amrlib>=0.7.0",
 ]
 
 [tool.setuptools.packages.find]

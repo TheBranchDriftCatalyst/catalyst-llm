@@ -105,3 +105,10 @@ universalner:
 regex:
   patterns: {}
   authoritative_for: []
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AMR frames — empty by default. Domain packs (e.g. congress) supply real
+# PropBank frame → canonical predicate mappings for the AMR-to-assertion
+# projection node. Defensive empty section so partial-pack loads don't break.
+# ─────────────────────────────────────────────────────────────────────────────
+amr_frames: {}

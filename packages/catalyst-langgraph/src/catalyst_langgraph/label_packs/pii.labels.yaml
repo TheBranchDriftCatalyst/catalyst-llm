@@ -81,3 +81,7 @@ regex:
   authoritative_for:
     - EMAIL
     - SSN
+
+# AMR frames — PII pack doesn't extract propositions; empty section keeps the
+# loader happy for partial-pack consumers.
+amr_frames: {}
