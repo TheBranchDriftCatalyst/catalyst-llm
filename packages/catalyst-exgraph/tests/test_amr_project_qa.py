@@ -24,7 +24,7 @@ from pathlib import Path
 
 import penman
 import pytest
-from catalyst_exgraph.models.amr_assertion import AmrAssertion
+from catalyst_contracts_core import Assertion, Provenance
 from catalyst_exgraph.nodes.amr_project import AmrToAssertionNode
 from catalyst_langgraph.label_packs.loader import (
     AmrFrames,
@@ -99,10 +99,10 @@ def _state(
 # would be wrong here: these files SHOULD exist; if they don't, the QA
 # differential check fails and the team should notice.
 _CONGRESS_PACK_DIR = Path(
-    "/Users/panda/catalyst-devspace/workspace/catalyst-data/k8s/congress-data/prompts"
+    "/Users/panda/catalyst-devspace/workspace/catalyst-data/k8s/base/congress-data/prompts"
 )
 _MEDIA_PACK_DIR = Path(
-    "/Users/panda/catalyst-devspace/workspace/catalyst-data/k8s/media-ingest/prompts"
+    "/Users/panda/catalyst-devspace/workspace/catalyst-data/k8s/base/media-ingest/prompts"
 )
 
 
@@ -238,8 +238,9 @@ async def test_nameless_concept_falls_back_to_instance_literal():
     a = result["amr_assertions"][0]
     assert a.subject_text == "person"
     assert a.object_text == "bill"
-    # No consensus mention says "bill" or "person", so refs is empty.
-    assert a.canonical_entity_refs == {}
+    # No consensus mention says "bill" or "person", so mention ids are unset.
+    assert a.subject_mention_id is None
+    assert a.object_mention_id is None
 
 
 # ---- T1-05: polarity contract — only '-' is False, '+' / missing are True ----
@@ -363,8 +364,8 @@ async def test_multiple_consensus_matches_pick_first_in_list_order():
     )
 
     a = result["amr_assertions"][0]
-    # First mention in list order wins.
-    assert a.canonical_entity_refs.get("p") == "ent-A"
+    # First mention in list order wins — the subject AMR var p resolves to ent-A.
+    assert a.subject_mention_id == "ent-A"
 
 
 # ---- T1-10: variable collision across sentences — refs are sentence-scoped ----
@@ -392,11 +393,13 @@ async def test_variable_collision_across_sentences_refs_are_sentence_scoped():
     result = await node(_state(parses, consensus_mentions=mentions, raw_text="x" * 100))
 
     by_idx = {a.sentence_index: a for a in result["amr_assertions"]}
-    assert by_idx[0].canonical_entity_refs.get("b") == "bill-1"
-    assert by_idx[1].canonical_entity_refs.get("b") == "bill-2"
-    # Critically: NO leakage.
-    assert "bill-2" not in by_idx[0].canonical_entity_refs.values()
-    assert "bill-1" not in by_idx[1].canonical_entity_refs.values()
+    # The bill is the object in both sentences; mention id resolution
+    # must be scoped to each sentence's char range.
+    assert by_idx[0].object_mention_id == "bill-1"
+    assert by_idx[1].object_mention_id == "bill-2"
+    # Critically: NO leakage between sentences.
+    assert by_idx[0].object_mention_id != "bill-2"
+    assert by_idx[1].object_mention_id != "bill-1"
 
 
 # ---- T1-11: collision — two frames sharing same canonical predicate ----
@@ -517,14 +520,21 @@ async def test_mode_attribute_passes_through_arbitrary_values():
     assert result["amr_assertions"][0].modality == "interrogative"
 
 
-# ---- T1-16: AmrAssertion model validation — confidence bounds + defaults ----
+# ---- T1-16: Assertion model validation — confidence bounds + defaults ----
+
+
+def _min_provenance() -> Provenance:
+    """Minimal Provenance for fixture builds — Provenance is now required
+    on every Assertion in the unified contracts-core model."""
+    return Provenance(source_document_id="", chunk_id="")
 
 
 def test_amr_assertion_confidence_bounds_enforced():
     """Pydantic must reject confidence > 1.0 and < 0.0."""
     for bad in (1.5, -0.1, 2.0, -1.0):
         with pytest.raises(ValidationError):
-            AmrAssertion(
+            Assertion(
+                assertion_id="x",
                 subject_text="x",
                 predicate="p",
                 amr_frame="f-01",
@@ -533,12 +543,14 @@ def test_amr_assertion_confidence_bounds_enforced():
                 sentence_char_start=0,
                 sentence_char_end=1,
                 confidence=bad,
+                provenance=_min_provenance(),
             )
 
 
 def test_amr_assertion_field_defaults_correct():
     """Construction with only required fields produces sensible defaults."""
-    a = AmrAssertion(
+    a = Assertion(
+        assertion_id="x",
         subject_text="x",
         predicate="p",
         amr_frame="f-01",
@@ -546,10 +558,14 @@ def test_amr_assertion_field_defaults_correct():
         sentence_index=0,
         sentence_char_start=0,
         sentence_char_end=1,
+        provenance=_min_provenance(),
     )
     assert a.polarity is True
     assert a.qualifiers == {}
-    assert a.canonical_entity_refs == {}
+    # The unified Assertion replaces canonical_entity_refs with
+    # subject_mention_id / object_mention_id scalars.
+    assert a.subject_mention_id is None
+    assert a.object_mention_id is None
     assert a.is_novel_predicate is False
     assert a.amr_role_mapping == {}
     assert a.object_text is None
@@ -617,7 +633,7 @@ async def test_property_sentence_char_bounds_consistent(fixture):
 @given(fixture=_penman_fixture())
 @pytest.mark.asyncio
 async def test_property_canonical_entity_refs_are_input_mention_ids_only(fixture):
-    """Invariant: every value in canonical_entity_refs MUST be an actual
+    """Invariant: every resolved mention_id on an Assertion MUST be an actual
     mention_id from the input consensus_mentions — never fabricated.
     """
     frame, sent_text, start, end, person, bill, pen = fixture
@@ -642,8 +658,9 @@ async def test_property_canonical_entity_refs_are_input_mention_ids_only(fixture
     result = await node(_state(parses, consensus_mentions=mentions, raw_text="z" * (end + 1)))
 
     for a in result["amr_assertions"]:
-        for v in a.canonical_entity_refs.values():
-            assert v in mention_ids, f"fabricated mention id leaked: {v!r}"
+        for v in (a.subject_mention_id, a.object_mention_id):
+            if v is not None:
+                assert v in mention_ids, f"fabricated mention id leaked: {v!r}"
 
 
 @settings(max_examples=30, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
@@ -697,7 +714,8 @@ async def test_property_no_empty_predicate_leaks_when_pack_is_well_formed(fixtur
 @pytest.mark.asyncio
 async def test_property_determinism_same_input_same_output(fixture):
     """Invariant: running the node twice on the same (state, pack) yields
-    identical AmrAssertion lists (relies on Pydantic value equality).
+    identical Assertion lists (modulo Provenance.timestamp, which is
+    a wall-clock field that intentionally differs per emission).
     """
     frame, sent_text, start, end, _person, _bill, pen = fixture
     parses = [FakeAmrParse(sent_text, 0, start, end, pen)]
@@ -705,7 +723,19 @@ async def test_property_determinism_same_input_same_output(fixture):
     node = AmrToAssertionNode(label_pack=pack)
     r1 = await node(_state(parses))
     r2 = await node(_state(parses))
-    assert r1["amr_assertions"] == r2["amr_assertions"]
+
+    def _scrub(assertions):
+        # Compare value-equality on everything except Provenance.timestamp
+        # (a wall-clock attribute set at construction time).
+        out = []
+        for a in assertions:
+            d = a.model_dump()
+            if d.get("provenance"):
+                d["provenance"].pop("timestamp", None)
+            out.append(d)
+        return out
+
+    assert _scrub(r1["amr_assertions"]) == _scrub(r2["amr_assertions"])
 
 
 # ===========================================================================
@@ -815,8 +845,12 @@ async def test_diff_ner_consensus_no_match_vs_match_yields_same_surfaces_but_dif
     a1 = with_match["amr_assertions"][0]
     assert a0.subject_text == a1.subject_text == "Smith"
     assert a0.object_text == a1.object_text == "bill"
-    assert a0.canonical_entity_refs == {}
-    assert a1.canonical_entity_refs == {"p": "m-smith"}
+    # With no matching consensus mentions, subject/object mention ids stay None.
+    assert a0.subject_mention_id is None
+    assert a0.object_mention_id is None
+    # With a matching mention for "Smith", the subject mention id resolves.
+    assert a1.subject_mention_id == "m-smith"
+    assert a1.object_mention_id is None
 
 
 # ===========================================================================
@@ -878,9 +912,12 @@ async def test_scenario_real_legislative_two_predicates_with_consensus_match():
     refer = by_pred["refers_to"]
     assert intro.polarity is True
     assert refer.polarity is True
-    # The bill consensus mention should land on both assertions' refs.
-    assert intro.canonical_entity_refs.get("b") == "m-bill"
-    assert refer.canonical_entity_refs.get("b") == "m-bill"
+    # The bill consensus mention should land on both assertions. For
+    # introduce-01 (default role mapping) the bill is ARG1 → object.
+    # For refer-01 (congress pack override ARG1=subject, ARG2=object)
+    # the bill is the subject and the committee is the object.
+    assert intro.object_mention_id == "m-bill"
+    assert refer.subject_mention_id == "m-bill"
 
 
 @pytest.mark.asyncio

@@ -1,4 +1,4 @@
-"""Tests for AmrToAssertionNode — AMR-graph → AmrAssertion projection.
+"""Tests for AmrToAssertionNode — AMR-graph → unified Assertion projection.
 
 Uses hand-written PENMAN strings (no amrlib dependency in tests). Each
 test mocks the upstream ``AmrSentenceParse`` records and a tiny in-memory
@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import pytest
-from catalyst_exgraph.models.amr_assertion import AmrAssertion
+from catalyst_contracts_core import Assertion
 from catalyst_exgraph.nodes.amr_project import AmrToAssertionNode
 from catalyst_langgraph.label_packs.loader import AmrFrames, LabelPack
 
@@ -145,7 +145,7 @@ async def test_basic_introduce_projects_subject_predicate_object():
     assertions = result["amr_assertions"]
     assert len(assertions) == 1
     a = assertions[0]
-    assert isinstance(a, AmrAssertion)
+    assert isinstance(a, Assertion)
     assert a.predicate == "sponsored"
     assert "Smith" in a.subject_text
     assert a.object_text is not None
@@ -485,8 +485,9 @@ async def test_consensus_mention_match_populates_canonical_entity_refs():
     result = await node(_state(parses, consensus_mentions=consensus, raw_text=sentence))
 
     a = result["amr_assertions"][0]
-    # Both args should resolve to consensus mention ids.
-    assert set(a.canonical_entity_refs.values()) == {"ent-smith-001", "ent-hr1234"}
+    # Both args should resolve to consensus mention ids on the unified
+    # Assertion's scalar mention-id fields (replaces the old dict).
+    assert {a.subject_mention_id, a.object_mention_id} == {"ent-smith-001", "ent-hr1234"}
 
 
 @pytest.mark.asyncio
@@ -516,7 +517,8 @@ async def test_consensus_match_is_scoped_to_sentence_char_range():
     result = await node(_state(parses, consensus_mentions=consensus))
 
     a = result["amr_assertions"][0]
-    assert a.canonical_entity_refs == {}
+    assert a.subject_mention_id is None
+    assert a.object_mention_id is None
 
 
 # ---------------------------------------------------------------------------

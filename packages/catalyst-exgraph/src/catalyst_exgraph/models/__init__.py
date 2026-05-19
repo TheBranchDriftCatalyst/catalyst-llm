@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from catalyst_exgraph.models.amr_assertion import AmrAssertion
 from catalyst_exgraph.models.concordance import (
     ConcordanceCandidateScore,
     ConcordanceCandidateSet,
@@ -31,7 +30,6 @@ from catalyst_exgraph.models.validation import (
 )
 
 __all__ = [
-    "AmrAssertion",
     "ConcordanceCandidateScore",
     "ConcordanceCandidateSet",
     "EvidenceSpan",

@@ -1,4 +1,4 @@
-"""AmrToAssertionNode — project parsed AMR graphs into AmrAssertions.
+"""AmrToAssertionNode — project parsed AMR graphs into unified Assertions.
 
 For every predicate node in every parsed sentence:
   - Look up the PropBank frame in ``pack.amr_frames.frames``.
@@ -7,8 +7,9 @@ For every predicate node in every parsed sentence:
   - Apply ``role_overrides`` if the frame has them (else default
     ``{ARG0: "subject", ARG1: "object"}``).
   - Resolve AMR variables (concepts under each ARG edge) against the NER
-    consensus mentions for span anchoring + canonical entity IDs.
-  - Emit one ``AmrAssertion`` per predicate node.
+    consensus mentions for span anchoring + mention id linking.
+  - Emit one ``catalyst_contracts_core.Assertion`` per predicate node,
+    with ``Provenance`` stamped from the source chunk + sentence range.
 
 Sentences with ``parse_error`` set are skipped — the parser already
 recorded the failure on the ``AmrSentenceParse`` record. An audit event
@@ -19,21 +20,23 @@ State contract (LangGraph node):
         state["amr_parses"]            : list[AmrSentenceParse]
         state["consensus_mentions"]    : list[ConsensusMention]
         state["raw_text"]              : str
+        state["source_metadata"]       : dict (document_id, chunk_id)
     writes:
-        state["amr_assertions"]        : list[AmrAssertion]
+        state["amr_assertions"]        : list[Assertion]
         state["amr_audit_events"]      : list[dict]
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 import time
 from typing import Any
 
 import penman
+from catalyst_contracts_core import Assertion, ExtractionMethod, Provenance
 
-from catalyst_exgraph.models.amr_assertion import AmrAssertion
 from catalyst_exgraph.state import ExGraphState
 from catalyst_langgraph.label_packs.loader import LabelPack
 
@@ -90,8 +93,12 @@ class AmrToAssertionNode:
         unknown_action = amr_frames.unknown_frame_action
         role_overrides = amr_frames.role_overrides
 
-        assertions: list[AmrAssertion] = []
+        assertions: list[Assertion] = []
         audit_events: list[dict[str, Any]] = []
+
+        # Pack name flows into Provenance.extraction_model so the lineage
+        # records "amr+<pack_name>" — useful for cross-pack auditing.
+        pack_name = getattr(self.label_pack, "name", "") or "generic"
 
         event_store.append(
             source="amr_project",
@@ -293,7 +300,8 @@ class AmrToAssertionNode:
                 object_text: str | None = None
                 qualifiers: dict[str, str] = {}
                 applied_role_mapping: dict[str, str] = {}
-                canonical_entity_refs: dict[str, str] = {}
+                subject_mention_id: str | None = None
+                object_mention_id: str | None = None
 
                 for arg_name, semantic_role in role_mapping.items():
                     target_var = arg_targets.get(arg_name)
@@ -307,12 +315,14 @@ class AmrToAssertionNode:
                         sent_start,
                         sent_end,
                     )
-                    if ent_id:
-                        canonical_entity_refs[target_var] = ent_id
                     if semantic_role == "subject":
                         subject_text = surface
+                        if ent_id:
+                            subject_mention_id = ent_id
                     elif semantic_role == "object":
                         object_text = surface
+                        if ent_id:
+                            object_mention_id = ent_id
                     else:
                         # Custom semantic role from role_overrides — store
                         # as a qualifier rather than silently dropping it.
@@ -325,31 +335,50 @@ class AmrToAssertionNode:
                         surface = _resolve_surface(graph, edge.target, var_to_concept)
                         if surface:
                             qualifiers[key] = surface
-                            ent_id = _match_consensus(
-                                surface,
-                                consensus_mentions,
-                                sent_start,
-                                sent_end,
-                            )
-                            if ent_id:
-                                canonical_entity_refs[edge.target] = ent_id
 
-                assertion = AmrAssertion(
+                # Stable assertion id — md5 of canonical SPO + chunk + sentence_index.
+                # 16 hex chars is plenty for in-flight dedup; concordance will mint
+                # a longer canonical id post-resolution.
+                assertion_id = hashlib.md5(
+                    f"{subject_text}|{canonical_predicate}|{object_text or ''}"
+                    f"|{chunk_id}|{sent_index}".encode()
+                ).hexdigest()[:16]
+
+                assertion = Assertion(
+                    assertion_id=assertion_id,
                     subject_text=subject_text,
                     predicate=canonical_predicate,
                     object_text=object_text if object_text else None,
+                    subject_mention_id=subject_mention_id,
+                    object_mention_id=object_mention_id,
                     amr_frame=concept,
                     amr_variable=predicate_var,
                     amr_role_mapping=applied_role_mapping,
+                    is_novel_predicate=is_novel,
                     polarity=polarity,
                     modality=modality,
+                    negated=not polarity,
                     qualifiers=qualifiers,
-                    confidence=confidence,
-                    is_novel_predicate=is_novel,
                     sentence_index=sent_index,
                     sentence_char_start=sent_start,
                     sentence_char_end=sent_end,
-                    canonical_entity_refs=canonical_entity_refs,
+                    confidence=confidence,
+                    provenance=Provenance(
+                        source_document_id=src.get("document_id", "") or doc_id,
+                        chunk_id=src.get("chunk_id", "") or chunk_id,
+                        span_start=sent_start,
+                        span_end=sent_end,
+                        # AMR projection is a deterministic graph walk over a
+                        # parsed PENMAN tree against a pack's frame table —
+                        # distinct from STRUCTURED (LLM structured output) and
+                        # from REGEX. The pack id is appended on
+                        # extraction_model below so cross-pack auditing still
+                        # works.
+                        extraction_method=ExtractionMethod.AMR_PROJECTION,
+                        extraction_model=f"amr_projection+{pack_name}",
+                        confidence=confidence,
+                        code_location="",  # caller stamps this downstream
+                    ),
                 )
                 assertions.append(assertion)
 

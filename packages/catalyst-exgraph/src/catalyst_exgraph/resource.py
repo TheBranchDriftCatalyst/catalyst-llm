@@ -29,7 +29,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from dagster import ConfigurableResource
 
-from catalyst_exgraph.config import StageConfig, ner_stage_config, spo_stage_config
+from catalyst_exgraph.config import StageConfig, ner_stage_config
 from catalyst_exgraph.pipeline import build_ensemble_pipeline
 from catalyst_exgraph.protocol import ExtractionResult
 from catalyst_exgraph.state import ExGraphState
@@ -260,15 +260,21 @@ class ExtractionResource(ConfigurableResource):
         upstream_mentions: list,
         code_location: str,
     ) -> ExtractionResult:
-        """Build + invoke the AMR pipeline for each chunk, collect AmrAssertions.
+        """Build + invoke the AMR pipeline for each chunk, collect Assertions.
 
         Threaded chunk loop mirrors ``_run_pipeline()``. Each chunk gets
         its own ExGraphState; the AMR projection writes
-        ``state["amr_assertions"]`` which we collect + convert to the
-        generic ``ExtractionResult.assertions`` shape so callers that
-        already consume the legacy result type keep working.
+        ``state["amr_assertions"]`` directly as
+        ``catalyst_contracts_core.Assertion`` objects (Provenance stamped
+        inside the projection node), so this method just collects and
+        returns them on ``ExtractionResult.assertions``.
         """
-        from dagster_io.models import Assertion, Mention, MentionType, Provenance
+        from catalyst_contracts_core import (
+            Assertion,
+            ExtractionMethod,
+            Mention,
+            Provenance,
+        )
 
         from catalyst_exgraph.pipeline import build_amr_pipeline
         from catalyst_exgraph.state import ExGraphState
@@ -352,68 +358,49 @@ class ExtractionResource(ConfigurableResource):
 
         duration = time.monotonic() - start
 
-        # Convert ConsensusMentions to Mention domain objects (best-effort —
-        # consensus mentions have richer shape than legacy Mention).
+        # Convert ConsensusMention dicts to unified Mention objects. The
+        # consensus mentions dicts carry vote_count / source_models etc.
+        # natively — same shape as the unified Mention.
         mention_models = []
         for m in all_mentions:
-            try:
-                mention_type = MentionType(m.get("canonical_type", "OTHER"))
-            except ValueError:
-                mention_type = MentionType.OTHER
             mention_models.append(
                 Mention(
-                    document_id=m.get("document_id", ""),
-                    chunk_id=m.get("chunk_id", ""),
+                    mention_id=m.get("mention_id", ""),
                     text=m.get("text", ""),
-                    mention_type=mention_type,
-                    span_start=m.get("span_start"),
-                    span_end=m.get("span_end"),
-                    confidence=m.get("mean_confidence", 1.0),
-                    context="",
+                    canonical_type=m.get("canonical_type", "OTHER"),
+                    span_start=m.get("span_start", 0) or 0,
+                    span_end=m.get("span_end", 0) or 0,
+                    vote_count=m.get("vote_count", 1),
+                    n_encoders=m.get("n_encoders", 1),
+                    source_models=m.get("source_models", []) or [],
+                    mean_confidence=m.get("mean_confidence", 1.0),
+                    span_provenance=m.get("span_provenance"),
+                    context=m.get("context", ""),
                     provenance=Provenance(
                         source_document_id=m.get("document_id", ""),
                         chunk_id=m.get("chunk_id", ""),
-                        extraction_method="ner_ensemble",
-                        extraction_model=self.ner_model,
+                        span_start=m.get("span_start"),
+                        span_end=m.get("span_end"),
+                        extraction_method=ExtractionMethod.NER_ENSEMBLE,
+                        extraction_model=f"ner_ensemble+{self.ner_model}",
                         confidence=m.get("mean_confidence", 1.0),
                         code_location=code_location,
                     ),
                 )
             )
 
-        # Convert AmrAssertions to legacy Assertion shape so callers using
-        # ExtractionResult.assertions keep working. The AMR-specific fields
-        # (amr_frame, polarity, etc.) are stashed in qualifiers so they
-        # survive the round-trip.
-        assertion_models = []
+        # The AMR projection node emits unified Assertions directly with
+        # Provenance already stamped from the chunk + sentence range. The
+        # only thing we still need to fill in is ``code_location``, which
+        # is a caller concern and unknown to the projection node.
+        # Provenance is frozen (QA-1 hardened it to prevent wire-shape
+        # mutation), so we model_copy(update=...) instead of assigning.
+        assertion_models: list[Assertion] = []
         for a in all_amr_assertions:
-            # Tolerate both Pydantic model and dict forms.
-            get = (lambda k, d=None: getattr(a, k, d)) if not isinstance(a, dict) else a.get
-            qualifiers = dict(get("qualifiers", {}) or {})
-            qualifiers.setdefault("amr_frame", get("amr_frame", ""))
-            if get("polarity", True) is False:
-                qualifiers["amr_polarity"] = "negative"
-            if get("modality"):
-                qualifiers["amr_modality"] = get("modality")
-            if get("is_novel_predicate", False):
-                qualifiers["amr_novel"] = "true"
-            assertion_models.append(
-                Assertion(
-                    subject_text=get("subject_text", ""),
-                    predicate=get("predicate", ""),
-                    object_text=get("object_text", "") or "",
-                    confidence=get("confidence", 1.0),
-                    negated=not get("polarity", True),
-                    hedged=False,
-                    qualifiers=qualifiers,
-                    provenance=Provenance(
-                        extraction_method="amr_projection",
-                        extraction_model=f"amr+{self.label_pack_id or 'generic'}",
-                        confidence=get("confidence", 1.0),
-                        code_location=code_location,
-                    ),
-                )
-            )
+            if code_location and getattr(a, "provenance", None) is not None and not a.provenance.code_location:
+                new_provenance = a.provenance.model_copy(update={"code_location": code_location})
+                a = a.model_copy(update={"provenance": new_provenance})
+            assertion_models.append(a)
 
         return ExtractionResult(
             mentions=mention_models,
@@ -452,7 +439,7 @@ class ExtractionResource(ConfigurableResource):
         label_pack: Any,
     ) -> ExtractionResult:
         """Run the NER-half pipeline across chunks; collect ConsensusMentions."""
-        from dagster_io.models import Mention, MentionType, Provenance
+        from catalyst_contracts_core import ExtractionMethod, Mention, Provenance
 
         if not chunks:
             return ExtractionResult()
@@ -503,25 +490,26 @@ class ExtractionResource(ConfigurableResource):
 
         mention_models = []
         for m in all_mentions:
-            try:
-                mention_type = MentionType(m.get("canonical_type", "OTHER"))
-            except ValueError:
-                mention_type = MentionType.OTHER
             mention_models.append(
                 Mention(
-                    document_id=m.get("document_id", ""),
-                    chunk_id=m.get("chunk_id", ""),
+                    mention_id=m.get("mention_id", ""),
                     text=m.get("text", ""),
-                    mention_type=mention_type,
-                    span_start=m.get("span_start"),
-                    span_end=m.get("span_end"),
-                    confidence=m.get("mean_confidence", 1.0),
-                    context="",
+                    canonical_type=m.get("canonical_type", "OTHER"),
+                    span_start=m.get("span_start", 0) or 0,
+                    span_end=m.get("span_end", 0) or 0,
+                    vote_count=m.get("vote_count", 1),
+                    n_encoders=m.get("n_encoders", 1),
+                    source_models=m.get("source_models", []) or [],
+                    mean_confidence=m.get("mean_confidence", 1.0),
+                    span_provenance=m.get("span_provenance"),
+                    context=m.get("context", ""),
                     provenance=Provenance(
                         source_document_id=m.get("document_id", ""),
                         chunk_id=m.get("chunk_id", ""),
-                        extraction_method="ner_ensemble",
-                        extraction_model=self.ner_model,
+                        span_start=m.get("span_start"),
+                        span_end=m.get("span_end"),
+                        extraction_method=ExtractionMethod.NER_ENSEMBLE,
+                        extraction_model=f"ner_ensemble+{self.ner_model}",
                         confidence=m.get("mean_confidence", 1.0),
                         code_location=code_location,
                     ),

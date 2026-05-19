@@ -26,7 +26,6 @@ from pathlib import Path
 import pytest
 
 from catalyst_exgraph.config import ner_stage_config
-from catalyst_exgraph.models.amr_assertion import AmrAssertion
 from catalyst_exgraph.nodes.amr_parse import AmrParseNode
 from catalyst_exgraph.nodes.amr_project import AmrToAssertionNode
 from catalyst_exgraph.pipeline import build_amr_pipeline
@@ -47,7 +46,7 @@ def configure_event_store():  # noqa: D401 — fixture override
 
 _CONGRESS_PACK = Path(
     "/Users/panda/catalyst-devspace/workspace/catalyst-data/"
-    "k8s/congress-data/prompts/congress.labels.yaml"
+    "k8s/base/congress-data/prompts/congress.labels.yaml"
 )
 
 

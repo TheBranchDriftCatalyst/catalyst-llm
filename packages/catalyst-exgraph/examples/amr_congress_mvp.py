@@ -10,7 +10,7 @@ Demonstrates the full pipeline for the greenfield AMR-as-spine architecture:
                      same stub pattern)
       → AmrToAssertionNode (real, walks the PENMAN graph, applies the
                             congress AMR-frame mapping + role_overrides)
-      → list[AmrAssertion] printed to stdout
+      → list[catalyst_contracts_core.Assertion] printed to stdout
 
 To run from the workspace root::
 
@@ -73,7 +73,7 @@ _CHUNK = (
 
 _CONGRESS_PACK_DIR = (
     "/Users/panda/catalyst-devspace/workspace/catalyst-data/"
-    "k8s/congress-data/prompts"
+    "k8s/base/congress-data/prompts"
 )
 
 
@@ -164,7 +164,7 @@ async def main() -> None:
 
     # 4. AMR-to-assertion projection — the real node, walks the PENMAN,
     # applies frame lookup + role_overrides, resolves AMR vars against
-    # consensus mentions, emits AmrAssertions.
+    # consensus mentions, emits unified Assertions (contracts-core).
     print("─── Stage 3: AmrToAssertionNode (real) ──────────────────────────────")
     node = AmrToAssertionNode(label_pack=pack)
     state = {
@@ -178,11 +178,11 @@ async def main() -> None:
     }
     result = await node(state)
     assertions = result.get("amr_assertions", [])
-    print(f"  → {len(assertions)} AmrAssertion(s) emitted")
+    print(f"  → {len(assertions)} Assertion(s) emitted")
     print()
 
     # 5. Print each assertion in a readable format.
-    print("─── Output: AmrAssertions ───────────────────────────────────────────")
+    print("─── Output: Assertions ──────────────────────────────────────────────")
     for i, a in enumerate(assertions, 1):
         pol = "─" if not a.polarity else "+"
         mod = f" mode={a.modality}" if a.modality else ""
@@ -196,9 +196,10 @@ async def main() -> None:
         if a.qualifiers:
             for k, v in a.qualifiers.items():
                 print(f"       qualifier  {k:<22s}= {v!r}")
-        if a.canonical_entity_refs:
-            for var, mention_id in a.canonical_entity_refs.items():
-                print(f"       entity-ref {var!r:<22s}= {mention_id}")
+        if a.subject_mention_id:
+            print(f"       subject-mention-id      = {a.subject_mention_id}")
+        if a.object_mention_id:
+            print(f"       object-mention-id       = {a.object_mention_id}")
     print()
     print("─── Summary ─────────────────────────────────────────────────────────")
     n_neg = sum(1 for a in assertions if not a.polarity)
