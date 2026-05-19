@@ -38,11 +38,11 @@ from catalyst_langgraph.label_packs.loader import _parse_amr_frames
 # ─────────────────────────────────────────────────────────────────────────────
 CONGRESS_PACK_PATH = Path(
     "/Users/panda/catalyst-devspace/workspace/catalyst-data/"
-    "k8s/congress-data/prompts/congress.labels.yaml"
+    "k8s/base/congress-data/prompts/congress.labels.yaml"
 )
 PROPOSITION_PROMPT_PATH = Path(
     "/Users/panda/catalyst-devspace/workspace/catalyst-data/"
-    "k8s/congress-data/prompts/proposition_extraction.prompt"
+    "k8s/base/congress-data/prompts/proposition_extraction.prompt"
 )
 
 

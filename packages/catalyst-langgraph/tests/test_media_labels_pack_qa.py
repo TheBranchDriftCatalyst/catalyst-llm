@@ -37,13 +37,13 @@ from catalyst_langgraph.label_packs import load_label_pack
 # ─────────────────────────────────────────────────────────────────────────────
 _MEDIA_PROMPT_DIR = Path(
     "/Users/panda/catalyst-devspace/workspace/catalyst-data/"
-    "k8s/media-ingest/prompts"
+    "k8s/base/media-ingest/prompts"
 )
 _MEDIA_PACK_PATH = _MEDIA_PROMPT_DIR / "media.labels.yaml"
 
 _CONGRESS_PROMPT_DIR = Path(
     "/Users/panda/catalyst-devspace/workspace/catalyst-data/"
-    "k8s/congress-data/prompts"
+    "k8s/base/congress-data/prompts"
 )
 _CONGRESS_PACK_PATH = _CONGRESS_PROMPT_DIR / "congress.labels.yaml"
 

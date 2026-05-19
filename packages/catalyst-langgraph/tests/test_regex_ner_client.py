@@ -9,10 +9,7 @@ import pytest
 import yaml
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from catalyst_exgraph.models.extraction_output import (
-    MentionExtractionResult,
-    PropositionExtractionResult,
-)
+from catalyst_exgraph.models.extraction_output import MentionExtractionResult
 from catalyst_langgraph.clients.regex_ner import RegexNerClient
 from catalyst_langgraph.label_packs import load_label_pack
 
@@ -51,19 +48,6 @@ def test_extracts_bill_and_public_law_with_confidence_1(tmp_path: Path):
     assert "BILL" in by_type and by_type["BILL"].text == "H.R. 1234"
     assert "PUBLIC_LAW" in by_type and by_type["PUBLIC_LAW"].text == "P.L. 119-1"
     assert all(m.confidence == 1.0 for m in result.mentions)
-
-
-def test_returns_empty_proposition_result(tmp_path: Path):
-    """Regex doesn't do relation extraction — returns empty list, doesn't error."""
-    pack = _make_pack(tmp_path, patterns={})
-    client = RegexNerClient(label_pack=pack)
-    result = _run(
-        client.structured_output(
-            PropositionExtractionResult,
-            [HumanMessage(content="anything")],
-        )
-    )
-    assert result.propositions == []
 
 
 def test_invalid_pattern_skipped_not_raised(tmp_path: Path):

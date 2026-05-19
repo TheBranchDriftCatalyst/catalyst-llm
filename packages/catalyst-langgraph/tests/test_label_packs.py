@@ -87,7 +87,7 @@ def test_congress_pack_loads_if_available():
     """Smoke test the real congress pack from catalyst-data when present."""
     candidate = Path(
         "/Users/panda/catalyst-devspace/workspace/catalyst-data/"
-        "k8s/congress-data/prompts/congress.labels.yaml"
+        "k8s/base/congress-data/prompts/congress.labels.yaml"
     )
     if not candidate.is_file():
         pytest.skip("congress pack not present in this env")
@@ -112,7 +112,7 @@ def test_congress_pack_has_amr_frame_mappings():
     that the AMR-to-assertion projection node consumes downstream."""
     candidate = Path(
         "/Users/panda/catalyst-devspace/workspace/catalyst-data/"
-        "k8s/congress-data/prompts/congress.labels.yaml"
+        "k8s/base/congress-data/prompts/congress.labels.yaml"
     )
     if not candidate.is_file():
         pytest.skip("congress pack not present in this env")

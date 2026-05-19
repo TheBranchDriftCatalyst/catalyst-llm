@@ -2,7 +2,7 @@
 
 Mirrors the shape of ``test_label_packs.py::test_congress_pack_has_amr_frame_mappings``
 but tuned for transcribed audio/video content. The pack lives in
-``catalyst-data/k8s/media-ingest/prompts/media.labels.yaml`` and is
+``catalyst-data/k8s/base/media-ingest/prompts/media.labels.yaml`` and is
 loaded by catalyst-exgraph at pipeline build time.
 
 The non-tautological cross-validation test parses the canonical predicate
@@ -25,7 +25,7 @@ from catalyst_langgraph.label_packs import load_label_pack
 # ─────────────────────────────────────────────────────────────────────────────
 _MEDIA_PROMPT_DIR = Path(
     "/Users/panda/catalyst-devspace/workspace/catalyst-data/"
-    "k8s/media-ingest/prompts"
+    "k8s/base/media-ingest/prompts"
 )
 _MEDIA_PACK_PATH = _MEDIA_PROMPT_DIR / "media.labels.yaml"
 _PROPOSITION_PROMPT_PATH = _MEDIA_PROMPT_DIR / "proposition_extraction.prompt"
