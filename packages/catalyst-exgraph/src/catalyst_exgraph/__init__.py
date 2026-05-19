@@ -22,6 +22,7 @@ proposition_validator, _SPO_CAPTURE_BUFFER) was removed when the AMR-as-spine
 refactor landed. Roll-forward greenfield: no backward-compat shims.
 """
 
+from catalyst_exgraph import chunk_io
 from catalyst_exgraph.config import StageConfig, chunk_stage_config, ner_stage_config
 from catalyst_exgraph.nodes.chunk import ChunkNode
 from catalyst_exgraph.pipeline import build_amr_pipeline, build_ensemble_pipeline
@@ -45,6 +46,7 @@ __all__ = [
     "StageResult",
     "build_amr_pipeline",
     "build_ensemble_pipeline",
+    "chunk_io",
     "chunk_stage_config",
     "ner_stage_config",
 ]

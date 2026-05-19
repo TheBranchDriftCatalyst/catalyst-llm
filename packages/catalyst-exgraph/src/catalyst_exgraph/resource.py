@@ -29,25 +29,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from dagster import ConfigurableResource
 
+from catalyst_exgraph.chunk_io import field as _chunk_field
 from catalyst_exgraph.config import StageConfig, ner_stage_config
 from catalyst_exgraph.pipeline import build_ensemble_pipeline
 from catalyst_exgraph.protocol import ExtractionResult
 from catalyst_exgraph.state import ExGraphState
 
 logger = logging.getLogger(__name__)
-
-
-def _chunk_field(chunk: Any, name: str, default: Any = "") -> Any:
-    """Read a TextChunk field — robust to dict shape from JSON IO managers.
-
-    The asset_factory multi_asset declares ``chunks: list`` (no element type
-    hint), so the MinioIOManager returns dicts on read rather than TextChunk
-    pydantic objects. Normalising here lets the resource accept either
-    shape without forcing every caller to reconstruct typed objects first.
-    """
-    if isinstance(chunk, dict):
-        return chunk.get(name, default)
-    return getattr(chunk, name, default)
 
 
 def _resolve_client(
