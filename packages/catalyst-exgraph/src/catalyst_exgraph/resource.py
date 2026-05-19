@@ -37,6 +37,19 @@ from catalyst_exgraph.state import ExGraphState
 logger = logging.getLogger(__name__)
 
 
+def _chunk_field(chunk: Any, name: str, default: Any = "") -> Any:
+    """Read a TextChunk field — robust to dict shape from JSON IO managers.
+
+    The asset_factory multi_asset declares ``chunks: list`` (no element type
+    hint), so the MinioIOManager returns dicts on read rather than TextChunk
+    pydantic objects. Normalising here lets the resource accept either
+    shape without forcing every caller to reconstruct typed objects first.
+    """
+    if isinstance(chunk, dict):
+        return chunk.get(name, default)
+    return getattr(chunk, name, default)
+
+
 def _resolve_client(
     model: str,
     base_url: str | None = None,
@@ -313,10 +326,10 @@ class ExtractionResource(ConfigurableResource):
             loop = asyncio.new_event_loop()
             try:
                 state: ExGraphState = {
-                    "raw_text": chunk.text,
+                    "raw_text": _chunk_field(chunk, "text"),
                     "source_metadata": {
-                        "document_id": chunk.document_id,
-                        "chunk_id": chunk.chunk_id,
+                        "document_id": _chunk_field(chunk, "document_id"),
+                        "chunk_id": _chunk_field(chunk, "chunk_id"),
                     },
                     "stages": {},
                     "upstream_context": {
@@ -335,9 +348,9 @@ class ExtractionResource(ConfigurableResource):
                     "amr_assertions": result.get("amr_assertions", []) or [],
                     "audit_events": result.get("audit_events", []) or [],
                     "amr_audit_events": result.get("amr_audit_events", []) or [],
-                    "chunk_metadata": getattr(chunk, "metadata", {}) or {},
-                    "chunk_id": getattr(chunk, "chunk_id", ""),
-                    "document_id": getattr(chunk, "document_id", ""),
+                    "chunk_metadata": _chunk_field(chunk, "metadata", {}) or {},
+                    "chunk_id": _chunk_field(chunk, "chunk_id"),
+                    "document_id": _chunk_field(chunk, "document_id"),
                 }
             finally:
                 loop.close()
@@ -453,10 +466,10 @@ class ExtractionResource(ConfigurableResource):
             loop = asyncio.new_event_loop()
             try:
                 state: ExGraphState = {
-                    "raw_text": chunk.text,
+                    "raw_text": _chunk_field(chunk, "text"),
                     "source_metadata": {
-                        "document_id": chunk.document_id,
-                        "chunk_id": chunk.chunk_id,
+                        "document_id": _chunk_field(chunk, "document_id"),
+                        "chunk_id": _chunk_field(chunk, "chunk_id"),
                     },
                     "stages": {},
                     "upstream_context": {},
@@ -467,9 +480,9 @@ class ExtractionResource(ConfigurableResource):
                 return {
                     "consensus_mentions": result.get("consensus_mentions", []) or [],
                     "audit_events": result.get("audit_events", []) or [],
-                    "chunk_metadata": getattr(chunk, "metadata", {}) or {},
-                    "chunk_id": getattr(chunk, "chunk_id", ""),
-                    "document_id": getattr(chunk, "document_id", ""),
+                    "chunk_metadata": _chunk_field(chunk, "metadata", {}) or {},
+                    "chunk_id": _chunk_field(chunk, "chunk_id"),
+                    "document_id": _chunk_field(chunk, "document_id"),
                 }
             finally:
                 loop.close()
