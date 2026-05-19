@@ -54,7 +54,15 @@ class TestAlignmentType:
 
 class TestExtractionMethod:
     def test_all_values_exist(self):
-        expected = {"llm", "spacy", "regex", "manual", "structured"}
+        expected = {
+            "llm",
+            "spacy",
+            "regex",
+            "manual",
+            "structured",
+            "amr_projection",  # added with AMR-as-spine refactor (bd llm-g0b)
+            "ner_ensemble",    # added with the 4-voter NER consensus path
+        }
         assert {t.value for t in ExtractionMethod} == expected
 
     def test_is_str_subclass(self):
