@@ -46,7 +46,7 @@ dev = [
 # checkpoint on first model load — opt-in only. The AmrParserClient
 # constructor succeeds without it; only parse() requires the import.
 amr = [
-    "amrlib>=0.7.0",
+    "amrlib>=0.8.1",
 ]
 
 [tool.setuptools.packages.find]
