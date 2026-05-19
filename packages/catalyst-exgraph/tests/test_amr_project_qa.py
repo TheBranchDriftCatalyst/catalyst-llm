@@ -982,3 +982,75 @@ async def test_scenario_withdraw_01_negative_polarity_is_cosponsor_withdrawal():
     assert a.predicate == "co_sponsors"
     assert a.polarity is False
     assert a.amr_frame == "withdraw-01"
+
+
+# ===========================================================================
+# Tier 1 (continued) — Atemporal predicate stamping (bead llm-mln)
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_atemporal_cites_predicate_sets_is_atemporal_true():
+    """Predicates in the atemporal closed set get ``is_atemporal=True`` so
+    point-in-time queries skip the time-window filter. ``cite-01 → cites``
+    is the canonical case: a citation holds independently of when read.
+    """
+    pen = (
+        "(c / cite-01"
+        '   :ARG0 (b / bill :name (n / name :op1 "H.R." :op2 "1"))'
+        '   :ARG1 (s / statute :name (n2 / name :op1 "Title" :op2 "42")))'
+    )
+    pack = _pack(frames={"cite-01": "cites"})
+    node = AmrToAssertionNode(label_pack=pack)
+    result = await node(_state([FakeAmrParse("s", 0, 0, 30, pen)]))
+
+    a = result["amr_assertions"][0]
+    assert a.predicate == "cites"
+    assert a.is_atemporal is True
+    # Temporal-validity stamping is a separate stage; atemporal facts
+    # carry no explicit window.
+    assert a.t_valid_from is None
+    assert a.t_valid_until is None
+
+
+@pytest.mark.asyncio
+async def test_eventful_predicate_is_not_atemporal():
+    """A vote/sponsor-style predicate is an event in time — not atemporal.
+    Counter-example to the cites case above; verifies the frozenset is a
+    closed list, not a leak."""
+    pen = (
+        "(v / vote-01"
+        '   :ARG0 (p / person :name (n / name :op1 "Rep." :op2 "Jones"))'
+        '   :ARG1 (b / bill :name (n2 / name :op1 "H.R." :op2 "1234")))'
+    )
+    pack = _pack(frames={"vote-01": "voted_on"})
+    node = AmrToAssertionNode(label_pack=pack)
+    result = await node(_state([FakeAmrParse("s", 0, 0, 35, pen)]))
+
+    a = result["amr_assertions"][0]
+    assert a.predicate == "voted_on"
+    assert a.is_atemporal is False
+
+
+@pytest.mark.asyncio
+async def test_atemporal_amends_repeals_supersedes_all_stamped():
+    """All entries in the atemporal closed set actually stamp.
+    Differential check across the structural-edit predicate family."""
+    cases = [
+        ("amend-01", "amends"),
+        ("repeal-01", "repeals"),
+        ("supersede-01", "supersedes"),
+    ]
+    for frame, predicate in cases:
+        pen = (
+            f"({frame[0]} / {frame}"
+            '   :ARG0 (a / act :name (n / name :op1 "Act" :op2 "A"))'
+            '   :ARG1 (b / act :name (n2 / name :op1 "Act" :op2 "B")))'
+        )
+        pack = _pack(frames={frame: predicate})
+        node = AmrToAssertionNode(label_pack=pack)
+        result = await node(_state([FakeAmrParse("s", 0, 0, 30, pen)]))
+
+        a = result["amr_assertions"][0]
+        assert a.predicate == predicate, f"{frame} → {predicate} routing"
+        assert a.is_atemporal is True, f"{predicate} must be atemporal"

@@ -72,6 +72,28 @@ _DEFAULT_ROLE_MAPPING: dict[str, str] = {"ARG0": "subject", "ARG1": "object"}
 _CONFIDENCE_KNOWN = 1.0
 _CONFIDENCE_UNKNOWN = 0.5
 
+# Predicates that are atemporal — the relationship holds independently of
+# when it's observed. When projection emits one of these, stamp
+# is_atemporal=True so downstream point-in-time queries skip the time-
+# window filter. Conservative closed set: only predicates whose semantics
+# are purely structural / citational, not eventful or stateful.
+#
+# - cites / references: textual cross-reference, holds forever once written
+# - amends / repeals / supersedes: legal-text edit relationship, not an event
+# - codified_at: a bill's codification position in U.S.C., a structural fact
+#
+# A bd `llm-mln` follow-up may extend this with predicate-specific validity
+# windows (e.g. "amends" *was* valid from amendment-date until next-edit-date),
+# but the current floor is "atemporal == query without a time filter".
+_ATEMPORAL_PREDICATES: frozenset[str] = frozenset({
+    "cites",
+    "references",
+    "amends",
+    "repeals",
+    "supersedes",
+    "codified_at",
+})
+
 
 class AmrToAssertionNode:
     """Walks AMR PENMAN graphs and projects them to AmrAssertions."""
@@ -355,6 +377,7 @@ class AmrToAssertionNode:
                     amr_variable=predicate_var,
                     amr_role_mapping=applied_role_mapping,
                     is_novel_predicate=is_novel,
+                    is_atemporal=canonical_predicate in _ATEMPORAL_PREDICATES,
                     polarity=polarity,
                     modality=modality,
                     negated=not polarity,

@@ -4,9 +4,11 @@ This doc captures the two largest semantic gaps the ONTOLOGY (`catalyst-data/ONT
 
 > **Status (current):**
 >
-> - **AMR-as-spine implementation: SHIPPED** — `catalyst_langgraph.clients.amr_parser.AmrParserClient` + `catalyst_exgraph.nodes.amr_project.AmrToAssertionNode` + per-domain `amr_frames` mapping in the LabelPack (`congress.labels.yaml`, `media.labels.yaml`). 79 tests across dev + QA suites green. Runnable MVP at `packages/catalyst-exgraph/examples/amr_congress_mvp.py`.
+> - **AMR-as-spine implementation: SHIPPED** — `catalyst_langgraph.clients.amr_parser.AmrParserClient` + `catalyst_exgraph.nodes.amr_project.AmrToAssertionNode` + per-domain `amr_frames` mapping in the LabelPack (`congress.labels.yaml`, `media.labels.yaml`). 82 tests across dev + QA suites green. Runnable MVP at `packages/catalyst-exgraph/examples/amr_congress_mvp.py`.
 > - **AMR complexity gate**: NOT IMPLEMENTED. Current path runs AMR on every sentence. A future complexity gate (run AMR only when SPO LLM produces low-confidence triples on sentences with negation/modality markers) is still open work. See bead llm-71u follow-ups.
-> - **Temporal validity intervals: NOT IMPLEMENTED**. Tracked at bead `llm-mln`. The data already exists on `congress_data.entities.Cosponsor.sponsorship_date/withdrawn_date` and `Term.start_year/end_year` — the missing piece is propagating it to `Assertion.qualifiers`.
+> - **Temporal validity intervals: SHIPPED (bead llm-mln)** — `contracts_core.Assertion` carries `t_valid_from` / `t_valid_until` / `is_atemporal` as first-class fields. Two stamping paths exist:
+>   - **AMR projection** (`AmrToAssertionNode`): atemporal predicates (`cites`, `references`, `amends`, `repeals`, `supersedes`, `codified_at`) get `is_atemporal=True`. Predicate-specific date stamping from `:time` qualifiers is a follow-up.
+>   - **Structured projection** (`catalyst-data/packages/congress-data/src/congress_data/assets/structured_assertions.py`): `Cosponsor.sponsorship_date/withdrawn_date`, `Term.start_year/end_year`, and `PublicLaw.signed_date` are deterministically stamped onto STRUCTURED-method assertions. 18 unit + property + scenario tests covering point-in-time validity queries.
 
 ---
 
