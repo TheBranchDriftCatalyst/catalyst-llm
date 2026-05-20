@@ -324,13 +324,22 @@ class AmrToAssertionNode:
                 applied_role_mapping: dict[str, str] = {}
                 subject_mention_id: str | None = None
                 object_mention_id: str | None = None
+                # SPO grounding flags — True means the role resolved to a
+                # named entity or concept, False means we fell back to the
+                # bare AMR variable (no semantic content). The emit guard
+                # below drops rows whose subject didn't ground; those are
+                # pure parser noise.
+                subject_grounded = False
+                object_grounded = False
+                subject_role_present = False
+                object_role_present = False
 
                 for arg_name, semantic_role in role_mapping.items():
                     target_var = arg_targets.get(arg_name)
                     if target_var is None:
                         continue
                     applied_role_mapping[arg_name] = semantic_role
-                    surface = _resolve_surface(graph, target_var, var_to_concept)
+                    surface, grounded = _resolve_surface(graph, target_var, var_to_concept)
                     ent_id = _match_consensus(
                         surface,
                         consensus_mentions,
@@ -339,24 +348,56 @@ class AmrToAssertionNode:
                     )
                     if semantic_role == "subject":
                         subject_text = surface
+                        subject_grounded = grounded
+                        subject_role_present = True
                         if ent_id:
                             subject_mention_id = ent_id
                     elif semantic_role == "object":
                         object_text = surface
+                        object_grounded = grounded
+                        object_role_present = True
                         if ent_id:
                             object_mention_id = ent_id
                     else:
                         # Custom semantic role from role_overrides — store
                         # as a qualifier rather than silently dropping it.
+                        # Bare-var resolutions still get stored (a
+                        # qualifier with the variable name is still a
+                        # debug-useful hint).
                         qualifiers[semantic_role] = surface
 
                 # Adjunct edges (time/location/condition/manner) → qualifiers.
                 for edge in out_edges:
                     if edge.role in _QUALIFIER_ROLES:
                         key = edge.role.lstrip(":")
-                        surface = _resolve_surface(graph, edge.target, var_to_concept)
+                        surface, _grounded = _resolve_surface(
+                            graph, edge.target, var_to_concept
+                        )
                         if surface:
                             qualifiers[key] = surface
+
+                # ── SPO grounding guard ────────────────────────────────
+                # Three flavours of noise we drop here:
+                #
+                # 1. Both subject AND object are empty / un-resolved.
+                #    The frame had no ARG slots that landed on anything
+                #    meaningful — pure parser noise. Intransitive
+                #    frames where the subject is missing but the object
+                #    grounded (e.g. "bill becomes law") still emit.
+                # 2. Subject role WAS mapped but only resolved to the
+                #    bare AMR variable name like "p2" / "v1" (no
+                #    :name, no :instance). Drop.
+                # 3. Same for the object role — if it was supposed to
+                #    ground and didn't, drop. Frames with no object
+                #    role at all (truly intransitive) still emit.
+                obj_present = bool(object_text and object_text.strip())
+                subj_present = bool(subject_text.strip())
+                if not subj_present and not obj_present:
+                    continue
+                if subject_role_present and not subject_grounded:
+                    continue
+                if object_role_present and not object_grounded:
+                    continue
 
                 # Stable assertion id — md5 of canonical SPO + chunk + sentence_index.
                 # 16 hex chars is plenty for in-flight dedup; concordance will mint
@@ -477,8 +518,15 @@ def _resolve_surface(
     graph: penman.Graph,
     var: str,
     var_to_concept: dict[str, str],
-) -> str:
+) -> tuple[str, bool]:
     """Resolve an AMR variable to a human-readable surface form.
+
+    Returns ``(surface, grounded)`` where ``grounded`` is True when the
+    resolution found a named-entity span (step 1) or an instance
+    concept (step 2). False when we fell through to the bare AMR
+    variable (step 3) — these rows carry no semantic content and the
+    caller should typically drop them rather than emit a triple where
+    the subject is literally ``"p2"`` or ``"v1"``.
 
     Resolution order:
       1. Walk to a ``:name`` edge and concatenate its ``:opN`` attributes
@@ -500,15 +548,15 @@ def _resolve_surface(
                 ops.append((idx, _strip_amr_literal(attr.target)))
         if ops:
             ops.sort()
-            return " ".join(piece for _, piece in ops)
+            return " ".join(piece for _, piece in ops), True
 
     # 2) :instance concept
     concept = var_to_concept.get(var)
     if concept:
-        return concept
+        return concept, True
 
-    # 3) bare var
-    return var
+    # 3) bare var — no semantic surface, caller should drop.
+    return var, False
 
 
 def _match_consensus(
