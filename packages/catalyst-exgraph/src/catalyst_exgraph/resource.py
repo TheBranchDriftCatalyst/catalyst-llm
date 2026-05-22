@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -83,12 +82,18 @@ def _resolve_client(
 
         return UniversalNERClient(base_url=base_url, model=model, label_pack=label_pack)
     else:
-        from catalyst_langgraph.clients.llm import LLMClient
-
-        return LLMClient(
-            model=model,
-            base_url=base_url or os.environ.get("LLM_BASE_URL"),
-            api_key=api_key or os.environ.get("LLM_API_KEY", os.environ.get("OPENAI_API_KEY", "")),
+        # LLM-based mention extraction is intentionally disabled. The NER
+        # ensemble (gliner + nuextract + universalner + regex) is the only
+        # supported mention-extraction path. A silent LLMClient fallthrough
+        # here previously routed every chunk through ChatGPT whenever
+        # LLM_MODEL leaked into the ner_model slot (catalyst-data bug
+        # tracked in the Phase-0 cost-bleed fix). Fail loudly instead.
+        raise ValueError(
+            f"_resolve_client: unrecognised NER model {model!r}. "
+            f"Expected one of: gliner*, nuextract*, universalner*/uniner*, "
+            f"regex*. LLM-based mention extraction is not supported — use "
+            f"the NER ensemble for mentions, and reserve LLM use for "
+            f"high-level claim synthesis (bill_claims)."
         )
 
 
