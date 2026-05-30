@@ -25,6 +25,14 @@ model_list:
     litellm_params:
       model: "openai/gpt-5.5"
       api_key: "os.environ/OPENAI_API_KEY"
+  # gpt-5.4-mini — same flagship lineage at fast-tier pricing. The
+  # dev-friendly equivalent of the old gpt-4o-mini, but on the 5-series
+  # so it inherits the 1M context window. Use this as the default for
+  # iterative extraction work (bill_claims, mention_extraction, etc.).
+  - model_name: "gpt-5.4-mini"
+    litellm_params:
+      model: "openai/gpt-5.4-mini"
+      api_key: "os.environ/OPENAI_API_KEY"
   - model_name: "o3-mini"
     litellm_params:
       model: "openai/o3-mini"
