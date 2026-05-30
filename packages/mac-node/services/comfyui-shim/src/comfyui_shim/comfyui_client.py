@@ -21,6 +21,8 @@ from typing import Any
 import httpx
 import websockets
 
+from ._heartbeat import heartbeat
+
 
 class ComfyError(RuntimeError):
     """Server-side or transport-level failure during a generation."""
@@ -47,11 +49,12 @@ class ComfyClient:
 
     async def run(self, workflow: dict[str, Any]) -> list[bytes]:
         """Submit ``workflow``, wait for completion, return image bytes per output."""
-        # Open the WS first so we don't miss the executed events.
-        async with websockets.connect(self.ws_url, max_size=None) as ws:
-            prompt_id = await self._queue(workflow)
-            await self._await_completion(ws, prompt_id)
-        return await self._collect_images(prompt_id)
+        async with heartbeat("comfyui.workflow"):
+            # Open the WS first so we don't miss the executed events.
+            async with websockets.connect(self.ws_url, max_size=None) as ws:
+                prompt_id = await self._queue(workflow)
+                await self._await_completion(ws, prompt_id)
+            return await self._collect_images(prompt_id)
 
     async def _queue(self, workflow: dict[str, Any]) -> str:
         async with httpx.AsyncClient(timeout=self.timeout) as c:
