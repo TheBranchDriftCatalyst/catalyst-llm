@@ -82,6 +82,35 @@ tasks:
         echo "No logs for '{{.CLI_ARGS}}'. Try: ollama, open-webui, whisper-api, vllm-mlx"
 
   # ─── Ollama ────────────────────────────────────────────────────
+  # ─── Dashboard ─────────────────────────────────────────────────
+
+  dashboard:build:
+    desc: Build the Go dashboard binary with embedded version metadata
+    dir: dashboard
+    cmds:
+      - |
+        VERSION=$(git rev-parse --short HEAD 2>/dev/null || echo dev)
+        if ! git diff --quiet -- . 2>/dev/null || ! git diff --cached --quiet -- . 2>/dev/null; then
+          VERSION="${VERSION}-dirty"
+        fi
+        BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        echo "Building dashboard ${VERSION} @ ${BUILD_TIME}"
+        go build -ldflags="-X main.version=${VERSION} -X main.buildTime=${BUILD_TIME}" -o ../bin/mac-node-dashboard .
+      - codesign --force --sign - ../bin/mac-node-dashboard
+
+  dashboard:install:
+    desc: Build + restart the dashboard, then print version
+    cmds:
+      - task: dashboard:build
+      - launchctl kickstart -k gui/$(id -u)/com.mac-node.dashboard
+      - sleep 2
+      - curl -s http://localhost:9090/api/version | jq . 2>/dev/null || curl -s http://localhost:9090/api/version
+
+  dashboard:status:
+    desc: Show running dashboard version + whether source is ahead
+    cmds:
+      - curl -s http://localhost:9090/api/version | jq . 2>/dev/null || curl -s http://localhost:9090/api/version
+
   # Per-service controls for the most-frequently-wedging service.
   # Use `kickstart -k` (kill + start atomically) for force-restarts —
   # `launchctl stop && start` races and can land in a degraded state

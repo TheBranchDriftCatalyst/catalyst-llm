@@ -23,6 +23,14 @@ import (
 //go:embed index.html
 var static embed.FS
 
+// Injected at build time via -ldflags
+var (
+	version   = "dev"
+	buildTime = "unknown"
+)
+
+var startTime = time.Now()
+
 // ─── Config from models.yaml ────────────────────────────────────
 
 type ModelsConfig struct {
@@ -67,16 +75,27 @@ func loadConfig() {
 // ─── Types ───────────────────────────────────────────────────────
 
 type Stats struct {
-	Memory        MemoryStats      `json:"memory"`
-	CPU           CPUStats         `json:"cpu"`
-	GPU           GPUStats         `json:"gpu"`
-	Uptime        string           `json:"uptime"`
-	RunningModels []RunningModel   `json:"running_models"`
-	LogLines      map[string]int   `json:"log_lines"`
-	Services      map[string]bool  `json:"services"`
-	Pids          map[string]int   `json:"pids"`
-	ModelCount    int              `json:"model_count"`
-	Timestamp     int64            `json:"timestamp"`
+	Memory        MemoryStats     `json:"memory"`
+	CPU           CPUStats        `json:"cpu"`
+	GPU           GPUStats        `json:"gpu"`
+	Thermals      ThermalStats    `json:"thermals"`
+	Uptime        string          `json:"uptime"`
+	RunningModels []RunningModel  `json:"running_models"`
+	LogLines      map[string]int  `json:"log_lines"`
+	Services      map[string]bool `json:"services"`
+	Pids          map[string]int  `json:"pids"`
+	ModelCount    int             `json:"model_count"`
+	Timestamp     int64           `json:"timestamp"`
+}
+
+type ThermalStats struct {
+	CPUPowerW       float64 `json:"cpu_power_w"`
+	GPUPowerW       float64 `json:"gpu_power_w"`
+	PackagePowerW   float64 `json:"package_power_w"`
+	ThermalLevel    int     `json:"thermal_level"`
+	ThermalPressure string  `json:"thermal_pressure"`
+	Source          string  `json:"source"`
+	NeedsSudo       bool    `json:"needs_sudo"`
 }
 
 type MemoryStats struct {
@@ -109,19 +128,21 @@ type RunningModel struct {
 
 type hub struct {
 	mu      sync.Mutex
-	clients map[*websocket.Conn]bool
+	clients map[*websocket.Conn]*sync.Mutex
 }
 
-var wsHub = &hub{clients: make(map[*websocket.Conn]bool)}
+var wsHub = &hub{clients: make(map[*websocket.Conn]*sync.Mutex)}
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
-func (h *hub) add(ws *websocket.Conn) {
+func (h *hub) add(ws *websocket.Conn) *sync.Mutex {
+	wm := &sync.Mutex{}
 	h.mu.Lock()
-	h.clients[ws] = true
+	h.clients[ws] = wm
 	h.mu.Unlock()
+	return wm
 }
 
 func (h *hub) remove(ws *websocket.Conn) {
@@ -130,13 +151,27 @@ func (h *hub) remove(ws *websocket.Conn) {
 	h.mu.Unlock()
 }
 
+// writeTo serializes writes per-connection to prevent gorilla/websocket panics on concurrent writes.
+func writeTo(ws *websocket.Conn, wm *sync.Mutex, data []byte) error {
+	wm.Lock()
+	defer wm.Unlock()
+	return ws.WriteMessage(websocket.TextMessage, data)
+}
+
 func (h *hub) broadcast(data []byte) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
-	for ws := range h.clients {
-		if err := ws.WriteMessage(websocket.TextMessage, data); err != nil {
+	snap := make(map[*websocket.Conn]*sync.Mutex, len(h.clients))
+	for ws, wm := range h.clients {
+		snap[ws] = wm
+	}
+	h.mu.Unlock()
+
+	for ws, wm := range snap {
+		if err := writeTo(ws, wm, data); err != nil {
 			ws.Close()
+			h.mu.Lock()
 			delete(h.clients, ws)
+			h.mu.Unlock()
 		}
 	}
 }
@@ -146,12 +181,12 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	wsHub.add(ws)
+	wm := wsHub.add(ws)
 	defer wsHub.remove(ws)
 	defer ws.Close()
 
 	if data, err := json.Marshal(collectStats()); err == nil {
-		ws.WriteMessage(websocket.TextMessage, data)
+		writeTo(ws, wm, data)
 	}
 
 	for {
@@ -236,6 +271,165 @@ func getCPU() CPUStats {
 		c.Load15, _ = strconv.ParseFloat(parts[2], 64)
 	}
 	return c
+}
+
+// ─── Thermals ────────────────────────────────────────────────────
+
+var (
+	thermalCache    ThermalStats
+	thermalCacheAt  time.Time
+	thermalCacheMu  sync.Mutex
+	thermalCacheTTL = 5 * time.Second
+)
+
+func getThermals() ThermalStats {
+	thermalCacheMu.Lock()
+	defer thermalCacheMu.Unlock()
+	if time.Since(thermalCacheAt) < thermalCacheTTL && thermalCache.Source != "" {
+		return thermalCache
+	}
+
+	t := ThermalStats{Source: "sysctl"}
+
+	if out, err := exec.Command("sysctl", "-n", "machdep.xcpm.cpu_thermal_level").Output(); err == nil {
+		if n, err := strconv.Atoi(strings.TrimSpace(string(out))); err == nil {
+			t.ThermalLevel = n
+			switch {
+			case n == 0:
+				t.ThermalPressure = "nominal"
+			case n < 50:
+				t.ThermalPressure = "fair"
+			case n < 100:
+				t.ThermalPressure = "serious"
+			default:
+				t.ThermalPressure = "critical"
+			}
+		}
+	}
+
+	cmd := exec.Command("sudo", "-n", "powermetrics", "--samplers", "cpu_power,gpu_power", "-i", "200", "-n", "1", "-f", "plist")
+	out, err := cmd.Output()
+	if err != nil {
+		t.NeedsSudo = true
+		thermalCache = t
+		thermalCacheAt = time.Now()
+		return t
+	}
+
+	t.Source = "powermetrics"
+	text := string(out)
+	if m := regexp.MustCompile(`<key>cpu_power</key>\s*<real>([\d.]+)</real>`).FindStringSubmatch(text); len(m) > 1 {
+		if v, err := strconv.ParseFloat(m[1], 64); err == nil {
+			t.CPUPowerW = v / 1000.0
+		}
+	}
+	if m := regexp.MustCompile(`<key>gpu_power</key>\s*<real>([\d.]+)</real>`).FindStringSubmatch(text); len(m) > 1 {
+		if v, err := strconv.ParseFloat(m[1], 64); err == nil {
+			t.GPUPowerW = v / 1000.0
+		}
+	}
+	if m := regexp.MustCompile(`<key>package_power</key>\s*<real>([\d.]+)</real>`).FindStringSubmatch(text); len(m) > 1 {
+		if v, err := strconv.ParseFloat(m[1], 64); err == nil {
+			t.PackagePowerW = v / 1000.0
+		}
+	}
+
+	thermalCache = t
+	thermalCacheAt = time.Now()
+	return t
+}
+
+// ─── Ollama Event Ring ───────────────────────────────────────────
+
+type OllamaEvent struct {
+	Timestamp  int64   `json:"ts"`
+	Source     string  `json:"source"`
+	Action     string  `json:"action"`
+	Model      string  `json:"model"`
+	DurationMs int64   `json:"duration_ms,omitempty"`
+	VRAMGB     float64 `json:"vram_gb,omitempty"`
+	Success    bool    `json:"success"`
+	Error      string  `json:"error,omitempty"`
+}
+
+type eventRing struct {
+	mu     sync.Mutex
+	events []OllamaEvent
+	cap    int
+}
+
+var ollamaEvents = &eventRing{cap: 200}
+
+func (r *eventRing) add(e OllamaEvent) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, e)
+	if len(r.events) > r.cap {
+		r.events = r.events[len(r.events)-r.cap:]
+	}
+}
+
+func (r *eventRing) snapshot(limit int) []OllamaEvent {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := len(r.events)
+	if limit > 0 && limit < n {
+		out := make([]OllamaEvent, limit)
+		copy(out, r.events[n-limit:])
+		return out
+	}
+	out := make([]OllamaEvent, n)
+	copy(out, r.events)
+	return out
+}
+
+func recordEvent(source, action, model string, durMs int64, vramGB float64, ok bool, errMsg string) {
+	ollamaEvents.add(OllamaEvent{
+		Timestamp:  time.Now().Unix(),
+		Source:     source,
+		Action:     action,
+		Model:      model,
+		DurationMs: durMs,
+		VRAMGB:     vramGB,
+		Success:    ok,
+		Error:      errMsg,
+	})
+}
+
+func eventsHandler(w http.ResponseWriter, r *http.Request) {
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 {
+		limit = 50
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(ollamaEvents.snapshot(limit))
+}
+
+var (
+	prevLoadedSet map[string]float64
+	prevLoadedMu  sync.Mutex
+)
+
+func discoverLoadDeltas(running []RunningModel) {
+	prevLoadedMu.Lock()
+	defer prevLoadedMu.Unlock()
+	cur := make(map[string]float64, len(running))
+	for _, m := range running {
+		cur[m.Name] = m.VRAMGB
+	}
+	if prevLoadedSet != nil {
+		for name, vram := range cur {
+			if _, was := prevLoadedSet[name]; !was {
+				recordEvent("observed", "load_external", name, 0, vram, true, "")
+			}
+		}
+		for name := range prevLoadedSet {
+			if _, still := cur[name]; !still {
+				recordEvent("observed", "unload_external", name, 0, 0, true, "")
+			}
+		}
+	}
+	prevLoadedSet = cur
 }
 
 var gpuCache GPUStats
@@ -374,12 +568,16 @@ func collectStats() Stats {
 		logLines[inst.Label] = countLogLines(logPath)
 	}
 
+	running := getRunningModels()
+	discoverLoadDeltas(running)
+
 	return Stats{
 		Memory:        getMemory(),
 		CPU:           getCPU(),
 		GPU:           getGPU(),
+		Thermals:      getThermals(),
 		Uptime:        getUptime(),
-		RunningModels: getRunningModels(),
+		RunningModels: running,
 		LogLines:      logLines,
 		Services:      services,
 		Pids:          getPids(),
@@ -672,6 +870,230 @@ func toggleHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ─── Version ────────────────────────────────────────────────────
+
+func gitHeadShort() string {
+	exe, _ := os.Executable()
+	repoDir := filepath.Dir(filepath.Dir(exe))
+	cmd := exec.Command("git", "-C", repoDir, "rev-parse", "--short", "HEAD")
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func gitDirty() bool {
+	exe, _ := os.Executable()
+	repoDir := filepath.Dir(filepath.Dir(exe))
+	cmd := exec.Command("git", "-C", repoDir, "status", "--porcelain", "dashboard/")
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return len(strings.TrimSpace(string(out))) > 0
+}
+
+func versionHandler(w http.ResponseWriter, r *http.Request) {
+	head := gitHeadShort()
+	dirty := gitDirty()
+	embedded := strings.TrimSuffix(version, "-dirty")
+	behind := head != "" && embedded != "" && embedded != "dev" && embedded != head
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"version":    version,
+		"build_time": buildTime,
+		"head":       head,
+		"dirty":      dirty,
+		"behind":     behind,
+		"started_at": startTime.Format(time.RFC3339),
+		"uptime_sec": int(time.Since(startTime).Seconds()),
+	})
+}
+
+// ─── Ollama Control ─────────────────────────────────────────────
+
+func ollamaURL(path string) string {
+	port := config.Ollama.Port
+	if port == 0 {
+		port = 11434
+	}
+	return fmt.Sprintf("http://localhost:%d%s", port, path)
+}
+
+func decodeModel(r *http.Request) (string, error) {
+	var req struct {
+		Model string `json:"model"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(req.Model) == "" {
+		return "", fmt.Errorf("model required")
+	}
+	return req.Model, nil
+}
+
+func ollamaUnloadHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "POST only", 405)
+		return
+	}
+	model, err := decodeModel(r)
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	start := time.Now()
+	payload, _ := json.Marshal(map[string]any{
+		"model":      model,
+		"keep_alive": 0,
+	})
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Post(ollamaURL("/api/generate"), "application/json", strings.NewReader(string(payload)))
+	dur := time.Since(start).Milliseconds()
+	w.Header().Set("Content-Type", "application/json")
+	if err != nil {
+		recordEvent("dashboard", "unload", model, dur, 0, false, err.Error())
+		json.NewEncoder(w).Encode(map[string]string{"status": "error", "error": err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
+	recordEvent("dashboard", "unload", model, dur, 0, true, "")
+	json.NewEncoder(w).Encode(map[string]any{"status": "ok", "model": model, "action": "unload", "duration_ms": dur})
+}
+
+func ollamaPreloadHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "POST only", 405)
+		return
+	}
+	model, err := decodeModel(r)
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	start := time.Now()
+	payload, _ := json.Marshal(map[string]any{
+		"model": model,
+	})
+	client := &http.Client{Timeout: 5 * time.Minute}
+	resp, err := client.Post(ollamaURL("/api/generate"), "application/json", strings.NewReader(string(payload)))
+	dur := time.Since(start).Milliseconds()
+	w.Header().Set("Content-Type", "application/json")
+	if err != nil {
+		recordEvent("dashboard", "preload", model, dur, 0, false, err.Error())
+		json.NewEncoder(w).Encode(map[string]string{"status": "error", "error": err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		recordEvent("dashboard", "preload", model, dur, 0, false, strings.TrimSpace(string(body)))
+		json.NewEncoder(w).Encode(map[string]any{"status": "error", "error": strings.TrimSpace(string(body))})
+		return
+	}
+	var pr struct {
+		LoadDuration int64 `json:"load_duration"`
+	}
+	json.Unmarshal(body, &pr)
+	loadMs := pr.LoadDuration / 1_000_000
+	recordEvent("dashboard", "preload", model, loadMs, 0, true, "")
+	json.NewEncoder(w).Encode(map[string]any{"status": "ok", "model": model, "action": "preload", "duration_ms": dur, "load_duration_ms": loadMs})
+}
+
+func ollamaDeleteHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "POST only", 405)
+		return
+	}
+	model, err := decodeModel(r)
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	start := time.Now()
+	payload, _ := json.Marshal(map[string]string{"model": model})
+	req, _ := http.NewRequest("DELETE", ollamaURL("/api/delete"), strings.NewReader(string(payload)))
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	dur := time.Since(start).Milliseconds()
+	w.Header().Set("Content-Type", "application/json")
+	if err != nil {
+		recordEvent("dashboard", "delete", model, dur, 0, false, err.Error())
+		json.NewEncoder(w).Encode(map[string]string{"status": "error", "error": err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		recordEvent("dashboard", "delete", model, dur, 0, false, strings.TrimSpace(string(body)))
+		json.NewEncoder(w).Encode(map[string]any{"status": "error", "error": strings.TrimSpace(string(body))})
+		return
+	}
+	recordEvent("dashboard", "delete", model, dur, 0, true, "")
+	json.NewEncoder(w).Encode(map[string]any{"status": "ok", "model": model, "action": "delete", "duration_ms": dur})
+}
+
+func ollamaShowHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "POST only", 405)
+		return
+	}
+	model, err := decodeModel(r)
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	payload, _ := json.Marshal(map[string]string{"model": model})
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Post(ollamaURL("/api/show"), "application/json", strings.NewReader(string(payload)))
+	w.Header().Set("Content-Type", "application/json")
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]string{"status": "error", "error": err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		json.NewEncoder(w).Encode(map[string]any{"status": "error", "error": strings.TrimSpace(string(body))})
+		return
+	}
+	w.Write(body)
+}
+
+// ─── Whisper Proxy ──────────────────────────────────────────────
+
+func whisperTranscribeHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "POST only", 405)
+		return
+	}
+	req, err := http.NewRequest("POST", "http://localhost:8787/inference", r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	req.Header = r.Header.Clone()
+	client := &http.Client{Timeout: 10 * time.Minute}
+	resp, err := client.Do(req)
+	if err != nil {
+		http.Error(w, err.Error(), 502)
+		return
+	}
+	defer resp.Body.Close()
+	for k, vv := range resp.Header {
+		for _, v := range vv {
+			w.Header().Add(k, v)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
+}
+
 // ─── Config API ─────────────────────────────────────────────────
 
 type VLLMInstanceInfo struct {
@@ -743,12 +1165,19 @@ func main() {
 
 	http.HandleFunc("/ws", wsHandler)
 	http.HandleFunc("/ws/logs", wsLogsHandler)
+	http.HandleFunc("/api/version", versionHandler)
 	http.HandleFunc("/api/config", configHandler)
 	http.HandleFunc("/api/restart", restartHandler)
 	http.HandleFunc("/api/toggle", toggleHandler)
+	http.HandleFunc("/api/ollama/unload", ollamaUnloadHandler)
+	http.HandleFunc("/api/ollama/preload", ollamaPreloadHandler)
+	http.HandleFunc("/api/ollama/delete", ollamaDeleteHandler)
+	http.HandleFunc("/api/ollama/show", ollamaShowHandler)
+	http.HandleFunc("/api/events", eventsHandler)
+	http.HandleFunc("/api/whisper/transcribe", whisperTranscribeHandler)
 	http.Handle("/", http.FileServer(http.FS(static)))
 
-	fmt.Println("Mac Node Dashboard on :9090 (WebSocket at /ws)")
+	fmt.Printf("Mac Node Dashboard %s (built %s) on :9090 (WebSocket at /ws)\n", version, buildTime)
 	if err := http.ListenAndServe(":9090", nil); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
