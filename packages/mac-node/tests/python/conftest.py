@@ -15,15 +15,52 @@ list is derived from each model's ``tags`` in ``packages/mac-node/models.yaml``.
 from __future__ import annotations
 
 import base64
+import contextlib
+import logging
 import os
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Iterator
 
 import httpx
 import pytest
 import yaml
+
+
+_hb_log = logging.getLogger("mac_node.tests.heartbeat")
+
+
+@contextlib.contextmanager
+def heartbeat(label: str, *, interval: float = 30.0) -> Iterator[None]:
+    """Sync heartbeat: emit "still running (Ns elapsed)" every interval.
+
+    Wraps long blocking httpx calls (chat-timeout default 240s, prewarm up
+    to 480s) so the pytest log shows the call is alive, not wedged. Output
+    goes through the standard logging tree so ``pytest -o log_cli=true``
+    surfaces it live.
+    """
+    start = time.monotonic()
+    stop = threading.Event()
+
+    def _beat() -> None:
+        while not stop.wait(interval):
+            _hb_log.info("⋯ %s: still running (%.0fs elapsed)", label, time.monotonic() - start)
+
+    _hb_log.info("→ %s: started", label)
+    t = threading.Thread(target=_beat, name=f"heartbeat[{label}]", daemon=True)
+    t.start()
+    try:
+        yield
+    except BaseException as exc:
+        _hb_log.warning("✗ %s: failed after %.1fs: %s", label, time.monotonic() - start, exc)
+        raise
+    else:
+        _hb_log.info("✓ %s: finished after %.1fs", label, time.monotonic() - start)
+    finally:
+        stop.set()
+        t.join(timeout=1.0)
 
 
 # tests/python/conftest.py -> tests/ -> mac-node/
@@ -156,11 +193,12 @@ class MacClient(_BaseClient):
 
     def embed(self, model: str, text: str, *, timeout: float) -> CallResult:
         t0 = time.time()
-        r = httpx.post(
-            f"{self.base}/api/embeddings",
-            json={"model": model, "prompt": text},
-            timeout=timeout,
-        )
+        with heartbeat(f"mac.embed {model}"):
+            r = httpx.post(
+                f"{self.base}/api/embeddings",
+                json={"model": model, "prompt": text},
+                timeout=timeout,
+            )
         r.raise_for_status()
         d = r.json()
         return CallResult(
@@ -174,7 +212,9 @@ class MacClient(_BaseClient):
         if images:
             payload["images"] = images
         t0 = time.time()
-        r = httpx.post(f"{self.base}/api/generate", json=payload, timeout=timeout)
+        kind = "vision" if images else "chat"
+        with heartbeat(f"mac.{kind} {model}"):
+            r = httpx.post(f"{self.base}/api/generate", json=payload, timeout=timeout)
         r.raise_for_status()
         d = r.json()
         return CallResult(
@@ -220,12 +260,13 @@ class LiteLLMClient(_BaseClient):
 
     def embed(self, model: str, text: str, *, timeout: float) -> CallResult:
         t0 = time.time()
-        r = httpx.post(
-            f"{self.base}/v1/embeddings",
-            headers=self.headers,
-            json={"model": model, "input": text},
-            timeout=timeout,
-        )
+        with heartbeat(f"litellm.embed {model}"):
+            r = httpx.post(
+                f"{self.base}/v1/embeddings",
+                headers=self.headers,
+                json={"model": model, "input": text},
+                timeout=timeout,
+            )
         r.raise_for_status()
         d = r.json()
         emb = (d.get("data") or [{}])[0].get("embedding")
@@ -233,12 +274,13 @@ class LiteLLMClient(_BaseClient):
 
     def _chat_completion(self, model: str, messages: list[dict[str, Any]], *, timeout: float) -> CallResult:
         t0 = time.time()
-        r = httpx.post(
-            f"{self.base}/v1/chat/completions",
-            headers=self.headers,
-            json={"model": model, "messages": messages, "stream": False},
-            timeout=timeout,
-        )
+        with heartbeat(f"litellm.chat {model}"):
+            r = httpx.post(
+                f"{self.base}/v1/chat/completions",
+                headers=self.headers,
+                json={"model": model, "messages": messages, "stream": False},
+                timeout=timeout,
+            )
         r.raise_for_status()
         d = r.json()
         text = (d.get("choices") or [{}])[0].get("message", {}).get("content", "")
@@ -343,11 +385,12 @@ def _ollama_currently_loaded(base: str) -> list[str]:
 def _ollama_unload(base: str, tag: str, timeout: float = 15.0) -> None:
     """Force-evict `tag` from VRAM. Best-effort: silent on failure."""
     try:
-        httpx.post(
-            f"{base}/api/generate",
-            json={"model": tag, "keep_alive": 0},
-            timeout=timeout,
-        )
+        with heartbeat(f"ollama.unload {tag}", interval=10.0):
+            httpx.post(
+                f"{base}/api/generate",
+                json={"model": tag, "keep_alive": 0},
+                timeout=timeout,
+            )
     except httpx.HTTPError:
         pass
 
@@ -360,18 +403,19 @@ def _ollama_prewarm(base: str, tag: str, *, embedding: bool, timeout: float) -> 
     models `/api/generate` rejects the request, so we hit `/api/embeddings`
     with a minimal payload instead."""
     try:
-        if embedding:
-            httpx.post(
-                f"{base}/api/embeddings",
-                json={"model": tag, "prompt": "."},
-                timeout=timeout,
-            )
-        else:
-            httpx.post(
-                f"{base}/api/generate",
-                json={"model": tag, "prompt": "", "keep_alive": "5m"},
-                timeout=timeout,
-            )
+        with heartbeat(f"ollama.prewarm {tag}"):
+            if embedding:
+                httpx.post(
+                    f"{base}/api/embeddings",
+                    json={"model": tag, "prompt": "."},
+                    timeout=timeout,
+                )
+            else:
+                httpx.post(
+                    f"{base}/api/generate",
+                    json={"model": tag, "prompt": "", "keep_alive": "5m"},
+                    timeout=timeout,
+                )
     except httpx.HTTPError:
         # Don't fail the test from prewarm — let the real test surface
         # whatever's actually wrong.
