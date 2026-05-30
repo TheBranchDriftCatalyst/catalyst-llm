@@ -3,125 +3,614 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mac Node</title>
+<title>MAC·NODE · STATION ALPHA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=B612+Mono:wght@400;700&family=Major+Mono+Display&display=swap" rel="stylesheet">
 <style>
-  :root { --bg: #0a0a0a; --card: #141414; --border: #222; --green: #22c55e; --red: #ef4444; --yellow: #eab308; --dim: #555; --text: #e5e5e5; --accent: #60a5fa; }
+  :root {
+    --bg: #0b0e13;
+    --bg-elev: #11161e;
+    --surface: #161c25;
+    --surface-2: #1a212c;
+    --hairline: #1f2733;
+    --border: #2c3a4d;
+    --text: #ebe4d2;
+    --dim: #6d7894;
+    --faint: #3e4658;
+    --accent: #ff7849;
+    --accent-soft: rgba(255, 120, 73, 0.12);
+    --ok: #82bd7f;
+    --green: #82bd7f;
+    --warn: #f0b450;
+    --yellow: #f0b450;
+    --alert: #e85952;
+    --red: #e85952;
+    --card: #161c25;
+    --font-display: 'Major Mono Display', 'B612 Mono', monospace;
+    --font-mono: 'B612 Mono', 'JetBrains Mono', 'Menlo', monospace;
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--text); padding: 2rem; max-width: 1100px; margin: 0 auto; }
-  h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 0.2rem; }
-  .subtitle { color: var(--dim); font-size: 0.8rem; margin-bottom: 1.5rem; }
-  .ws-status { font-size: 0.7rem; padding: 2px 8px; border-radius: 99px; }
-  .ws-status.connected { background: #16291a; color: var(--green); }
-  .ws-status.disconnected { background: #2a1515; color: var(--red); }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem; }
+  *::selection { background: var(--accent); color: var(--bg); }
+  html, body { background: var(--bg); }
+  body {
+    font-family: var(--font-mono); color: var(--text); font-size: 13px; line-height: 1.5;
+    margin: 0; padding: 0; height: 100vh; overflow: hidden; position: relative;
+    background-image:
+      repeating-linear-gradient(0deg, transparent 0, transparent 3px, rgba(235,228,210,0.014) 3px, rgba(235,228,210,0.014) 4px),
+      radial-gradient(circle at 15% 0%, rgba(255,120,73,0.05), transparent 55%),
+      radial-gradient(circle at 85% 100%, rgba(255,120,73,0.03), transparent 50%);
+    font-feature-settings: 'tnum' 1; font-variant-numeric: tabular-nums;
+  }
+  .app {
+    height: 100vh; display: flex; flex-direction: column;
+    max-width: 1400px; margin: 0 auto; padding: 2rem 2rem 0;
+  }
+  .app-top { flex-shrink: 0; }
+  .app-pages {
+    flex: 1; min-height: 0; margin-top: 1rem;
+    padding-bottom: 1.5rem; position: relative;
+  }
+  .page { height: 100%; display: flex; flex-direction: column; gap: 1rem; animation: reveal 0.3s ease both; overflow: hidden; }
+  .page[hidden] { display: none; }
 
-  .sys-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1.5rem; }
-  @media (max-width: 700px) { .sys-grid { grid-template-columns: repeat(2, 1fr); } }
-  .sys-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }
-  .sys-label { font-size: 0.65rem; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.3rem; }
-  .sys-value { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .sys-sub { font-size: 0.7rem; color: var(--dim); margin-top: 0.15rem; }
-  .bar { height: 3px; background: var(--border); border-radius: 2px; margin-top: 0.5rem; overflow: hidden; }
-  .bar-fill { height: 100%; border-radius: 2px; transition: width 0.4s ease; }
+  /* ─── Top nav tabs ────────────────────────────── */
+  .page-nav {
+    display: flex; border: 1px solid var(--hairline);
+    background: var(--bg-elev); margin-top: 1.2rem; flex-wrap: wrap;
+  }
+  .page-nav button {
+    padding: 11px 22px; font-size: 0.6rem; cursor: pointer; color: var(--dim);
+    border: none; background: none; border-right: 1px solid var(--hairline);
+    letter-spacing: 0.22em; text-transform: uppercase; font-family: var(--font-mono);
+    border-radius: 0; transition: color 0.15s; position: relative;
+  }
+  .page-nav button:hover { color: var(--text); }
+  .page-nav button.active {
+    color: var(--accent); background: var(--surface);
+    border-bottom: 2px solid var(--accent); margin-bottom: -1px;
+  }
+  .page-nav button::before {
+    content: attr(data-id); color: var(--accent); font-weight: 700;
+    margin-right: 0.7em; font-family: var(--font-display);
+  }
 
-  .section-title { font-size: 0.75rem; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.75rem; }
-  .svc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.75rem; margin-bottom: 1.5rem; }
+  /* Page-specific layout: fill viewport, internal scroll */
+  .page-overview { gap: 0; }
+  .page-overview .sys-grid { border-bottom: none; }
+  .page-overview .sparkline-row { margin-bottom: 0; }
+
+  .page-services { gap: 0; overflow-y: auto; }
+  .page-services .svc-grid { margin-bottom: 0; }
+
+  .page-models .two-col { flex: 1; min-height: 0; margin-bottom: 0; }
+  .page-models .panel { display: flex; flex-direction: column; min-height: 0; }
+  .page-models .model-list { flex: 1; max-height: none; }
+  .page-models #running-models { flex: 1; overflow-y: auto; }
+
+  .page-logs .log-panel { flex: 1; display: flex; flex-direction: column; margin-bottom: 0; }
+  .page-logs .log-content { flex: 1; height: auto; }
+
+  .page-lab .bottom-panel { flex: 1; display: flex; flex-direction: column; margin-bottom: 0; }
+  .page-lab .bottom-content.active { flex: 1; overflow-y: auto; }
+  body::before, body::after {
+    content: ''; position: fixed; width: 20px; height: 20px; pointer-events: none; z-index: 200;
+  }
+  body::before { top: 14px; left: 14px; border-top: 1px solid var(--accent); border-left: 1px solid var(--accent); opacity: 0.5; }
+  body::after  { bottom: 14px; right: 14px; border-bottom: 1px solid var(--accent); border-right: 1px solid var(--accent); opacity: 0.5; }
+
+  /* ─── Header ──────────────────────────────────── */
+  .header {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    margin-bottom: 1.6rem; padding-bottom: 1rem; border-bottom: 1px solid var(--hairline); position: relative;
+  }
+  h1 {
+    font-family: var(--font-display); font-size: 2.6rem; font-weight: 400;
+    letter-spacing: 0.04em; color: var(--text); line-height: 1; text-transform: lowercase;
+    text-shadow: 0 0 32px rgba(235,228,210,0.08);
+  }
+  h1::before { content: '⌖ '; color: var(--accent); font-family: var(--font-mono); font-size: 0.55em; vertical-align: 0.5em; letter-spacing: 0; }
+  .subtitle {
+    color: var(--dim); font-size: 0.65rem; margin-top: 0.6rem;
+    letter-spacing: 0.22em; text-transform: uppercase;
+  }
+  .header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 0.4rem; }
+  .ws-status {
+    font-family: var(--font-mono); font-size: 0.55rem; padding: 4px 10px;
+    letter-spacing: 0.22em; text-transform: uppercase; border: 1px solid var(--hairline);
+    background: var(--surface); color: var(--dim); border-radius: 0;
+  }
+  .ws-status.connected { color: var(--ok); border-color: rgba(130,189,127,0.35); }
+  .ws-status.connected::before {
+    content: ''; display: inline-block; width: 6px; height: 6px; background: var(--ok);
+    margin-right: 8px; vertical-align: middle; box-shadow: 0 0 8px var(--ok);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  .ws-status.disconnected { color: var(--alert); border-color: rgba(232,89,82,0.35); }
+  .ws-status.disconnected::before {
+    content: ''; display: inline-block; width: 6px; height: 6px; background: var(--alert);
+    margin-right: 8px; vertical-align: middle;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .ver-badge {
+    font-family: var(--font-mono); font-size: 0.55rem; color: var(--faint);
+    padding: 3px 9px; border: 1px solid var(--hairline); background: transparent;
+    letter-spacing: 0.15em; cursor: help; border-radius: 0; text-transform: uppercase;
+  }
+  .ver-badge.behind { color: var(--warn); border-color: rgba(240,180,80,0.35); background: rgba(240,180,80,0.05); }
+  .ver-badge.dirty  { color: var(--accent); border-color: rgba(255,120,73,0.35); }
+
+  /* ─── Telemetry strip ─────────────────────────── */
+  .telemetry-strip {
+    display: flex; background: var(--surface); border: 1px solid var(--hairline);
+    margin-bottom: 2rem; overflow-x: auto; font-size: 0.6rem; letter-spacing: 0.12em;
+  }
+  .tk {
+    padding: 9px 16px; border-right: 1px solid var(--hairline);
+    display: flex; gap: 0.7em; align-items: baseline; white-space: nowrap;
+  }
+  .tk:last-child { border-right: none; margin-left: auto; }
+  .tk-label { color: var(--faint); text-transform: uppercase; font-size: 0.55rem; }
+  .tk-val   { color: var(--text); font-weight: 700; font-family: var(--font-display); font-size: 0.85rem; }
+
+  /* ─── Section titles ──────────────────────────── */
+  .section-title {
+    display: flex; align-items: center; gap: 0.9rem;
+    font-size: 0.65rem; color: var(--dim); text-transform: uppercase;
+    letter-spacing: 0.22em; margin: 2.4rem 0 1rem; font-weight: 400;
+  }
+  .section-title::before {
+    content: attr(data-id); color: var(--accent); font-weight: 700; letter-spacing: 0.1em; font-family: var(--font-display);
+  }
+  .section-title::after {
+    content: ''; flex: 1; height: 1px;
+    background: linear-gradient(to right, var(--hairline) 0%, var(--hairline) 60%, transparent 100%);
+  }
+
+  /* ─── Sys grid ────────────────────────────────── */
+  .sys-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin-bottom: 0;
+    border: 1px solid var(--hairline); border-bottom: none;
+  }
+  @media (max-width: 760px) { .sys-grid { grid-template-columns: repeat(2, 1fr); } }
+  .sys-card {
+    padding: 1.2rem 1.3rem; border-right: 1px solid var(--hairline); background: var(--surface); position: relative;
+  }
+  .sys-card:last-child { border-right: none; }
+  @media (max-width: 760px) {
+    .sys-card:nth-child(odd) { border-right: 1px solid var(--hairline); }
+    .sys-card:nth-child(even) { border-right: none; }
+    .sys-card:nth-child(-n+2) { border-bottom: 1px solid var(--hairline); }
+  }
+  .sys-label {
+    font-size: 0.55rem; color: var(--faint); text-transform: uppercase;
+    letter-spacing: 0.22em; margin-bottom: 0.6rem;
+  }
+  .sys-label::before { content: attr(data-id) ' · '; color: var(--accent); font-family: var(--font-display); }
+  .sys-value {
+    font-family: var(--font-display); font-size: 2.1rem; font-weight: 400;
+    color: var(--text); line-height: 1; letter-spacing: 0.01em;
+    text-shadow: 0 0 24px rgba(235,228,210,0.1);
+  }
+  .sys-sub { font-size: 0.6rem; color: var(--dim); margin-top: 0.5rem; letter-spacing: 0.1em; text-transform: uppercase; }
+  .bar { height: 2px; background: var(--hairline); margin-top: 0.7rem; overflow: hidden; border-radius: 0; }
+  .bar-fill { height: 100%; transition: width 0.5s ease, background 0.3s; }
+  .therm-line { display: flex; justify-content: space-between; font-size: 0.55rem; color: var(--dim); margin-top: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; }
+  .therm-pressure { font-size: 0.5rem; padding: 2px 7px; letter-spacing: 0.18em; text-transform: uppercase; background: transparent; border: 1px solid var(--hairline); border-radius: 0; }
+  .therm-pressure.nominal  { color: var(--ok);    border-color: rgba(130,189,127,0.4); }
+  .therm-pressure.fair     { color: var(--warn);  border-color: rgba(240,180,80,0.4); }
+  .therm-pressure.serious,
+  .therm-pressure.critical { color: var(--alert); border-color: rgba(232,89,82,0.4); }
+
+  /* ─── Sparklines (attach to sys-grid visually) ── */
+  .sparkline-row {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 0;
+    margin-bottom: 2rem; border: 1px solid var(--hairline); border-top: none;
+  }
+  @media (max-width: 760px) { .sparkline-row { grid-template-columns: 1fr; } }
+  .sparkline-card {
+    background: var(--bg-elev); border-right: 1px solid var(--hairline);
+    padding: 0.7rem 1.1rem 0.6rem;
+  }
+  .sparkline-card:last-child { border-right: none; }
+  .sparkline-header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 0.5rem; color: var(--faint); margin-bottom: 0.4rem;
+    text-transform: uppercase; letter-spacing: 0.22em;
+  }
+  .sparkline-header span { color: var(--text); font-family: var(--font-display); font-size: 0.85rem; letter-spacing: 0; }
+  .sparkline { width: 100%; height: 36px; display: block; }
+
+  /* ─── Services ────────────────────────────────── */
+  .svc-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 0; margin-bottom: 0; border: 1px solid var(--hairline);
+  }
   #vllm-cards { display: contents; }
-  .svc { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }
-  .svc-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; }
-  .svc-name { font-weight: 600; font-size: 0.9rem; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-  .dot.up { background: var(--green); box-shadow: 0 0 6px var(--green); }
-  .dot.down { background: var(--red); }
-  .svc-meta { font-size: 0.7rem; color: var(--dim); }
-  .svc-stat { font-size: 0.75rem; color: var(--dim); margin-top: 0.4rem; }
-  .svc-stat span { color: var(--text); }
-  .svc-links { margin-top: 0.6rem; }
-  .svc-links a { font-size: 0.7rem; color: var(--accent); text-decoration: none; padding: 2px 7px; border: 1px solid #1e3a5f; border-radius: 3px; margin-right: 0.3rem; }
-  .svc-links a:hover { background: #1e3a5f; }
-  .svc-footer { margin-top: 0.6rem; display: flex; align-items: center; gap: 0.4rem; }
-  .svc-footer a { font-size: 0.7rem; color: var(--accent); text-decoration: none; padding: 2px 7px; border: 1px solid #1e3a5f; border-radius: 3px; }
-  .svc-footer a:hover { background: #1e3a5f; }
-  .svc-pid { font-size: 0.65rem; color: #556; font-family: monospace; }
-  .svc-restart { font-size: 0.65rem; color: #f77; background: none; border: 1px solid #533; border-radius: 3px; padding: 1px 6px; cursor: pointer; }
-  .svc-restart:hover { background: #331a1a; border-color: #f77; }
-  .svc-restart.restarting { color: #fa0; border-color: #553; cursor: wait; }
-  .svc-toggle { font-size: 0.65rem; background: none; border: 1px solid var(--border); border-radius: 3px; padding: 1px 6px; cursor: pointer; margin-left: auto; }
-  .svc-toggle.stop { color: var(--yellow); border-color: #553; }
-  .svc-toggle.stop:hover { background: #2a2510; border-color: var(--yellow); }
-  .svc-toggle.start { color: var(--green); border-color: #253; }
-  .svc-toggle.start:hover { background: #102a15; border-color: var(--green); }
-  .svc-toggle.busy { color: var(--dim); cursor: wait; }
-  .svc.disabled { opacity: 0.45; }
+  .svc {
+    background: var(--surface); border-right: 1px solid var(--hairline);
+    border-bottom: 1px solid var(--hairline); padding: 1rem 1.2rem;
+  }
+  .svc-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+  .svc-name {
+    font-size: 0.7rem; color: var(--text); text-transform: uppercase;
+    letter-spacing: 0.18em; font-weight: 700;
+  }
+  .dot {
+    width: 8px; height: 8px; display: inline-block; background: var(--faint);
+    border-radius: 0; position: relative;
+  }
+  .dot.up   { background: var(--ok);    box-shadow: 0 0 8px rgba(130,189,127,0.7); }
+  .dot.down { background: var(--alert); }
+  .svc-meta { font-size: 0.55rem; color: var(--dim); letter-spacing: 0.12em; text-transform: uppercase; }
+  .svc-stat { font-size: 0.6rem; color: var(--dim); margin-top: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; }
+  .svc-stat span { color: var(--text); font-weight: 700; font-family: var(--font-display); }
+  .svc-footer { margin-top: 0.8rem; display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
+  .svc-footer a {
+    font-size: 0.55rem; color: var(--dim); text-decoration: none;
+    padding: 2px 9px; border: 1px solid var(--hairline);
+    letter-spacing: 0.18em; text-transform: uppercase; border-radius: 0;
+  }
+  .svc-footer a:hover { color: var(--accent); border-color: var(--accent); }
+  .svc-pid { font-size: 0.5rem; color: var(--faint); letter-spacing: 0.15em; margin-right: auto; text-transform: uppercase; }
+  .svc-restart, .svc-toggle {
+    font-size: 0.5rem; background: transparent; border: 1px solid var(--hairline);
+    color: var(--dim); padding: 2px 9px; cursor: pointer;
+    letter-spacing: 0.18em; text-transform: uppercase; font-family: var(--font-mono); border-radius: 0;
+  }
+  .svc-restart { color: var(--alert); border-color: rgba(232,89,82,0.3); }
+  .svc-restart:hover { background: rgba(232,89,82,0.1); border-color: var(--alert); }
+  .svc-restart.restarting { color: var(--warn); border-color: rgba(240,180,80,0.4); cursor: wait; }
+  .svc-toggle.stop  { color: var(--warn);  border-color: rgba(240,180,80,0.3); }
+  .svc-toggle.stop:hover  { background: rgba(240,180,80,0.1); border-color: var(--warn); }
+  .svc-toggle.start { color: var(--ok);    border-color: rgba(130,189,127,0.3); }
+  .svc-toggle.start:hover { background: rgba(130,189,127,0.1); border-color: var(--ok); }
+  .svc-toggle.busy { color: var(--faint); cursor: wait; }
+  .svc.disabled { opacity: 0.4; }
   .svc.disabled .svc-name { text-decoration: line-through; }
 
-  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; }
-  @media (max-width: 700px) { .two-col { grid-template-columns: 1fr; } }
-  .panel { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }
-  .panel-title { font-size: 0.75rem; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.5rem; }
-  .model-list { font-size: 0.8rem; max-height: 280px; overflow-y: auto; }
-  .model-item { padding: 3px 0; border-bottom: 1px solid #1a1a1a; display: flex; justify-content: space-between; align-items: center; }
-  .model-name { color: var(--text); }
-  .model-size { color: var(--dim); font-size: 0.7rem; }
-  .model-loaded { color: var(--green); font-size: 0.65rem; font-weight: 600; margin-left: 0.4rem; }
-  .running-item { padding: 5px 0; border-bottom: 1px solid #1a1a1a; display: flex; justify-content: space-between; }
-  .running-name { color: var(--green); font-size: 0.85rem; }
-  .running-vram { color: var(--dim); font-size: 0.75rem; }
-  .empty { color: var(--dim); font-size: 0.8rem; font-style: italic; }
+  /* ─── Two-col panels (models) ─────────────────── */
+  .two-col {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-bottom: 0;
+    border: 1px solid var(--hairline);
+  }
+  @media (max-width: 760px) { .two-col { grid-template-columns: 1fr; } }
+  .panel { background: var(--surface); padding: 1rem 1.3rem; border-right: 1px solid var(--hairline); }
+  .panel:last-child { border-right: none; }
+  .panel-title {
+    font-size: 0.55rem; color: var(--faint); text-transform: uppercase;
+    letter-spacing: 0.22em; margin-bottom: 0.8rem; padding-bottom: 0.5rem;
+    border-bottom: 1px dashed var(--hairline);
+  }
+  .panel-title span { color: var(--accent); font-family: var(--font-display); }
+  .model-list { font-size: 0.7rem; max-height: 320px; overflow-y: auto; }
+  .model-item {
+    padding: 6px 0; border-bottom: 1px solid var(--hairline);
+    display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;
+  }
+  .model-name { color: var(--text); font-size: 0.72rem; letter-spacing: 0.01em; }
+  .model-size { color: var(--dim); font-size: 0.6rem; letter-spacing: 0.08em; font-family: var(--font-display); }
+  .model-loaded {
+    color: var(--ok); font-size: 0.5rem; letter-spacing: 0.22em;
+    margin-left: 0.5rem; padding: 1px 5px; border: 1px solid rgba(130,189,127,0.4);
+  }
+  .running-item {
+    padding: 7px 0; border-bottom: 1px solid var(--hairline);
+    display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;
+  }
+  .running-name {
+    color: var(--ok); font-size: 0.78rem; flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .running-vram { color: var(--dim); font-size: 0.6rem; letter-spacing: 0.08em; font-family: var(--font-display); }
+  .empty { color: var(--faint); font-size: 0.6rem; letter-spacing: 0.22em; text-transform: uppercase; font-style: normal; }
+  .model-actions { display: flex; gap: 0.3rem; align-items: center; }
+  .mbtn {
+    font-size: 0.5rem; background: transparent; border: 1px solid var(--hairline);
+    padding: 2px 8px; cursor: pointer; color: var(--dim);
+    font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.18em; border-radius: 0;
+  }
+  .mbtn:hover { color: var(--text); border-color: var(--dim); }
+  .mbtn.eject { color: var(--warn);   border-color: rgba(240,180,80,0.3); }
+  .mbtn.eject:hover { background: rgba(240,180,80,0.1); }
+  .mbtn.load  { color: var(--accent); border-color: rgba(255,120,73,0.3); }
+  .mbtn.load:hover  { background: rgba(255,120,73,0.1); }
+  .mbtn.del   { color: var(--alert);  border-color: rgba(232,89,82,0.3); }
+  .mbtn.del:hover   { background: rgba(232,89,82,0.1); }
+  .mbtn.busy  { color: var(--faint); cursor: wait; }
+  .mbtn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-  .log-panel { background: var(--card); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 1.5rem; overflow: hidden; }
-  .log-tabs { display: flex; border-bottom: 1px solid var(--border); }
-  .log-tab { padding: 8px 16px; font-size: 0.75rem; cursor: pointer; color: var(--dim); border: none; background: none; border-bottom: 2px solid transparent; }
+  /* Spec-decode badge */
+  .spec-badge {
+    font-size: 0.45rem; padding: 1px 5px; background: rgba(255,120,73,0.1);
+    color: var(--accent); margin-left: 0.4rem; border: 1px solid rgba(255,120,73,0.3);
+    letter-spacing: 0.22em; text-transform: uppercase; cursor: help; border-radius: 0;
+  }
+
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 1.5rem; right: 1.5rem;
+    background: var(--surface); border: 1px solid var(--border); padding: 0.8rem 1.2rem;
+    font-size: 0.65rem; max-width: 420px; box-shadow: 0 8px 32px rgba(0,0,0,0.7);
+    opacity: 0; transform: translateY(8px); transition: all 0.2s ease; pointer-events: none;
+    z-index: 250; letter-spacing: 0.1em; border-radius: 0; text-transform: uppercase;
+  }
+  .toast::before { content: '>>> '; color: var(--accent); font-weight: 700; }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.ok   { border-color: rgba(130,189,127,0.45); color: var(--ok); }
+  .toast.err  { border-color: rgba(232,89,82,0.45);  color: var(--alert); }
+
+  /* ─── Log panel ───────────────────────────────── */
+  .log-panel {
+    background: var(--surface); border: 1px solid var(--hairline);
+    margin-bottom: 0; overflow: hidden; border-radius: 0;
+  }
+  .log-tabs { display: flex; border-bottom: 1px solid var(--hairline); background: var(--bg-elev); flex-wrap: wrap; }
+  .log-tab {
+    padding: 9px 16px; font-size: 0.55rem; cursor: pointer; color: var(--dim);
+    border: none; background: none; border-right: 1px solid var(--hairline);
+    letter-spacing: 0.22em; text-transform: uppercase; font-family: var(--font-mono);
+  }
   .log-tab:hover { color: var(--text); }
-  .log-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
-  .log-tab .tab-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 5px; }
-  .log-tab .tab-dot.up { background: var(--green); }
-  .log-tab .tab-dot.down { background: var(--red); }
-  .log-toolbar { display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--border); }
-  .log-toolbar button { background: none; border: 1px solid var(--border); color: var(--dim); padding: 2px 8px; border-radius: 3px; cursor: pointer; font-size: 0.7rem; }
-  .log-toolbar button:hover { color: var(--text); border-color: var(--dim); }
-  .log-toolbar .log-info { font-size: 0.7rem; color: var(--dim); }
-  .log-content { height: 350px; overflow-y: auto; padding: 8px 12px; font-family: 'SF Mono', 'Menlo', 'Monaco', monospace; font-size: 0.72rem; line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
+  .log-tab.active {
+    color: var(--accent); background: var(--surface);
+    border-bottom: 2px solid var(--accent); margin-bottom: -1px;
+  }
+  .log-tab .tab-dot { width: 5px; height: 5px; display: inline-block; margin-right: 7px; vertical-align: middle; border-radius: 0; }
+  .log-tab .tab-dot.up   { background: var(--ok); }
+  .log-tab .tab-dot.down { background: var(--alert); }
+  .log-toolbar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 7px 14px; border-bottom: 1px solid var(--hairline); background: var(--bg-elev);
+  }
+  .log-toolbar button {
+    background: transparent; border: 1px solid var(--hairline); color: var(--dim);
+    padding: 2px 11px; cursor: pointer; font-size: 0.5rem;
+    letter-spacing: 0.2em; text-transform: uppercase; font-family: var(--font-mono);
+    margin-left: 0.3rem; border-radius: 0;
+  }
+  .log-toolbar button:hover { color: var(--accent); border-color: var(--accent); }
+  .log-toolbar .log-info { font-size: 0.55rem; color: var(--faint); letter-spacing: 0.15em; text-transform: uppercase; }
+  .log-content {
+    height: 360px; overflow-y: auto; padding: 12px 16px;
+    font-family: var(--font-mono); font-size: 0.7rem; line-height: 1.6;
+    white-space: pre-wrap; word-break: break-all; background: var(--bg);
+  }
   .log-line { color: var(--text); }
-  .log-line.stderr { color: var(--yellow); }
-  .log-line:hover { background: #1a1a1a; }
+  .log-line.stderr { color: var(--warn); }
+  .log-line:hover { background: var(--surface-2); }
+
+  /* ─── Drawer ──────────────────────────────────── */
+  .drawer-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.65);
+    opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 100; backdrop-filter: blur(3px);
+  }
+  .drawer-overlay.open { opacity: 1; pointer-events: auto; }
+  .drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; width: min(700px, 100vw);
+    background: var(--surface); border-left: 1px solid var(--border);
+    box-shadow: -8px 0 32px rgba(0,0,0,0.7); transform: translateX(100%);
+    transition: transform 0.25s ease; z-index: 101; display: flex; flex-direction: column;
+  }
+  .drawer.open { transform: translateX(0); }
+  .drawer-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 1rem 1.4rem; border-bottom: 1px solid var(--border); background: var(--bg-elev);
+  }
+  .drawer-title { font-size: 0.85rem; color: var(--text); word-break: break-all; letter-spacing: 0.04em; }
+  .drawer-title::before { content: '⌖ '; color: var(--accent); }
+  .drawer-close {
+    background: transparent; border: 1px solid var(--hairline); color: var(--dim);
+    padding: 4px 12px; cursor: pointer; font-size: 0.55rem;
+    letter-spacing: 0.22em; text-transform: uppercase; font-family: var(--font-mono); border-radius: 0;
+  }
+  .drawer-close:hover { color: var(--accent); border-color: var(--accent); }
+  .drawer-body { flex: 1; overflow-y: auto; padding: 1.3rem 1.4rem; font-size: 0.72rem; }
+  .drawer-section { margin-bottom: 1.6rem; }
+  .drawer-section h4 {
+    font-size: 0.55rem; color: var(--faint); text-transform: uppercase;
+    letter-spacing: 0.25em; margin-bottom: 0.7rem; font-weight: 400;
+    border-bottom: 1px dashed var(--hairline); padding-bottom: 0.4rem;
+  }
+  .drawer-section h4::before { content: '└─ '; color: var(--accent); font-weight: 700; }
+  .drawer-section pre {
+    background: var(--bg); border: 1px solid var(--hairline); padding: 0.8rem;
+    font-size: 0.65rem; line-height: 1.55; overflow-x: auto;
+    white-space: pre-wrap; word-break: break-word; color: var(--text); border-radius: 0;
+  }
+  .drawer-kv {
+    display: grid; grid-template-columns: 140px 1fr; gap: 0.4rem 0.8rem;
+    font-size: 0.68rem;
+  }
+  .drawer-kv dt { color: var(--faint); text-transform: uppercase; letter-spacing: 0.15em; font-size: 0.55rem; }
+  .drawer-kv dd { color: var(--text); word-break: break-all; font-family: var(--font-display); font-size: 0.75rem; }
+
+  /* ─── Bottom (Lab) panel ──────────────────────── */
+  .bottom-panel {
+    background: var(--surface); border: 1px solid var(--hairline);
+    overflow: hidden; margin-bottom: 2rem; border-radius: 0;
+  }
+  .bottom-tabs { display: flex; border-bottom: 1px solid var(--hairline); background: var(--bg-elev); }
+  .bottom-tab {
+    padding: 9px 18px; font-size: 0.55rem; cursor: pointer; color: var(--dim);
+    border: none; background: none; border-right: 1px solid var(--hairline);
+    letter-spacing: 0.22em; text-transform: uppercase; font-family: var(--font-mono);
+  }
+  .bottom-tab:hover { color: var(--text); }
+  .bottom-tab.active {
+    color: var(--accent); background: var(--surface);
+    border-bottom: 2px solid var(--accent); margin-bottom: -1px;
+  }
+  .bottom-content { display: none; padding: 1.3rem 1.4rem; min-height: 240px; background: var(--surface); }
+  .bottom-content.active { display: block; }
+
+  /* Events table */
+  .events-table { width: 100%; border-collapse: collapse; font-size: 0.68rem; }
+  .events-table th {
+    text-align: left; color: var(--faint); font-weight: 400; padding: 7px 11px;
+    border-bottom: 1px solid var(--border); font-size: 0.5rem;
+    text-transform: uppercase; letter-spacing: 0.25em;
+  }
+  .events-table td { padding: 7px 11px; border-bottom: 1px solid var(--hairline); font-family: var(--font-mono); }
+  .events-table tr:hover { background: var(--surface-2); }
+  .ev-time { color: var(--dim); white-space: nowrap; font-size: 0.6rem; letter-spacing: 0.05em; font-family: var(--font-display); }
+  .ev-source {
+    font-size: 0.45rem; padding: 1px 6px; border: 1px solid var(--hairline);
+    color: var(--dim); letter-spacing: 0.25em; text-transform: uppercase;
+  }
+  .ev-source.dashboard { color: var(--accent); border-color: rgba(255,120,73,0.35); }
+  .ev-source.observed  { color: var(--warn);   border-color: rgba(240,180,80,0.35); }
+  .ev-action { font-weight: 700; font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; }
+  .ev-action.preload, .ev-action.load_external   { color: var(--ok); }
+  .ev-action.unload,  .ev-action.unload_external { color: var(--warn); }
+  .ev-action.delete   { color: var(--alert); }
+  .ev-model { color: var(--text); word-break: break-all; font-size: 0.68rem; }
+  .ev-dur   { color: var(--dim); text-align: right; white-space: nowrap; font-family: var(--font-display); font-size: 0.7rem; }
+  .ev-fail  { color: var(--alert); font-size: 0.5rem; }
+
+  /* Scratchpad */
+  .scratch-textarea {
+    width: 100%; min-height: 300px; background: var(--bg); border: 1px solid var(--hairline);
+    padding: 0.9rem 1.1rem; color: var(--text); font-family: var(--font-mono);
+    font-size: 0.75rem; line-height: 1.7; resize: vertical; border-radius: 0; caret-color: var(--accent);
+  }
+  .scratch-textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 1px rgba(255,120,73,0.25); }
+  .scratch-toolbar {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: 0.7rem; font-size: 0.55rem; color: var(--faint);
+    letter-spacing: 0.18em; text-transform: uppercase;
+  }
+  .scratch-toolbar button {
+    background: transparent; border: 1px solid var(--hairline); color: var(--dim);
+    padding: 3px 12px; cursor: pointer; font-size: 0.5rem;
+    letter-spacing: 0.22em; text-transform: uppercase; margin-left: 0.3rem;
+    font-family: var(--font-mono); border-radius: 0;
+  }
+  .scratch-toolbar button:hover { color: var(--accent); border-color: var(--accent); }
+
+  /* Whisper drop-zone */
+  .drop-zone {
+    border: 1px dashed var(--border); padding: 2.8rem 1.5rem; text-align: center;
+    color: var(--dim); cursor: pointer; transition: all 0.15s; background: var(--bg);
+    font-size: 0.7rem; letter-spacing: 0.15em; text-transform: uppercase; border-radius: 0;
+  }
+  .drop-zone:hover, .drop-zone.dragging {
+    border-color: var(--accent); color: var(--accent); background: var(--accent-soft);
+  }
+  .drop-zone.busy { border-color: var(--warn); color: var(--warn); cursor: wait; }
+  .drop-zone-hint { font-size: 0.5rem; color: var(--faint); margin-top: 0.6rem; letter-spacing: 0.22em; }
+  .transcript {
+    margin-top: 1rem; padding: 1rem 1.1rem; background: var(--bg); border: 1px solid var(--hairline);
+    font-size: 0.78rem; line-height: 1.7; max-height: 280px; overflow-y: auto;
+    white-space: pre-wrap; word-break: break-word; color: var(--text); border-radius: 0;
+  }
+  .transcript:empty { display: none; }
+  .transcript::before {
+    content: '└─ TRANSCRIPT ─────────────────────';
+    display: block; font-size: 0.5rem; color: var(--accent);
+    letter-spacing: 0.25em; margin-bottom: 0.6rem; font-weight: 700;
+  }
+
+  /* ─── Scrollbars ──────────────────────────────── */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border: 1px solid var(--bg); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+  /* ─── Reveal animation ───────────────────────── */
+  @keyframes reveal { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  .header, .telemetry-strip, .sys-grid, .sparkline-row, .svc-grid, .log-panel, .two-col, .bottom-panel, .section-title {
+    animation: reveal 0.4s ease both;
+  }
+  .telemetry-strip { animation-delay: 0.05s; }
+  .sys-grid        { animation-delay: 0.10s; }
+  .sparkline-row   { animation-delay: 0.18s; }
+  .section-title   { animation-delay: 0.22s; }
+  .svc-grid        { animation-delay: 0.26s; }
+  .log-panel       { animation-delay: 0.32s; }
+  .two-col         { animation-delay: 0.38s; }
+  .bottom-panel    { animation-delay: 0.44s; }
 </style>
 </head>
 <body>
 
+<div class="app">
+
+<header class="app-top">
 <div class="header">
   <div>
-    <h1>Mac Node</h1>
-    <p class="subtitle" id="subtitle">Connecting...</p>
+    <h1>mac · node</h1>
+    <p class="subtitle" id="subtitle">station alpha · awaiting telemetry</p>
   </div>
-  <span class="ws-status disconnected" id="ws-badge">disconnected</span>
+  <div class="header-right">
+    <span class="ws-status disconnected" id="ws-badge">offline</span>
+    <span class="ver-badge" id="ver-badge" title="">v --</span>
+  </div>
 </div>
 
+<div class="telemetry-strip">
+  <div class="tk"><span class="tk-label">LOAD</span><span class="tk-val" id="tk-load">--</span></div>
+  <div class="tk"><span class="tk-label">MEM</span><span class="tk-val" id="tk-mem">--</span></div>
+  <div class="tk"><span class="tk-label">VRAM</span><span class="tk-val" id="tk-vram">--</span></div>
+  <div class="tk"><span class="tk-label">PWR</span><span class="tk-val" id="tk-pwr">--</span></div>
+  <div class="tk"><span class="tk-label">EVTS</span><span class="tk-val" id="tk-evts">--</span></div>
+  <div class="tk"><span class="tk-label">UTC</span><span class="tk-val" id="tk-utc">--:--:--</span></div>
+</div>
+
+<nav class="page-nav" id="page-nav">
+  <button data-id="01" data-page="overview" onclick="switchPage('overview')">overview</button>
+  <button data-id="02" data-page="services" onclick="switchPage('services')">services</button>
+  <button data-id="03" data-page="models"   onclick="switchPage('models')">models</button>
+  <button data-id="04" data-page="logs"     onclick="switchPage('logs')">logs</button>
+  <button data-id="05" data-page="lab"      onclick="switchPage('lab')">lab</button>
+</nav>
+</header>
+
+<main class="app-pages">
+
+<section class="page page-overview" data-page="overview">
 <div class="sys-grid">
   <div class="sys-card">
-    <div class="sys-label">Memory</div>
+    <div class="sys-label" data-id="01">mem</div>
     <div class="sys-value" id="mem-val">--%</div>
     <div class="sys-sub" id="mem-sub"></div>
     <div class="bar"><div class="bar-fill" id="mem-bar" style="width:0%;background:var(--green)"></div></div>
   </div>
   <div class="sys-card">
-    <div class="sys-label">CPU Load (1m)</div>
+    <div class="sys-label" data-id="02">cpu · 1m</div>
     <div class="sys-value" id="cpu-val">--</div>
     <div class="sys-sub" id="cpu-sub"></div>
     <div class="bar"><div class="bar-fill" id="cpu-bar" style="width:0%;background:var(--green)"></div></div>
   </div>
   <div class="sys-card">
-    <div class="sys-label">GPU</div>
-    <div class="sys-value" id="gpu-val" style="font-size:1rem">--</div>
-    <div class="sys-sub" id="gpu-sub"></div>
+    <div class="sys-label" data-id="03">thermals</div>
+    <div class="sys-value" id="therm-val" style="font-size:1.6rem">--</div>
+    <div class="therm-line"><span id="therm-power">--</span><span class="therm-pressure nominal" id="therm-pressure">--</span></div>
   </div>
   <div class="sys-card">
-    <div class="sys-label">Uptime</div>
+    <div class="sys-label" data-id="04">uptime</div>
     <div class="sys-value" id="uptime-val">--</div>
   </div>
 </div>
 
-<div class="section-title">Services</div>
+<div class="sparkline-row">
+  <div class="sparkline-card">
+    <div class="sparkline-header">mem % · 5m<span id="spark-mem-val">--</span></div>
+    <svg class="sparkline" id="spark-mem" viewBox="0 0 200 36" preserveAspectRatio="none"></svg>
+  </div>
+  <div class="sparkline-card">
+    <div class="sparkline-header">vram · loaded gb<span id="spark-vram-val">--</span></div>
+    <svg class="sparkline" id="spark-vram" viewBox="0 0 200 36" preserveAspectRatio="none"></svg>
+  </div>
+  <div class="sparkline-card">
+    <div class="sparkline-header">pkg power · w<span id="spark-pkg-val">--</span></div>
+    <svg class="sparkline" id="spark-pkg" viewBox="0 0 200 36" preserveAspectRatio="none"></svg>
+  </div>
+</div>
+
+</section>
+
+<section class="page page-services" data-page="services" hidden>
 <div class="svc-grid">
   <div class="svc" id="svc-ollama">
     <div class="svc-header"><span class="svc-name">Ollama</span><span class="dot" id="dot-ollama"></span></div>
@@ -145,41 +634,95 @@
   <div id="vllm-cards"></div>
 </div>
 
-<!-- Log Viewer -->
-<div class="section-title">Logs</div>
+</section>
+
+<section class="page page-logs" data-page="logs" hidden>
 <div class="log-panel">
   <div class="log-tabs">
-    <button class="log-tab active" onclick="switchLog('ollama',this)"><span class="tab-dot" id="logdot-ollama"></span>Ollama</button>
-    <button class="log-tab" onclick="switchLog('webui',this)"><span class="tab-dot" id="logdot-webui"></span>WebUI</button>
-    <button class="log-tab" onclick="switchLog('whisper',this)"><span class="tab-dot" id="logdot-whisper"></span>Whisper</button>
+    <button class="log-tab active" onclick="switchLog('ollama',this)"><span class="tab-dot" id="logdot-ollama"></span>ollama</button>
+    <button class="log-tab" onclick="switchLog('webui',this)"><span class="tab-dot" id="logdot-webui"></span>webui</button>
+    <button class="log-tab" onclick="switchLog('whisper',this)"><span class="tab-dot" id="logdot-whisper"></span>whisper</button>
     <!-- vLLM log tabs populated from /api/config -->
     <span id="vllm-log-tabs"></span>
   </div>
   <div class="log-toolbar">
     <span class="log-info" id="log-info">--</span>
     <div>
-      <button onclick="clearLogView()">Clear</button>
-      <button onclick="toggleAutoScroll()" id="autoscroll-btn">Auto-scroll: ON</button>
+      <button onclick="clearLogView()">clear</button>
+      <button onclick="toggleAutoScroll()" id="autoscroll-btn">autoscroll: on</button>
     </div>
   </div>
   <div class="log-content" id="log-content"></div>
 </div>
 
+</section>
+
+<section class="page page-models" data-page="models" hidden>
 <div class="two-col">
   <div class="panel">
-    <div class="panel-title">Loaded in Memory</div>
-    <div id="running-models"><span class="empty">none</span></div>
+    <div class="panel-title">in memory · vram resident</div>
+    <div id="running-models"><span class="empty">no models in memory</span></div>
   </div>
   <div class="panel">
-    <div class="panel-title">All Models (<span id="total-models">0</span>)</div>
-    <div class="model-list" id="model-list"><span class="empty">loading...</span></div>
+    <div class="panel-title">catalog <span id="total-models">0</span></div>
+    <div class="model-list" id="model-list"><span class="empty">scanning…</span></div>
   </div>
 </div>
+
+</section>
+
+<section class="page page-lab" data-page="lab" hidden>
+<div class="bottom-panel">
+  <div class="bottom-tabs">
+    <button class="bottom-tab active" data-tab="events" onclick="switchBottom('events',this)">events</button>
+    <button class="bottom-tab" data-tab="scratchpad" onclick="switchBottom('scratchpad',this)">scratchpad</button>
+    <button class="bottom-tab" data-tab="whisper" onclick="switchBottom('whisper',this)">whisper</button>
+  </div>
+  <div class="bottom-content active" id="bc-events">
+    <table class="events-table" id="events-table">
+      <thead><tr><th>Time</th><th>Src</th><th>Action</th><th>Model</th><th style="text-align:right">Duration</th></tr></thead>
+      <tbody id="events-body"><tr><td colspan="5" class="empty">no events yet</td></tr></tbody>
+    </table>
+  </div>
+  <div class="bottom-content" id="bc-scratchpad">
+    <textarea id="scratch" class="scratch-textarea" placeholder="Lab notes — auto-saved to localStorage. Markdown welcome. Prefix lines with model:tag to tag them."></textarea>
+    <div class="scratch-toolbar">
+      <span id="scratch-status">--</span>
+      <div>
+        <button onclick="scratchExport()">export</button>
+        <button onclick="scratchClear()">clear</button>
+      </div>
+    </div>
+  </div>
+  <div class="bottom-content" id="bc-whisper">
+    <div id="drop-zone" class="drop-zone" onclick="document.getElementById('whisper-file').click()">
+      drop audio file here, or click to pick
+      <div class="drop-zone-hint">wav / mp3 / m4a / flac — sent to whisper.cpp on :8787</div>
+    </div>
+    <input type="file" id="whisper-file" accept="audio/*" style="display:none">
+    <div id="transcript" class="transcript"></div>
+  </div>
+</div>
+</section>
+
+</main>
+</div><!-- /.app -->
+
+<div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer()"></div>
+<aside class="drawer" id="drawer">
+  <div class="drawer-header">
+    <div class="drawer-title" id="drawer-title">--</div>
+    <button class="drawer-close" onclick="closeDrawer()">close</button>
+  </div>
+  <div class="drawer-body" id="drawer-body">loading...</div>
+</aside>
 
 <script>
 let prevLogs = {};
 let ws;
 let modelListCache = null;
+const sparkSeries = { mem: [], vram: [], pkg: [] };
+const SPARK_MAX = 150;
 
 function barColor(pct) {
   return pct > 90 ? 'var(--red)' : pct > 70 ? 'var(--yellow)' : 'var(--green)';
@@ -202,16 +745,48 @@ function update(s) {
   cb.style.width = cpuPct + '%';
   cb.style.background = barColor(cpuPct);
 
-  // GPU
-  document.getElementById('gpu-val').textContent = s.gpu.name || '--';
-  document.getElementById('gpu-sub').textContent = s.gpu.cores ? s.gpu.cores + ' cores' : '';
+  // Thermals
+  const th = s.thermals || {};
+  const tEl = document.getElementById('therm-val');
+  const tPow = document.getElementById('therm-power');
+  const tPres = document.getElementById('therm-pressure');
+  if (th.source === 'powermetrics' && (th.package_power_w || th.cpu_power_w || th.gpu_power_w)) {
+    const total = th.package_power_w || (th.cpu_power_w + th.gpu_power_w);
+    tEl.textContent = total.toFixed(1) + ' W';
+    tPow.textContent = `CPU ${th.cpu_power_w.toFixed(1)}W · GPU ${th.gpu_power_w.toFixed(1)}W`;
+  } else {
+    tEl.textContent = th.needs_sudo ? 'sudo needed' : (th.thermal_pressure || '--');
+    tPow.textContent = th.needs_sudo ? 'see below' : '';
+    if (th.needs_sudo) tEl.title = 'Add to sudoers for power data:\n%admin ALL=(root) NOPASSWD: /usr/bin/powermetrics';
+  }
+  tPres.textContent = th.thermal_pressure || '--';
+  tPres.className = 'therm-pressure ' + (th.thermal_pressure || 'nominal');
+
+  // Sparklines (5-min ring)
+  pushSpark('mem', s.memory.percent);
+  const totalVram = (s.running_models || []).reduce((a, m) => a + (m.vram_gb || 0), 0);
+  pushSpark('vram', totalVram);
+  const pkgW = th.package_power_w || (th.cpu_power_w + th.gpu_power_w) || 0;
+  pushSpark('pkg', pkgW);
+  drawSpark('mem', '#spark-mem', '#spark-mem-val', v => v.toFixed(0) + '%');
+  drawSpark('vram', '#spark-vram', '#spark-vram-val', v => v.toFixed(1) + ' GB');
+  drawSpark('pkg', '#spark-pkg', '#spark-pkg-val', v => v.toFixed(1) + ' W');
 
   // Uptime
   document.getElementById('uptime-val').textContent = s.uptime;
 
+  // Telemetry strip
+  const tkVram = (s.running_models || []).reduce((a, m) => a + (m.vram_gb || 0), 0);
+  const tkTh = s.thermals || {};
+  const totalW = tkTh.package_power_w || ((tkTh.cpu_power_w || 0) + (tkTh.gpu_power_w || 0)) || 0;
+  setTk('tk-load', s.cpu.load_1m.toFixed(2));
+  setTk('tk-mem',  s.memory.percent.toFixed(0) + '%');
+  setTk('tk-vram', tkVram.toFixed(1) + 'g');
+  setTk('tk-pwr',  totalW > 0 ? totalW.toFixed(1) + 'w' : '—');
+
   // Subtitle
   document.getElementById('subtitle').textContent =
-    `${s.gpu.name || 'Apple Silicon'} \u00b7 ${s.memory.total_gb.toFixed(0)} GB \u00b7 up ${s.uptime}`;
+    `${(s.gpu.name || 'apple silicon').toLowerCase()} \u00b7 ${s.memory.total_gb.toFixed(0)}gb unified \u00b7 uptime ${s.uptime}`;
 
   // Services
   for (const [svc, up] of Object.entries(s.services)) {
@@ -247,7 +822,13 @@ function update(s) {
     rEl.innerHTML = '<span class="empty">no models in memory</span>';
   } else {
     rEl.innerHTML = running.map(m =>
-      `<div class="running-item"><span class="running-name">${m.name}</span><span class="running-vram">${m.vram_gb.toFixed(1)} GB</span></div>`
+      `<div class="running-item">
+         <span class="running-name" title="${escAttr(m.name)}" style="cursor:pointer" onclick="openDrawer('${escAttr(m.name)}')">${esc(m.name)}</span>
+         <div class="model-actions">
+           <span class="running-vram">${m.vram_gb.toFixed(1)} GB</span>
+           <button class="mbtn eject" onclick="event.stopPropagation();ollamaAction('unload','${escAttr(m.name)}',this)">eject</button>
+         </div>
+       </div>`
     ).join('');
   }
 
@@ -265,13 +846,92 @@ function update(s) {
 function renderModels(models, runSet) {
   const el = document.getElementById('model-list');
   if (!models.length) { el.innerHTML = '<span class="empty">no models</span>'; return; }
-  el.innerHTML = models
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .map(m => {
+  const sorted = models.slice().sort((a, b) => a.name.localeCompare(b.name));
+  el.innerHTML = sorted.map(m => {
       const gb = (m.size / 1e9).toFixed(1);
-      const loaded = runSet.has(m.name) ? '<span class="model-loaded">LOADED</span>' : '';
-      return `<div class="model-item"><span><span class="model-name">${m.name}</span>${loaded}</span><span class="model-size">${gb} GB</span></div>`;
+      const isLoaded = runSet.has(m.name);
+      const loaded = isLoaded ? '<span class="model-loaded">LOADED</span>' : '';
+      const draft = findDraftFor(m, sorted);
+      const specBadge = draft
+        ? `<span class="spec-badge" title="speculative-decoding draft candidate: ${draft.name} (${(draft.size/1e9).toFixed(1)} GB) — same arch family">spec→${draft.name.split(':')[0]}</span>`
+        : '';
+      const loadBtn = isLoaded
+        ? `<button class="mbtn eject" onclick="event.stopPropagation();ollamaAction('unload','${escAttr(m.name)}',this)">eject</button>`
+        : `<button class="mbtn load" onclick="event.stopPropagation();ollamaAction('preload','${escAttr(m.name)}',this)">load</button>`;
+      return `<div class="model-item">
+        <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;cursor:pointer" title="${escAttr(m.name)}" onclick="openDrawer('${escAttr(m.name)}')">
+          <span class="model-name">${esc(m.name)}</span>${loaded}${specBadge}
+        </span>
+        <div class="model-actions">
+          <span class="model-size">${gb} GB</span>
+          ${loadBtn}
+          <button class="mbtn del" onclick="event.stopPropagation();ollamaAction('delete','${escAttr(m.name)}',this)">del</button>
+        </div>
+      </div>`;
     }).join('');
+}
+
+function findDraftFor(big, all) {
+  // Heuristic: draft = smaller model in same family (matching first naming token, e.g. "qwen3", "llama3").
+  // Only suggest if big is >= 4x the draft's size and draft is < 5 GB.
+  const fam = (n) => n.toLowerCase().split(/[:\-_]/)[0];
+  const family = fam(big.name);
+  const candidates = all.filter(m =>
+    m.name !== big.name &&
+    fam(m.name) === family &&
+    m.size < 5e9 &&
+    big.size >= m.size * 4
+  );
+  if (!candidates.length) return null;
+  return candidates.sort((a, b) => a.size - b.size)[0];
+}
+
+function escAttr(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/'/g,"&#39;").replace(/"/g,'&quot;');
+}
+
+function toast(msg, kind) {
+  let t = document.getElementById('toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'toast';
+    t.className = 'toast';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.className = 'toast show ' + (kind || '');
+  clearTimeout(t._tm);
+  t._tm = setTimeout(() => { t.className = 'toast ' + (kind || ''); }, 3500);
+}
+
+function ollamaAction(action, model, btn) {
+  if (btn.classList.contains('busy')) return;
+  if (action === 'delete' && !confirm(`Delete model from disk?\n\n${model}\n\nThis cannot be undone.`)) return;
+  const originalText = btn.textContent;
+  const labels = { unload: 'ejecting...', preload: 'loading...', delete: 'deleting...' };
+  btn.classList.add('busy');
+  btn.disabled = true;
+  btn.textContent = labels[action] || '...';
+  fetch(`/api/ollama/${action}`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({model})
+  })
+  .then(r => r.json())
+  .then(res => {
+    if (res.status === 'ok') {
+      toast(`${action}: ${model.length > 50 ? model.slice(0,50)+'…' : model}`, 'ok');
+      if (action === 'delete') modelListCache = null;
+    } else {
+      toast(`${action} failed: ${res.error || 'unknown'}`, 'err');
+    }
+  })
+  .catch(e => toast(`${action} failed: ${e.message}`, 'err'))
+  .finally(() => {
+    btn.classList.remove('busy');
+    btn.disabled = false;
+    btn.textContent = originalText;
+  });
 }
 
 function connect() {
@@ -304,7 +964,7 @@ let lineCount = 0;
 const MAX_LINES = 2000;
 
 function esc(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 function appendLine(entry) {
@@ -495,6 +1155,239 @@ function buildVLLMCards(instances) {
   ).join('');
 }
 
+// ─── Telemetry strip helpers ────────────────────────────────────
+function setTk(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = val;
+}
+function tickUtc() {
+  const now = new Date();
+  const hh = String(now.getUTCHours()).padStart(2, '0');
+  const mm = String(now.getUTCMinutes()).padStart(2, '0');
+  const ss = String(now.getUTCSeconds()).padStart(2, '0');
+  setTk('tk-utc', `${hh}:${mm}:${ss}`);
+}
+setInterval(tickUtc, 1000);
+tickUtc();
+
+// Update event count in ticker
+function refreshTkEvents() {
+  fetch('/api/events?limit=200').then(r => r.json()).then(rows => {
+    setTk('tk-evts', String(rows.length || 0));
+  }).catch(() => {});
+}
+setInterval(refreshTkEvents, 5000);
+refreshTkEvents();
+
+// ESC closes drawer
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeDrawer();
+});
+
+// ─── Sparklines ─────────────────────────────────────────────────
+function pushSpark(key, v) {
+  sparkSeries[key].push(v);
+  if (sparkSeries[key].length > SPARK_MAX) sparkSeries[key].shift();
+}
+function drawSpark(key, svgSel, labelSel, fmt) {
+  const data = sparkSeries[key];
+  const svg = document.querySelector(svgSel);
+  if (!svg || !data.length) return;
+  const W = 200, H = 36;
+  const max = Math.max(...data, 1);
+  const min = Math.min(...data, 0);
+  const range = max - min || 1;
+  const step = data.length > 1 ? W / (data.length - 1) : 0;
+  const points = data.map((v, i) => {
+    const x = i * step;
+    const y = H - ((v - min) / range) * (H - 4) - 2;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  const last = data[data.length - 1];
+  const lastY = H - ((last - min) / range) * (H - 4) - 2;
+  const areaPoints = `0,${H} ${points} ${(data.length-1)*step},${H}`;
+  svg.innerHTML = `
+    <polyline points="${areaPoints}" fill="var(--accent)" opacity="0.08"/>
+    <polyline points="${points}" fill="none" stroke="var(--accent)" stroke-width="1.2"/>
+    <circle cx="${(data.length-1)*step}" cy="${lastY}" r="2" fill="var(--accent)"/>
+    <line x1="${(data.length-1)*step}" y1="${lastY}" x2="${(data.length-1)*step}" y2="${H}" stroke="var(--accent)" stroke-width="0.5" opacity="0.3"/>
+  `;
+  document.querySelector(labelSel).textContent = fmt(last);
+}
+
+// ─── Drawer (model metadata) ────────────────────────────────────
+function openDrawer(model) {
+  const overlay = document.getElementById('drawer-overlay');
+  const drawer = document.getElementById('drawer');
+  document.getElementById('drawer-title').textContent = model;
+  document.getElementById('drawer-body').textContent = 'loading...';
+  overlay.classList.add('open');
+  drawer.classList.add('open');
+  fetch('/api/ollama/show', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({model})
+  })
+  .then(r => r.json())
+  .then(d => renderDrawer(model, d))
+  .catch(e => { document.getElementById('drawer-body').textContent = 'error: ' + e.message; });
+}
+function closeDrawer() {
+  document.getElementById('drawer-overlay').classList.remove('open');
+  document.getElementById('drawer').classList.remove('open');
+}
+function renderDrawer(model, d) {
+  if (d.error || d.status === 'error') {
+    document.getElementById('drawer-body').innerHTML = `<pre style="color:var(--red)">${esc(d.error || 'unknown')}</pre>`;
+    return;
+  }
+  const det = d.details || {};
+  const mi = d.model_info || {};
+  const arch = det.family || mi['general.architecture'] || '?';
+  const ctx = mi[`${arch}.context_length`] || mi['llama.context_length'] || '?';
+  const embed = mi[`${arch}.embedding_length`] || '?';
+  const params = det.parameter_size || mi['general.parameter_count'] || '?';
+  const quant = det.quantization_level || mi['general.file_type'] || '?';
+  const kv = `
+    <dl class="drawer-kv">
+      <dt>architecture</dt><dd>${esc(arch)}</dd>
+      <dt>parameters</dt><dd>${esc(params)}</dd>
+      <dt>quantization</dt><dd>${esc(quant)}</dd>
+      <dt>context length</dt><dd>${esc(ctx)}</dd>
+      <dt>embedding dim</dt><dd>${esc(embed)}</dd>
+      <dt>format</dt><dd>${esc(det.format || '?')}</dd>
+      <dt>families</dt><dd>${esc((det.families || []).join(', ') || '?')}</dd>
+      <dt>capabilities</dt><dd>${esc((d.capabilities || []).join(', ') || '?')}</dd>
+    </dl>`;
+  document.getElementById('drawer-body').innerHTML = `
+    <div class="drawer-section"><h4>Overview</h4>${kv}</div>
+    ${d.parameters ? `<div class="drawer-section"><h4>Parameters</h4><pre>${esc(d.parameters)}</pre></div>` : ''}
+    ${d.template ? `<div class="drawer-section"><h4>Template</h4><pre>${esc(d.template)}</pre></div>` : ''}
+    ${d.modelfile ? `<div class="drawer-section"><h4>Modelfile</h4><pre>${esc(d.modelfile)}</pre></div>` : ''}
+  `;
+}
+
+// ─── Bottom panel tab switching ─────────────────────────────────
+function switchBottom(tab, btn) {
+  document.querySelectorAll('.bottom-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.bottom-content').forEach(c => c.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('bc-' + tab).classList.add('active');
+  if (tab === 'events') refreshEvents();
+}
+
+// ─── Events table ───────────────────────────────────────────────
+function refreshEvents() {
+  fetch('/api/events?limit=100').then(r => r.json()).then(rows => {
+    const tb = document.getElementById('events-body');
+    if (!rows || !rows.length) { tb.innerHTML = '<tr><td colspan="5" class="empty">no events yet</td></tr>'; return; }
+    tb.innerHTML = rows.slice().reverse().map(e => {
+      const t = new Date(e.ts * 1000);
+      const time = t.toLocaleTimeString();
+      const dur = e.duration_ms ? `${e.duration_ms} ms` : '—';
+      const err = e.success ? '' : ` <span class="ev-fail">${esc(e.error || 'failed')}</span>`;
+      return `<tr>
+        <td class="ev-time">${time}</td>
+        <td><span class="ev-source ${esc(e.source)}">${esc(e.source)}</span></td>
+        <td class="ev-action ${esc(e.action)}">${esc(e.action)}${err}</td>
+        <td class="ev-model" title="${escAttr(e.model)}">${esc(e.model)}</td>
+        <td class="ev-dur">${dur}</td>
+      </tr>`;
+    }).join('');
+  }).catch(() => {});
+}
+setInterval(() => {
+  if (document.getElementById('bc-events').classList.contains('active')) refreshEvents();
+}, 3000);
+
+// ─── Scratchpad ─────────────────────────────────────────────────
+const SCRATCH_KEY = 'macnode.scratch';
+function scratchLoad() {
+  const el = document.getElementById('scratch');
+  el.value = localStorage.getItem(SCRATCH_KEY) || '';
+  scratchStatus();
+}
+function scratchSave() {
+  localStorage.setItem(SCRATCH_KEY, document.getElementById('scratch').value);
+  scratchStatus();
+}
+function scratchStatus() {
+  const len = (document.getElementById('scratch').value || '').length;
+  document.getElementById('scratch-status').textContent = `${len} chars · auto-saved`;
+}
+function scratchExport() {
+  const blob = new Blob([document.getElementById('scratch').value], {type: 'text/markdown'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `lab-notes-${new Date().toISOString().slice(0,10)}.md`;
+  a.click();
+}
+function scratchClear() {
+  if (!confirm('clear scratchpad? this is irreversible.')) return;
+  document.getElementById('scratch').value = '';
+  scratchSave();
+}
+
+// ─── Whisper drop-zone ──────────────────────────────────────────
+const dz = document.getElementById('drop-zone');
+const fileInput = document.getElementById('whisper-file');
+['dragenter','dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('dragging'); }));
+['dragleave','drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('dragging'); }));
+dz.addEventListener('drop', e => { if (e.dataTransfer.files.length) sendWhisper(e.dataTransfer.files[0]); });
+fileInput.addEventListener('change', e => { if (e.target.files.length) sendWhisper(e.target.files[0]); });
+
+function sendWhisper(file) {
+  const dz = document.getElementById('drop-zone');
+  const out = document.getElementById('transcript');
+  dz.classList.add('busy');
+  dz.textContent = `transcribing ${file.name} (${(file.size/1e6).toFixed(1)} MB)...`;
+  out.textContent = '';
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('response_format', 'json');
+  const t0 = performance.now();
+  fetch('/api/whisper/transcribe', {method: 'POST', body: fd})
+    .then(r => r.text())
+    .then(txt => {
+      const dt = ((performance.now() - t0) / 1000).toFixed(1);
+      let parsed;
+      try { parsed = JSON.parse(txt); } catch { parsed = null; }
+      const transcript = parsed ? (parsed.text || JSON.stringify(parsed, null, 2)) : txt;
+      out.textContent = transcript;
+      dz.classList.remove('busy');
+      dz.innerHTML = `done in ${dt}s — drop another or click to pick<div class="drop-zone-hint">wav / mp3 / m4a / flac</div>`;
+    })
+    .catch(e => {
+      dz.classList.remove('busy');
+      out.textContent = 'error: ' + e.message;
+      dz.innerHTML = `drop audio file here, or click to pick<div class="drop-zone-hint">wav / mp3 / m4a / flac — sent to whisper.cpp on :8787</div>`;
+    });
+}
+
+function refreshVersion() {
+  fetch('/api/version').then(r => r.json()).then(v => {
+    const el = document.getElementById('ver-badge');
+    if (!el) return;
+    const short = (v.version || 'dev').replace('-dirty', '');
+    el.textContent = 'v ' + short;
+    el.className = 'ver-badge';
+    const parts = [`built: ${v.build_time}`, `head: ${v.head || '?'}`, `uptime: ${v.uptime_sec}s`];
+    if (v.behind) {
+      el.classList.add('behind');
+      el.textContent += ' ↑';
+      parts.unshift(`BEHIND — source HEAD is ${v.head}, rebuild with: task dashboard:install`);
+    }
+    if (v.dirty) {
+      el.classList.add('dirty');
+      el.textContent += ' *';
+      parts.unshift('source has uncommitted changes');
+    }
+    el.title = parts.join('\n');
+  }).catch(() => {});
+}
+refreshVersion();
+setInterval(refreshVersion, 30000);
+
 fetch('/api/config')
   .then(r => r.json())
   .then(cfg => {
@@ -504,8 +1397,36 @@ fetch('/api/config')
   })
   .catch(() => {});
 
+// ─── Page tabs ──────────────────────────────────────────────────
+const PAGE_KEY = 'macnode.activePage';
+function switchPage(name) {
+  document.querySelectorAll('.page').forEach(p => {
+    p.hidden = p.dataset.page !== name;
+  });
+  document.querySelectorAll('.page-nav button').forEach(b => {
+    b.classList.toggle('active', b.dataset.page === name);
+  });
+  try { localStorage.setItem(PAGE_KEY, name); } catch {}
+  if (name === 'lab' && document.getElementById('bc-events').classList.contains('active')) {
+    refreshEvents();
+  }
+}
+const _savedPage = (() => { try { return localStorage.getItem(PAGE_KEY); } catch { return null; } })() || 'overview';
+switchPage(_savedPage);
+
 // Start streaming default tab
 connectLogWs('ollama');
+
+// Scratchpad: load + auto-save on input (debounced)
+let scratchTm;
+document.getElementById('scratch').addEventListener('input', () => {
+  clearTimeout(scratchTm);
+  scratchTm = setTimeout(scratchSave, 400);
+});
+scratchLoad();
+
+// Initial events table fetch
+refreshEvents();
 
 connect();
 </script>
