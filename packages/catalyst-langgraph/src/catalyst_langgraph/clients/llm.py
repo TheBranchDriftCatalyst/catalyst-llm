@@ -13,6 +13,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 
+from catalyst_langgraph.clients._heartbeat import heartbeat
 from catalyst_langgraph.prompts import strip_code_fences, strip_think_blocks
 
 logger = logging.getLogger(__name__)
@@ -77,7 +78,8 @@ class LLMClient:
         prompt_chars = sum(len(str(m.content)) for m in messages)
         logger.info("llm.complete: model=%s, prompt_chars=%d", self.model, prompt_chars)
         t0 = time.perf_counter()
-        response = await self._chat_model.ainvoke(messages)
+        async with heartbeat(f"llm.complete {self.model}"):
+            response = await self._chat_model.ainvoke(messages)
         elapsed = time.perf_counter() - t0
         logger.info("llm.complete: done, response_len=%d, duration=%.3fs", len(str(response.content)), elapsed)
         return str(response.content)
@@ -126,7 +128,8 @@ class LLMClient:
             method=self.structured_method,
             include_raw=True,
         )
-        raw_result = await chain.ainvoke(messages)
+        async with heartbeat(f"llm.structured_output {self.model}/{schema.__name__}"):
+            raw_result = await chain.ainvoke(messages)
         elapsed = time.perf_counter() - t0
 
         parsed = raw_result.get("parsed")

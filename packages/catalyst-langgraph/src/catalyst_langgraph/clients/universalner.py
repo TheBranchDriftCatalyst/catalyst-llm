@@ -28,6 +28,7 @@ from typing import Any
 import httpx
 from pydantic import BaseModel
 
+from catalyst_langgraph.clients._heartbeat import heartbeat
 from catalyst_langgraph.clients._retry import retry_llm_call
 from catalyst_langgraph.label_packs import LabelPack, load_generic_label_pack
 
@@ -98,11 +99,12 @@ class UniversalNERClient:
             "messages": messages,
             "options": {"temperature": 0.0},
         }
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.post(url, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            return data["message"]["content"]
+        async with heartbeat(f"universalner.call {self.model}"):
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                resp = await client.post(url, json=payload)
+                resp.raise_for_status()
+                data = resp.json()
+                return data["message"]["content"]
 
     async def _extract_entity_type(self, text: str, entity_type_query: str) -> list[str]:
         """Ask UniNER about one entity type and parse the response."""

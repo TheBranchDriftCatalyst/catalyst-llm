@@ -23,6 +23,7 @@ from typing import Any
 import httpx
 from pydantic import BaseModel
 
+from catalyst_langgraph.clients._heartbeat import heartbeat
 from catalyst_langgraph.clients._retry import retry_llm_call
 from catalyst_langgraph.label_packs import LabelPack, load_generic_label_pack
 
@@ -189,54 +190,55 @@ class NuExtractClient:
         """
         is_ollama = ":11434" in self.base_url
 
-        if is_ollama and self.is_v2:
-            # v2 (Qwen2.5 template) — use /api/chat, template handles wrapping
-            ollama_base = self.base_url.rstrip("/").removesuffix("/v1")
-            url = f"{ollama_base}/api/chat"
-            payload = {
-                "model": self.model,
-                "stream": False,
-                "messages": [{"role": "user", "content": prompt}],
-                "options": {"temperature": 0.0},
-            }
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                resp = await client.post(url, json=payload)
-                resp.raise_for_status()
-                data = resp.json()
-                return data["message"]["content"]
-        elif is_ollama:
-            # v1.5 (Phi-3 template) — use /api/generate with raw mode
-            formatted = f"<|user|>\n{prompt}<|end|>\n<|assistant|>\n"
-            ollama_base = self.base_url.rstrip("/").removesuffix("/v1")
-            url = f"{ollama_base}/api/generate"
-            payload = {
-                "model": self.model,
-                "prompt": formatted,
-                "stream": False,
-                "raw": True,
-                "options": {"temperature": 0.0},
-            }
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                resp = await client.post(url, json=payload)
-                resp.raise_for_status()
-                data = resp.json()
-                return data["response"]
-        else:
-            base = self.base_url.rstrip("/")
-            if not base.endswith("/v1"):
-                base = f"{base}/v1"
-            url = f"{base}/chat/completions"
-            payload = {
-                "model": self.model,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.0,
-                "max_tokens": 4096,
-            }
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                resp = await client.post(url, json=payload)
-                resp.raise_for_status()
-                data = resp.json()
-                return data["choices"][0]["message"]["content"]
+        async with heartbeat(f"nuextract.call {self.model}"):
+            if is_ollama and self.is_v2:
+                # v2 (Qwen2.5 template) — use /api/chat, template handles wrapping
+                ollama_base = self.base_url.rstrip("/").removesuffix("/v1")
+                url = f"{ollama_base}/api/chat"
+                payload = {
+                    "model": self.model,
+                    "stream": False,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "options": {"temperature": 0.0},
+                }
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    resp = await client.post(url, json=payload)
+                    resp.raise_for_status()
+                    data = resp.json()
+                    return data["message"]["content"]
+            elif is_ollama:
+                # v1.5 (Phi-3 template) — use /api/generate with raw mode
+                formatted = f"<|user|>\n{prompt}<|end|>\n<|assistant|>\n"
+                ollama_base = self.base_url.rstrip("/").removesuffix("/v1")
+                url = f"{ollama_base}/api/generate"
+                payload = {
+                    "model": self.model,
+                    "prompt": formatted,
+                    "stream": False,
+                    "raw": True,
+                    "options": {"temperature": 0.0},
+                }
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    resp = await client.post(url, json=payload)
+                    resp.raise_for_status()
+                    data = resp.json()
+                    return data["response"]
+            else:
+                base = self.base_url.rstrip("/")
+                if not base.endswith("/v1"):
+                    base = f"{base}/v1"
+                url = f"{base}/chat/completions"
+                payload = {
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.0,
+                    "max_tokens": 4096,
+                }
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    resp = await client.post(url, json=payload)
+                    resp.raise_for_status()
+                    data = resp.json()
+                    return data["choices"][0]["message"]["content"]
 
     def _parse_nuextract_output(self, raw: str) -> dict:
         """Parse nuextract's output, stripping template markers."""
