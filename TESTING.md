@@ -6,8 +6,8 @@ per-package test contract fits together.
 ## TL;DR
 
 ```bash
-task test:report     # run all unit suites + render reports/index.html
-open reports/index.html
+task test:report     # run all unit suites + render docs/reports/index.html
+open docs/reports/index.html
 ```
 
 Or from Tilt: click the **`test:run`** resource (label group `test`) →
@@ -40,7 +40,7 @@ or fan out from repo root (`task test:unit` runs all packages in parallel).
 ## Unified report (`task test:report`)
 
 ```
-reports/
+docs/reports/
 ├── junit/
 │   ├── catalyst-langgraph.xml   # pytest --junitxml (full suite)
 │   ├── tool-host.xml            # pytest --junitxml (full suite)
@@ -50,7 +50,7 @@ reports/
 
 Each package writes its raw junit XML to its own `.reports/junit.xml`
 (gitignored). The root `test:report` target copies those into
-`reports/junit/` and runs `npx xunit-viewer` to merge them into a single
+`docs/reports/junit/` and runs `npx xunit-viewer` to merge them into a single
 filterable HTML page (~2 MB, fully self-contained — no external assets).
 
 ### Env-aware integration tier
@@ -119,7 +119,7 @@ The Taskfile inherits whatever's in your shell. Run output banner:
 2. Add the package's `test:junit` to root `Taskfile.yaml` → `test:report`:
    ```yaml
    - task: <pkg>:test:junit
-   - cp packages/<pkg>/.reports/junit.xml reports/junit/<pkg>.xml || true
+   - cp packages/<pkg>/.reports/junit.xml docs/reports/junit/<pkg>.xml || true
    ```
 
 3. Keep `test:unit` (with `-m unit`) so the fast tier contract still
@@ -133,8 +133,8 @@ do NOT run on file save):
 | Resource | What it does |
 |---|---|
 | `test:run` | Runs `task test:report` end-to-end (test + collect + render). |
-| `test:render` | Re-renders `reports/index.html` from existing junit XMLs without re-running tests. Watches `reports/junit/`. |
-| `test:serve` | `python3 -m http.server 5180 --directory reports`. Link in Tilt UI opens `http://localhost:5180/index.html`. |
+| `test:render` | Re-renders `docs/reports/index.html` from existing junit XMLs without re-running tests. Watches `docs/reports/junit/`. |
+| `test:serve` | `python3 -m http.server 5180 --directory docs/reports`. Link in Tilt UI opens `http://localhost:5180/index.html`. |
 
 Typical flow:
 1. Click `test:run` once. Watch the log pane for failures.
@@ -158,9 +158,9 @@ These are deliberate Stage-2 deferrals:
 ## Stage 2 — Playwright e2e (planned)
 
 Playwright supports junit XML natively, so it slots into
-`reports/junit/playwright.xml` with no special handling. It also has
+`docs/reports/junit/playwright.xml` with no special handling. It also has
 a first-class HTML reporter with trace viewer + video + screenshots
-that renders to `reports/playwright-html/` for click-through deep dives.
+that renders to `docs/reports/playwright-html/` for click-through deep dives.
 
 Planned wiring:
 
@@ -185,4 +185,4 @@ every file save.
 | `Tiltfile` | The three `test:*` `local_resource` blocks |
 | `packages/*/Taskfile.yaml` | Per-package `test:unit` with junit XML emission |
 | `packages/catalyst-llm-sdk/package.json` | `test:junit` script (vitest with junit reporter) |
-| `.gitignore` | `reports/` + `.reports/` excluded |
+| `.gitignore` | `docs/reports/` + `.reports/` excluded |

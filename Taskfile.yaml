@@ -84,9 +84,9 @@ tasks:
   #
   # Env comes from your shell (load via direnv + .envrc, or `source .envrc`).
   test:report:
-    desc: "Run all tests (unit + integration when env set) and render reports/index.html"
+    desc: "Run all tests (unit + integration when env set) and render docs/reports/index.html"
     cmds:
-      - rm -rf reports/junit && mkdir -p reports/junit
+      - rm -rf docs/reports/junit && mkdir -p docs/reports/junit
       - |
         if [ -n "${LITELLM_API_KEY:-}" ]; then
           echo "✓ LITELLM_API_KEY set — integration tier will run against ${LITELLM_BASE_URL:-<unset>}"
@@ -96,11 +96,11 @@ tasks:
       - task: langgraph:test:junit
       - task: tool-host:test:junit
       - task: sdk:test:unit
-      - cp packages/catalyst-langgraph/.reports/junit.xml reports/junit/catalyst-langgraph.xml || true
-      - cp packages/tool-host/.reports/junit.xml          reports/junit/tool-host.xml          || true
-      - cp packages/catalyst-llm-sdk/.reports/junit.xml   reports/junit/catalyst-llm-sdk.xml   || true
-      - npx --yes xunit-viewer -r reports/junit -o reports/index.html -t "Catalyst LLM — Test Report"
-      - echo "Report -> $(pwd)/reports/index.html"
+      - cp packages/catalyst-langgraph/.reports/junit.xml docs/reports/junit/catalyst-langgraph.xml || true
+      - cp packages/tool-host/.reports/junit.xml          docs/reports/junit/tool-host.xml          || true
+      - cp packages/catalyst-llm-sdk/.reports/junit.xml   docs/reports/junit/catalyst-llm-sdk.xml   || true
+      - npx --yes xunit-viewer -r docs/reports/junit -o docs/reports/index.html -t "Catalyst LLM — Test Report"
+      - echo "Report -> $(pwd)/docs/reports/index.html"
 
   # ─── Repo bootstrap ──────────────────────────────────────────────────
   hooks:install:
