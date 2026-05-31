@@ -91,6 +91,7 @@ type Stats struct {
 type ThermalStats struct {
 	CPUPowerW       float64 `json:"cpu_power_w"`
 	GPUPowerW       float64 `json:"gpu_power_w"`
+	ANEPowerW       float64 `json:"ane_power_w"`
 	PackagePowerW   float64 `json:"package_power_w"`
 	ThermalLevel    int     `json:"thermal_level"`
 	ThermalPressure string  `json:"thermal_pressure"`
@@ -291,23 +292,7 @@ func getThermals() ThermalStats {
 
 	t := ThermalStats{Source: "sysctl"}
 
-	if out, err := exec.Command("sysctl", "-n", "machdep.xcpm.cpu_thermal_level").Output(); err == nil {
-		if n, err := strconv.Atoi(strings.TrimSpace(string(out))); err == nil {
-			t.ThermalLevel = n
-			switch {
-			case n == 0:
-				t.ThermalPressure = "nominal"
-			case n < 50:
-				t.ThermalPressure = "fair"
-			case n < 100:
-				t.ThermalPressure = "serious"
-			default:
-				t.ThermalPressure = "critical"
-			}
-		}
-	}
-
-	cmd := exec.Command("sudo", "-n", "powermetrics", "--samplers", "cpu_power,gpu_power", "-i", "200", "-n", "1", "-f", "plist")
+	cmd := exec.Command("sudo", "-n", "powermetrics", "--samplers", "cpu_power,gpu_power,thermal", "-i", "200", "-n", "1", "-f", "plist")
 	out, err := cmd.Output()
 	if err != nil {
 		t.NeedsSudo = true
@@ -318,19 +303,33 @@ func getThermals() ThermalStats {
 
 	t.Source = "powermetrics"
 	text := string(out)
-	if m := regexp.MustCompile(`<key>cpu_power</key>\s*<real>([\d.]+)</real>`).FindStringSubmatch(text); len(m) > 1 {
-		if v, err := strconv.ParseFloat(m[1], 64); err == nil {
-			t.CPUPowerW = v / 1000.0
+	parseW := func(key string) float64 {
+		// Values are in milliwatts; keys + values are on separate lines.
+		re := regexp.MustCompile(`<key>` + key + `</key>\s*<real>([\d.eE+-]+)</real>`)
+		if m := re.FindStringSubmatch(text); len(m) > 1 {
+			if v, err := strconv.ParseFloat(m[1], 64); err == nil {
+				return v / 1000.0
+			}
 		}
+		return 0
 	}
-	if m := regexp.MustCompile(`<key>gpu_power</key>\s*<real>([\d.]+)</real>`).FindStringSubmatch(text); len(m) > 1 {
-		if v, err := strconv.ParseFloat(m[1], 64); err == nil {
-			t.GPUPowerW = v / 1000.0
-		}
-	}
-	if m := regexp.MustCompile(`<key>package_power</key>\s*<real>([\d.]+)</real>`).FindStringSubmatch(text); len(m) > 1 {
-		if v, err := strconv.ParseFloat(m[1], 64); err == nil {
-			t.PackagePowerW = v / 1000.0
+	t.CPUPowerW = parseW("cpu_power")
+	t.GPUPowerW = parseW("gpu_power")
+	t.ANEPowerW = parseW("ane_power")
+	t.PackagePowerW = parseW("combined_power")
+
+	// Thermal pressure: ships as a string from the `thermal` sampler.
+	if m := regexp.MustCompile(`<key>thermal_pressure</key>\s*<string>([^<]+)</string>`).FindStringSubmatch(text); len(m) > 1 {
+		t.ThermalPressure = strings.ToLower(strings.TrimSpace(m[1]))
+		switch t.ThermalPressure {
+		case "nominal":
+			t.ThermalLevel = 0
+		case "fair", "moderate":
+			t.ThermalLevel = 30
+		case "serious", "heavy":
+			t.ThermalLevel = 70
+		case "critical", "trapping":
+			t.ThermalLevel = 100
 		}
 	}
 
