@@ -46,13 +46,14 @@
     height: 100vh; display: flex; flex-direction: column;
     max-width: 1400px; margin: 0 auto; padding: 2rem 2rem 0;
   }
-  .app-top { flex-shrink: 0; }
+  .app-top { flex-shrink: 0; position: relative; }
   .app-pages {
     flex: 1; min-height: 0; margin-top: 1rem;
     padding-bottom: 1.5rem; position: relative;
   }
-  .page { height: 100%; display: flex; flex-direction: column; gap: 1rem; animation: reveal 0.3s ease both; overflow: hidden; }
+  .page { height: 100%; display: flex; flex-direction: column; gap: 1rem; overflow: hidden; }
   .page[hidden] { display: none; }
+  .page[hidden].leaving { display: flex; }
 
   /* ─── Top nav tabs ────────────────────────────── */
   .page-nav {
@@ -67,13 +68,14 @@
   }
   .page-nav button:hover { color: var(--text); }
   .page-nav button.active {
-    color: var(--accent); background: var(--surface);
+    color: var(--text); background: var(--surface);
     border-bottom: 2px solid var(--accent); margin-bottom: -1px;
   }
   .page-nav button::before {
-    content: attr(data-id); color: var(--accent); font-weight: 700;
+    content: attr(data-id); color: var(--dim); font-weight: 700;
     margin-right: 0.7em; font-family: var(--font-display);
   }
+  .page-nav button.active::before { color: var(--text); }
 
   /* Page-specific layout: fill viewport, internal scroll */
   .page-overview { gap: 0; }
@@ -93,11 +95,7 @@
 
   .page-lab .bottom-panel { flex: 1; display: flex; flex-direction: column; margin-bottom: 0; }
   .page-lab .bottom-content.active { flex: 1; overflow-y: auto; }
-  body::before, body::after {
-    content: ''; position: fixed; width: 20px; height: 20px; pointer-events: none; z-index: 200;
-  }
-  body::before { top: 14px; left: 14px; border-top: 1px solid var(--accent); border-left: 1px solid var(--accent); opacity: 0.5; }
-  body::after  { bottom: 14px; right: 14px; border-bottom: 1px solid var(--accent); border-right: 1px solid var(--accent); opacity: 0.5; }
+  /* body corner brackets removed — replaced by .app frame chrome */
 
   /* ─── Header ──────────────────────────────────── */
   .header {
@@ -105,11 +103,11 @@
     margin-bottom: 1.6rem; padding-bottom: 1rem; border-bottom: 1px solid var(--hairline); position: relative;
   }
   h1 {
-    font-family: var(--font-display); font-size: 2.6rem; font-weight: 400;
-    letter-spacing: 0.04em; color: var(--text); line-height: 1; text-transform: lowercase;
+    font-family: var(--font-display); font-size: 4.2rem; font-weight: 400;
+    letter-spacing: 0.18em; color: var(--text); line-height: 1; text-transform: lowercase;
     text-shadow: 0 0 32px rgba(235,228,210,0.08);
   }
-  h1::before { content: '⌖ '; color: var(--accent); font-family: var(--font-mono); font-size: 0.55em; vertical-align: 0.5em; letter-spacing: 0; }
+  h1::before { content: '⌖ '; color: var(--dim); font-family: var(--font-mono); font-size: 0.55em; vertical-align: 0.5em; letter-spacing: 0; }
   .subtitle {
     color: var(--dim); font-size: 0.65rem; margin-top: 0.6rem;
     letter-spacing: 0.22em; text-transform: uppercase;
@@ -124,21 +122,20 @@
   .ws-status.connected::before {
     content: ''; display: inline-block; width: 6px; height: 6px; background: var(--ok);
     margin-right: 8px; vertical-align: middle; box-shadow: 0 0 8px var(--ok);
-    animation: pulse 2s ease-in-out infinite;
+    animation: heartbeat 3.2s linear infinite;
   }
   .ws-status.disconnected { color: var(--alert); border-color: rgba(232,89,82,0.35); }
   .ws-status.disconnected::before {
     content: ''; display: inline-block; width: 6px; height: 6px; background: var(--alert);
     margin-right: 8px; vertical-align: middle;
   }
-  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
   .ver-badge {
     font-family: var(--font-mono); font-size: 0.55rem; color: var(--faint);
     padding: 3px 9px; border: 1px solid var(--hairline); background: transparent;
     letter-spacing: 0.15em; cursor: help; border-radius: 0; text-transform: uppercase;
   }
   .ver-badge.behind { color: var(--warn); border-color: rgba(240,180,80,0.35); background: rgba(240,180,80,0.05); }
-  .ver-badge.dirty  { color: var(--accent); border-color: rgba(255,120,73,0.35); }
+  .ver-badge.dirty  { color: var(--text);   border-color: var(--border); }
 
   /* ─── Telemetry strip ─────────────────────────── */
   .telemetry-strip {
@@ -160,7 +157,7 @@
     letter-spacing: 0.22em; margin: 2.4rem 0 1rem; font-weight: 400;
   }
   .section-title::before {
-    content: attr(data-id); color: var(--accent); font-weight: 700; letter-spacing: 0.1em; font-family: var(--font-display);
+    content: attr(data-id); color: var(--dim); font-weight: 700; letter-spacing: 0.1em; font-family: var(--font-display);
   }
   .section-title::after {
     content: ''; flex: 1; height: 1px;
@@ -186,12 +183,20 @@
     font-size: 0.55rem; color: var(--faint); text-transform: uppercase;
     letter-spacing: 0.22em; margin-bottom: 0.6rem;
   }
-  .sys-label::before { content: attr(data-id) ' · '; color: var(--accent); font-family: var(--font-display); }
+  .sys-label::before { content: attr(data-id) ' · '; color: var(--dim); font-family: var(--font-display); }
   .sys-value {
-    font-family: var(--font-display); font-size: 2.1rem; font-weight: 400;
+    font-family: var(--font-display); font-size: 3.4rem; font-weight: 400;
     color: var(--text); line-height: 1; letter-spacing: 0.01em;
     text-shadow: 0 0 24px rgba(235,228,210,0.1);
+    font-feature-settings: 'tnum' 1, 'lnum' 1;
+    padding: 0.35rem 0; position: relative;
   }
+  .sys-value::before, .sys-value::after {
+    content: ''; display: block; height: 1px; background: var(--accent);
+    opacity: 0.4; position: absolute; left: 0; right: 0;
+  }
+  .sys-value::before { top: 0; }
+  .sys-value::after  { bottom: 0; }
   .sys-sub { font-size: 0.6rem; color: var(--dim); margin-top: 0.5rem; letter-spacing: 0.1em; text-transform: uppercase; }
   .bar { height: 2px; background: var(--hairline); margin-top: 0.7rem; overflow: hidden; border-radius: 0; }
   .bar-fill { height: 100%; transition: width 0.5s ease, background 0.3s; }
@@ -240,7 +245,7 @@
     width: 8px; height: 8px; display: inline-block; background: var(--faint);
     border-radius: 0; position: relative;
   }
-  .dot.up   { background: var(--ok);    box-shadow: 0 0 8px rgba(130,189,127,0.7); }
+  .dot.up   { background: var(--ok);    box-shadow: 0 0 8px rgba(130,189,127,0.7); animation: heartbeat 3.2s linear infinite; }
   .dot.down { background: var(--alert); }
   .svc-meta { font-size: 0.55rem; color: var(--dim); letter-spacing: 0.12em; text-transform: uppercase; }
   .svc-stat { font-size: 0.6rem; color: var(--dim); margin-top: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; }
@@ -322,8 +327,8 @@
 
   /* Spec-decode badge */
   .spec-badge {
-    font-size: 0.45rem; padding: 1px 5px; background: rgba(255,120,73,0.1);
-    color: var(--accent); margin-left: 0.4rem; border: 1px solid rgba(255,120,73,0.3);
+    font-size: 0.45rem; padding: 1px 5px; background: transparent;
+    color: var(--dim); margin-left: 0.4rem; border: 1px solid var(--hairline);
     letter-spacing: 0.22em; text-transform: uppercase; cursor: help; border-radius: 0;
   }
 
@@ -335,7 +340,7 @@
     opacity: 0; transform: translateY(8px); transition: all 0.2s ease; pointer-events: none;
     z-index: 250; letter-spacing: 0.1em; border-radius: 0; text-transform: uppercase;
   }
-  .toast::before { content: '>>> '; color: var(--accent); font-weight: 700; }
+  .toast::before { content: '>>> '; color: var(--dim); font-weight: 700; }
   .toast.show { opacity: 1; transform: translateY(0); }
   .toast.ok   { border-color: rgba(130,189,127,0.45); color: var(--ok); }
   .toast.err  { border-color: rgba(232,89,82,0.45);  color: var(--alert); }
@@ -398,7 +403,7 @@
     padding: 1rem 1.4rem; border-bottom: 1px solid var(--border); background: var(--bg-elev);
   }
   .drawer-title { font-size: 0.85rem; color: var(--text); word-break: break-all; letter-spacing: 0.04em; }
-  .drawer-title::before { content: '⌖ '; color: var(--accent); }
+  .drawer-title::before { content: '⌖ '; color: var(--dim); }
   .drawer-close {
     background: transparent; border: 1px solid var(--hairline); color: var(--dim);
     padding: 4px 12px; cursor: pointer; font-size: 0.55rem;
@@ -412,7 +417,7 @@
     letter-spacing: 0.25em; margin-bottom: 0.7rem; font-weight: 400;
     border-bottom: 1px dashed var(--hairline); padding-bottom: 0.4rem;
   }
-  .drawer-section h4::before { content: '└─ '; color: var(--accent); font-weight: 700; }
+  .drawer-section h4::before { content: '└─ '; color: var(--dim); font-weight: 700; }
   .drawer-section pre {
     background: var(--bg); border: 1px solid var(--hairline); padding: 0.8rem;
     font-size: 0.65rem; line-height: 1.55; overflow-x: auto;
@@ -507,7 +512,7 @@
   .transcript:empty { display: none; }
   .transcript::before {
     content: '└─ TRANSCRIPT ─────────────────────';
-    display: block; font-size: 0.5rem; color: var(--accent);
+    display: block; font-size: 0.5rem; color: var(--dim);
     letter-spacing: 0.25em; margin-bottom: 0.6rem; font-weight: 700;
   }
 
@@ -517,26 +522,267 @@
   ::-webkit-scrollbar-thumb { background: var(--border); border: 1px solid var(--bg); }
   ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 
-  /* ─── Reveal animation ───────────────────────── */
-  @keyframes reveal { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-  .header, .telemetry-strip, .sys-grid, .sparkline-row, .svc-grid, .log-panel, .two-col, .bottom-panel, .section-title {
-    animation: reveal 0.4s ease both;
+  /* ─── Motion keyframes (Group A) ─────────────── */
+  /* page reveal kept only for first paint of .page on switch */
+  @keyframes reveal { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+  /* (cull) instrument panels appear already on — no stagger cascade */
+
+  /* flash on large delta */
+  @keyframes flash {
+    0%   { color: var(--accent); text-shadow: 0 0 18px var(--accent); }
+    100% { color: var(--text);   text-shadow: 0 0 24px rgba(235,228,210,0.1); }
   }
-  .telemetry-strip { animation-delay: 0.05s; }
-  .sys-grid        { animation-delay: 0.10s; }
-  .sparkline-row   { animation-delay: 0.18s; }
-  .section-title   { animation-delay: 0.22s; }
-  .svc-grid        { animation-delay: 0.26s; }
-  .log-panel       { animation-delay: 0.32s; }
-  .two-col         { animation-delay: 0.38s; }
-  .bottom-panel    { animation-delay: 0.44s; }
+  .flash-delta { animation: flash 700ms cubic-bezier(.22,1,.36,1) both; }
+
+  /* heartbeat (replaces pulse on .ws-status.connected::before AND .dot.up) */
+  @keyframes heartbeat {
+    0%,40%,100% { opacity: 1; transform: scale(1); }
+    45% { opacity: .6; transform: scale(1.35); }
+    50% { opacity: 1; transform: scale(1); }
+    55% { opacity: .8; transform: scale(1.18); }
+    60% { opacity: 1; transform: scale(1); }
+  }
+
+  /* idle breathing on big numerics */
+  @keyframes breathe { 50% { opacity: .92; } }
+  .sys-value { animation: breathe 6s ease-in-out infinite; }
+
+  /* skeleton shimmer for drawer body */
+  .skeleton {
+    background: linear-gradient(90deg, var(--surface) 0%, var(--surface-2) 50%, var(--surface) 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s linear infinite;
+    height: 0.85rem; margin: 0.55rem 0; display: block;
+  }
+  @keyframes shimmer {
+    from { background-position: 200% 0; }
+    to   { background-position: -200% 0; }
+  }
+  .drawer-section { animation: reveal .35s cubic-bezier(.22,1,.36,1) both; animation-delay: calc(var(--i, 0) * 50ms); }
+
+  /* FLIP cascade + eject */
+  .running-item { transition: transform .32s cubic-bezier(.22,1,.36,1); }
+  .running-item.flip-move { transition: transform .32s cubic-bezier(.22,1,.36,1); }
+  .running-item.ejecting { animation: eject 240ms cubic-bezier(.55,0,.78,0) forwards; }
+  @keyframes eject {
+    to { transform: translateX(40px); opacity: 0; filter: blur(2px); }
+  }
+
+  /* Page tab scan-line wipe */
+  @keyframes wipe-out { to { clip-path: inset(0 0 100% 0); opacity: .4; } }
+  @keyframes wipe-in  { from { clip-path: inset(0 0 100% 0); transform: translateY(4px); } }
+  .page.leaving   { animation: wipe-out 180ms cubic-bezier(.4,0,1,1) forwards; }
+  .page.entering  { animation: wipe-in 220ms cubic-bezier(0,0,.2,1) both; }
+
+  /* Frame chrome (Group B, item 12) */
+  .app {
+    border: 1px solid var(--border);
+    position: relative;
+  }
+  .frame-screw {
+    position: absolute; width: 9px; height: 9px; pointer-events: none; z-index: 5;
+    color: var(--border);
+  }
+  .frame-screw.tl { top: 8px;    left: 8px; }
+  .frame-screw.tr { top: 8px;    right: 8px; }
+  .frame-screw.bl { bottom: 8px; left: 8px; }
+  .frame-screw.br { bottom: 8px; right: 8px; }
+  .frame-silkscreen {
+    position: absolute; bottom: 4px; right: 22px;
+    font-family: var(--font-mono); font-size: 0.45rem;
+    color: var(--faint); letter-spacing: 0.15em; text-transform: uppercase;
+    pointer-events: none; z-index: 5;
+  }
+
+  /* LED lever tab indicators (item 11) */
+  .page-nav button {
+    background: var(--bg-elev);
+    box-shadow: inset 0 1px 0 rgba(0,0,0,0.5);
+  }
+  .page-nav button::after {
+    content: ''; position: absolute; top: 0; left: 14px; right: 14px;
+    height: 4px; background: var(--faint); transition: background .15s, box-shadow .15s;
+  }
+  .page-nav button.active::after {
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent), 0 0 12px rgba(255,120,73,0.4);
+  }
+  .page-nav button:active { transform: translateY(1px); transition: transform 40ms; }
+
+  /* Focus ring (item 24) */
+  :focus { outline: none; }
+  :focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+
+  /* Live region (sr-only) */
+  .sr-only {
+    position: absolute !important; left: -9999px !important; width: 1px !important;
+    height: 1px !important; overflow: hidden !important; clip: rect(0,0,0,0) !important;
+  }
+
+  /* Reconnect banner (item 20) */
+  #ws-banner {
+    position: absolute; top: 0; left: 0; right: 0;
+    padding: 6px 14px; background: var(--alert); color: var(--bg);
+    font-size: 0.6rem; letter-spacing: 0.22em; text-transform: uppercase;
+    font-family: var(--font-mono); font-weight: 700;
+    transform: translateY(-100%); transition: transform .28s cubic-bezier(.22,1,.36,1);
+    z-index: 50; text-align: center;
+  }
+  #ws-banner.show { transform: translateY(0); }
+  #ws-banner.restored { background: var(--ok); }
+
+  /* Toast stack (item 21) */
+  #toast-stack {
+    position: fixed; bottom: 28px; right: 28px;
+    display: flex; flex-direction: column-reverse; gap: 8px;
+    z-index: 250; pointer-events: none;
+  }
+  #toast-stack .toast {
+    position: relative; bottom: auto; right: auto;
+    pointer-events: auto;
+  }
+  .toast .drain {
+    position: absolute; left: 0; bottom: 0; height: 2px;
+    background: var(--alert); animation: drain 9s linear forwards;
+  }
+  @keyframes drain { from { width: 100%; } to { width: 0; } }
+
+  /* Status peripheral bar (item 22) */
+  #statusbar {
+    flex-shrink: 0; padding: 5px 14px; background: var(--bg-elev);
+    border-top: 1px solid var(--hairline);
+    font-size: 0.5rem; color: var(--faint);
+    letter-spacing: 0.18em; text-transform: uppercase;
+    display: flex; gap: 1.5em; white-space: nowrap; overflow: hidden;
+  }
+  #statusbar .sb-item { color: var(--dim); }
+  #statusbar .sb-item strong { color: var(--text); font-weight: 400; }
+
+  /* Models filter (item 18) */
+  #model-filter {
+    width: 100%; background: var(--bg); border: 1px solid var(--hairline);
+    color: var(--text); font-family: var(--font-mono); font-size: 0.7rem;
+    padding: 6px 10px; margin-bottom: 0.6rem; border-radius: 0;
+    letter-spacing: 0.04em;
+  }
+  #model-filter:focus { border-color: var(--dim); }
+
+  /* Family hairline in catalog (item 19) */
+  .family-hairline {
+    margin: 0.7rem 0 0.3rem; padding-top: 0.4rem;
+    border-top: 1px solid var(--hairline);
+    font-family: var(--font-display); font-size: 0.5rem;
+    color: var(--faint); letter-spacing: 0.22em; text-transform: uppercase;
+  }
+  .family-hairline:first-child { border-top: none; padding-top: 0; margin-top: 0; }
+
+  /* Stacked CPU/GPU/ANE power bar (item 13) */
+  .power-bar {
+    display: flex; height: 6px; margin-top: 0.6rem; background: var(--hairline);
+    overflow: hidden;
+  }
+  .power-bar .seg { transition: width .4s cubic-bezier(.22,1,.36,1); }
+  .power-bar .seg.cpu { background: var(--text); }
+  .power-bar .seg.gpu { background: var(--dim); }
+  .power-bar .seg.ane { background: var(--accent); }
+  .power-legend {
+    display: flex; justify-content: space-between; font-size: 0.45rem;
+    color: var(--faint); margin-top: 0.35rem; letter-spacing: 0.12em;
+    text-transform: uppercase; font-family: var(--font-mono);
+  }
+  .power-legend .lg-cpu { color: var(--text); }
+  .power-legend .lg-gpu { color: var(--dim); }
+  .power-legend .lg-ane { color: var(--accent); }
+
+  /* Inline unicode sparkline glyphs (item 14) */
+  .tk-glyph {
+    color: var(--dim); font-family: var(--font-mono); font-size: 0.7rem;
+    letter-spacing: 0; margin-left: 0.3em;
+  }
+
+  /* Calibration ticks under sparklines (item 15) — styled inline via SVG */
+  .sparkline { height: 48px; }
+
+  /* Duration dot-plot (item 16) */
+  #duration-plot-wrap {
+    margin-bottom: 0.8rem; padding: 0.6rem 0.8rem;
+    background: var(--bg-elev); border: 1px solid var(--hairline);
+  }
+  #duration-plot-title {
+    font-size: 0.5rem; color: var(--faint); letter-spacing: 0.22em;
+    text-transform: uppercase; margin-bottom: 0.4rem;
+  }
+  #duration-plot { width: 100%; height: 60px; display: block; }
+
+  /* Dense services table (item 17) */
+  .svc-grid.dense {
+    display: block; border: 1px solid var(--hairline); background: var(--surface);
+  }
+  .svc-grid.dense .svc {
+    display: grid; grid-template-columns: auto 1fr auto auto auto auto auto;
+    gap: 0.7em; align-items: center;
+    padding: 6px 14px; border: none;
+    border-bottom: 1px solid var(--hairline);
+    background: transparent;
+    font-size: 0.65rem;
+  }
+  .svc-grid.dense .svc:last-child { border-bottom: none; }
+  .svc-grid.dense .svc-name {
+    font-size: 0.65rem; letter-spacing: 0.16em; font-weight: 700;
+  }
+  .svc-grid.dense .svc-port {
+    font-size: 0.55rem; color: var(--dim); letter-spacing: 0.1em;
+    font-family: var(--font-mono);
+  }
+  .svc-grid.dense .svc-pid {
+    margin-right: 0; font-family: var(--font-mono);
+  }
+  .svc-grid.dense .svc-loginfo {
+    font-size: 0.55rem; color: var(--dim); font-family: var(--font-mono);
+    letter-spacing: 0.05em;
+  }
+  .svc-grid.dense .svc-loginfo b { color: var(--text); font-weight: 400; }
+  .svc-grid.dense .svc-actions {
+    display: flex; gap: 0.3em;
+  }
+  .svc-grid.dense .svc-actions button,
+  .svc-grid.dense .svc-actions a {
+    font-size: 0.5rem; padding: 2px 8px; background: transparent;
+    border: 1px solid var(--hairline); color: var(--dim);
+    letter-spacing: 0.2em; text-transform: uppercase;
+    font-family: var(--font-mono); cursor: pointer; text-decoration: none;
+    border-radius: 0;
+  }
+  .svc-grid.dense .svc-actions button:hover,
+  .svc-grid.dense .svc-actions a:hover { color: var(--text); border-color: var(--dim); }
+  .svc-grid.dense .svc-actions .svc-restart { color: var(--alert); border-color: rgba(232,89,82,0.3); }
+  .svc-grid.dense .svc-actions .svc-restart:hover { background: rgba(232,89,82,0.1); }
+  .svc-grid.dense .svc-actions .svc-toggle.stop  { color: var(--warn); border-color: rgba(240,180,80,0.3); }
+  .svc-grid.dense .svc-actions .svc-toggle.start { color: var(--ok);   border-color: rgba(130,189,127,0.3); }
+
+  /* Sound toggle button */
+  #snd-btn {
+    font-family: var(--font-mono); font-size: 0.55rem; color: var(--faint);
+    padding: 3px 9px; border: 1px solid var(--hairline); background: transparent;
+    letter-spacing: 0.18em; cursor: pointer; border-radius: 0;
+    text-transform: uppercase;
+  }
+  #snd-btn:hover { color: var(--text); border-color: var(--dim); }
 </style>
 </head>
 <body>
 
 <div class="app">
 
+<!-- frame chrome (item 12) -->
+<svg class="frame-screw tl" viewBox="0 0 10 10" aria-hidden="true"><circle cx="5" cy="5" r="4" fill="none" stroke="currentColor" stroke-width="1"/><line x1="2" y1="2" x2="8" y2="8" stroke="currentColor" stroke-width="1"/></svg>
+<svg class="frame-screw tr" viewBox="0 0 10 10" aria-hidden="true"><circle cx="5" cy="5" r="4" fill="none" stroke="currentColor" stroke-width="1"/><line x1="2" y1="2" x2="8" y2="8" stroke="currentColor" stroke-width="1"/></svg>
+<svg class="frame-screw bl" viewBox="0 0 10 10" aria-hidden="true"><circle cx="5" cy="5" r="4" fill="none" stroke="currentColor" stroke-width="1"/><line x1="2" y1="2" x2="8" y2="8" stroke="currentColor" stroke-width="1"/></svg>
+<svg class="frame-screw br" viewBox="0 0 10 10" aria-hidden="true"><circle cx="5" cy="5" r="4" fill="none" stroke="currentColor" stroke-width="1"/><line x1="2" y1="2" x2="8" y2="8" stroke="currentColor" stroke-width="1"/></svg>
+<div class="frame-silkscreen">MAC-NODE / SN A001 / REV 0.4 / SHIP DARWIN-25</div>
+
 <header class="app-top">
+<div id="ws-banner"><span id="ws-banner-text">LINK LOST</span></div>
 <div class="header">
   <div>
     <h1>mac · node</h1>
@@ -545,14 +791,15 @@
   <div class="header-right">
     <span class="ws-status disconnected" id="ws-badge">offline</span>
     <span class="ver-badge" id="ver-badge" title="">v --</span>
+    <button id="snd-btn" onclick="toggleSound()" title="Toggle sound effects" aria-pressed="false">snd: off</button>
   </div>
 </div>
 
 <div class="telemetry-strip">
-  <div class="tk"><span class="tk-label">LOAD</span><span class="tk-val" id="tk-load">--</span></div>
-  <div class="tk"><span class="tk-label">MEM</span><span class="tk-val" id="tk-mem">--</span></div>
-  <div class="tk"><span class="tk-label">VRAM</span><span class="tk-val" id="tk-vram">--</span></div>
-  <div class="tk"><span class="tk-label">PWR</span><span class="tk-val" id="tk-pwr">--</span></div>
+  <div class="tk"><span class="tk-label">LOAD</span><span class="tk-val" id="tk-load">--</span><span class="tk-glyph" id="tk-load-g"></span></div>
+  <div class="tk"><span class="tk-label">MEM</span><span class="tk-val" id="tk-mem">--</span><span class="tk-glyph" id="tk-mem-g"></span></div>
+  <div class="tk"><span class="tk-label">VRAM</span><span class="tk-val" id="tk-vram">--</span><span class="tk-glyph" id="tk-vram-g"></span></div>
+  <div class="tk"><span class="tk-label">PWR</span><span class="tk-val" id="tk-pwr">--</span><span class="tk-glyph" id="tk-pwr-g"></span></div>
   <div class="tk"><span class="tk-label">EVTS</span><span class="tk-val" id="tk-evts">--</span></div>
   <div class="tk"><span class="tk-label">UTC</span><span class="tk-val" id="tk-utc">--:--:--</span></div>
 </div>
@@ -584,8 +831,21 @@
   </div>
   <div class="sys-card">
     <div class="sys-label" data-id="03">thermals</div>
-    <div class="sys-value" id="therm-val" style="font-size:1.6rem">--</div>
-    <div class="therm-line"><span id="therm-power">--</span><span class="therm-pressure nominal" id="therm-pressure">--</span></div>
+    <div class="sys-value" id="therm-val" style="font-size:2.4rem">--</div>
+    <div class="power-bar" id="therm-power-bar">
+      <div class="seg cpu" style="width:0%"></div>
+      <div class="seg gpu" style="width:0%"></div>
+      <div class="seg ane" style="width:0%"></div>
+    </div>
+    <div class="power-legend">
+      <span class="lg-cpu" id="lg-cpu">cpu 0w</span>
+      <span class="lg-gpu" id="lg-gpu">gpu 0w</span>
+      <span class="lg-ane" id="lg-ane">ane 0w</span>
+    </div>
+    <div class="therm-line" style="margin-top:0.4rem">
+      <span id="therm-power" style="display:none"></span>
+      <span class="therm-pressure nominal" id="therm-pressure">--</span>
+    </div>
   </div>
   <div class="sys-card">
     <div class="sys-label" data-id="04">uptime</div>
@@ -611,24 +871,33 @@
 </section>
 
 <section class="page page-services" data-page="services" hidden>
-<div class="svc-grid">
+<div class="svc-grid dense">
   <div class="svc" id="svc-ollama">
-    <div class="svc-header"><span class="svc-name">Ollama</span><span class="dot" id="dot-ollama"></span></div>
-    <div class="svc-meta">:11434 &mdash; Metal inference</div>
-    <div class="svc-stat">Models: <span id="ollama-count">--</span> &middot; Log: <span id="ollama-log">--</span></div>
-    <div class="svc-footer"><span class="svc-pid" id="pid-ollama"></span><a href="http://localhost:11434" target="_blank">API</a> <button class="svc-restart" onclick="restartSvc('ollama',this)">restart</button><button class="svc-toggle stop" id="toggle-ollama" onclick="toggleSvc('ollama',this)">stop</button></div>
+    <span class="dot" id="dot-ollama"></span>
+    <span class="svc-name">Ollama</span>
+    <span class="svc-port">:11434</span>
+    <span class="svc-pid" id="pid-ollama"></span>
+    <span class="svc-loginfo">log:<b id="ollama-log">--</b></span>
+    <span class="svc-loginfo">models:<b id="ollama-count">--</b></span>
+    <span class="svc-actions"><a href="http://localhost:11434" target="_blank">API</a><button class="svc-restart" onclick="restartSvc('ollama',this)">restart</button><button class="svc-toggle stop" id="toggle-ollama" onclick="toggleSvc('ollama',this)">stop</button></span>
   </div>
   <div class="svc" id="svc-webui">
-    <div class="svc-header"><span class="svc-name">Open WebUI</span><span class="dot" id="dot-webui"></span></div>
-    <div class="svc-meta">:3000 &mdash; Chat + Model browser</div>
-    <div class="svc-stat">Log: <span id="webui-log">--</span></div>
-    <div class="svc-footer"><span class="svc-pid" id="pid-webui"></span><a href="http://localhost:3000" target="_blank">Open UI</a> <button class="svc-restart" onclick="restartSvc('webui',this)">restart</button><button class="svc-toggle stop" id="toggle-webui" onclick="toggleSvc('webui',this)">stop</button></div>
+    <span class="dot" id="dot-webui"></span>
+    <span class="svc-name">Open WebUI</span>
+    <span class="svc-port">:3000</span>
+    <span class="svc-pid" id="pid-webui"></span>
+    <span class="svc-loginfo">log:<b id="webui-log">--</b></span>
+    <span class="svc-loginfo"></span>
+    <span class="svc-actions"><a href="http://localhost:3000" target="_blank">Open</a><button class="svc-restart" onclick="restartSvc('webui',this)">restart</button><button class="svc-toggle stop" id="toggle-webui" onclick="toggleSvc('webui',this)">stop</button></span>
   </div>
   <div class="svc" id="svc-whisper">
-    <div class="svc-header"><span class="svc-name">Whisper</span><span class="dot" id="dot-whisper"></span></div>
-    <div class="svc-meta">:8787 &mdash; whisper.cpp + diarize</div>
-    <div class="svc-stat">Log: <span id="whisper-log">--</span></div>
-    <div class="svc-footer"><span class="svc-pid" id="pid-whisper"></span><a href="http://localhost:8787" target="_blank">API</a> <button class="svc-restart" onclick="restartSvc('whisper',this)">restart</button><button class="svc-toggle stop" id="toggle-whisper" onclick="toggleSvc('whisper',this)">stop</button></div>
+    <span class="dot" id="dot-whisper"></span>
+    <span class="svc-name">Whisper</span>
+    <span class="svc-port">:8787</span>
+    <span class="svc-pid" id="pid-whisper"></span>
+    <span class="svc-loginfo">log:<b id="whisper-log">--</b></span>
+    <span class="svc-loginfo"></span>
+    <span class="svc-actions"><a href="http://localhost:8787" target="_blank">API</a><button class="svc-restart" onclick="restartSvc('whisper',this)">restart</button><button class="svc-toggle stop" id="toggle-whisper" onclick="toggleSvc('whisper',this)">stop</button></span>
   </div>
   <!-- vLLM instances populated from /api/config -->
   <div id="vllm-cards"></div>
@@ -665,6 +934,7 @@
   </div>
   <div class="panel">
     <div class="panel-title">catalog <span id="total-models">0</span></div>
+    <input id="model-filter" placeholder="filter — substring, loaded:, >NGB, family:qwen" autocomplete="off" spellcheck="false">
     <div class="model-list" id="model-list"><span class="empty">scanning…</span></div>
   </div>
 </div>
@@ -679,6 +949,10 @@
     <button class="bottom-tab" data-tab="whisper" onclick="switchBottom('whisper',this)">whisper</button>
   </div>
   <div class="bottom-content active" id="bc-events">
+    <div id="duration-plot-wrap">
+      <div id="duration-plot-title">load duration · log scale (ms) · last hour</div>
+      <svg id="duration-plot" viewBox="0 0 600 60" preserveAspectRatio="none"></svg>
+    </div>
     <table class="events-table" id="events-table">
       <thead><tr><th>Time</th><th>Src</th><th>Action</th><th>Model</th><th style="text-align:right">Duration</th></tr></thead>
       <tbody id="events-body"><tr><td colspan="5" class="empty">no events yet</td></tr></tbody>
@@ -706,7 +980,16 @@
 </section>
 
 </main>
+
+<div id="statusbar" aria-live="polite">
+  <span class="sb-item">ws: <strong id="sb-ws">offline</strong></span>
+  <span class="sb-item" id="sb-filter-wrap" style="display:none">filter: <strong id="sb-filter"></strong></span>
+  <span class="sb-item" style="margin-left:auto">last: <strong id="sb-actions">--</strong></span>
+</div>
 </div><!-- /.app -->
+
+<div id="toast-stack"></div>
+<div id="sr-live" aria-live="polite" class="sr-only"></div>
 
 <div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer()"></div>
 <aside class="drawer" id="drawer">
@@ -723,23 +1006,87 @@ let ws;
 let modelListCache = null;
 const sparkSeries = { mem: [], vram: [], pkg: [] };
 const SPARK_MAX = 150;
+// Series for inline unicode glyphs (item 14)
+const glyphSeries = { load: [], mem: [], vram: [], pwr: [] };
+const GLYPH_MAX = 12;
 
 function barColor(pct) {
   return pct > 90 ? 'var(--red)' : pct > 70 ? 'var(--yellow)' : 'var(--green)';
 }
 
+// ─── Tween + flash helper (item 1) ──────────────────────────────
+function easeInOut(t) { return t<.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2; }
+const numFmtCache = new WeakMap();
+function tween(el, from, to, dur, fmt) {
+  if (!el) return;
+  if (el._tween) cancelAnimationFrame(el._tween);
+  const start = performance.now();
+  fmt = fmt || (v => v.toFixed(2));
+  const step = (now) => {
+    const t = Math.min(1, (now - start) / dur);
+    const v = from + (to - from) * easeInOut(t);
+    el.textContent = fmt(v);
+    if (t < 1) el._tween = requestAnimationFrame(step);
+    else el._tween = null;
+  };
+  el._tween = requestAnimationFrame(step);
+}
+function flashIfBigDelta(el, from, to, range) {
+  if (!el || !isFinite(from) || !isFinite(to)) return;
+  if (range <= 0) return;
+  if (Math.abs(to - from) / range > 0.15) {
+    el.classList.remove('flash-delta');
+    void el.offsetWidth;
+    el.classList.add('flash-delta');
+  }
+}
+// Number-aware text update; if old/new can be parsed as numbers, tween, else just set.
+function setNumText(el, newText, parser, fmt, range) {
+  if (!el) return;
+  const oldText = el.textContent;
+  const oldN = parser(oldText);
+  const newN = parser(newText);
+  if (isFinite(oldN) && isFinite(newN) && Math.abs(newN - oldN) > 1e-6) {
+    flashIfBigDelta(el, oldN, newN, range);
+    tween(el, oldN, newN, 600, fmt);
+  } else {
+    el.textContent = newText;
+  }
+}
+function parseLeadingNum(s) {
+  if (!s) return NaN;
+  const m = String(s).match(/-?\d+(\.\d+)?/);
+  return m ? parseFloat(m[0]) : NaN;
+}
+
+// ─── Glyph sparkline (item 14) ───────────────────────────────────
+const GLYPHS = '▁▂▃▄▅▆▇█';
+function pushGlyph(key, v) {
+  glyphSeries[key].push(v);
+  if (glyphSeries[key].length > GLYPH_MAX) glyphSeries[key].shift();
+}
+function renderGlyph(key) {
+  const data = glyphSeries[key];
+  if (!data.length) return '';
+  const max = Math.max(...data, 0.001), min = Math.min(...data, 0);
+  const range = max - min || 1;
+  return data.map(v => {
+    const idx = Math.min(GLYPHS.length - 1, Math.max(0, Math.round(((v - min) / range) * (GLYPHS.length - 1))));
+    return GLYPHS[idx];
+  }).join('');
+}
+
 function update(s) {
   // Memory
-  const mp = s.memory.percent.toFixed(0);
-  document.getElementById('mem-val').textContent = mp + '%';
+  setNumText(document.getElementById('mem-val'), s.memory.percent.toFixed(0) + '%', parseLeadingNum, v => v.toFixed(0) + '%', 100);
   document.getElementById('mem-sub').textContent = `${s.memory.used_gb.toFixed(1)} / ${s.memory.total_gb.toFixed(0)} GB`;
   const mb = document.getElementById('mem-bar');
-  mb.style.width = mp + '%';
+  mb.style.width = s.memory.percent.toFixed(0) + '%';
   mb.style.background = barColor(s.memory.percent);
 
   // CPU
   const cpuPct = Math.min(100, s.cpu.load_1m / s.cpu.cores * 100);
-  document.getElementById('cpu-val').textContent = s.cpu.load_1m.toFixed(2);
+  setNumText(document.getElementById('cpu-val'), s.cpu.load_1m.toFixed(2), parseLeadingNum, v => v.toFixed(2), Math.max(1, s.cpu.cores));
   document.getElementById('cpu-sub').textContent = `${s.cpu.cores} cores \u00b7 ${cpuPct.toFixed(0)}%`;
   const cb = document.getElementById('cpu-bar');
   cb.style.width = cpuPct + '%';
@@ -748,17 +1095,26 @@ function update(s) {
   // Thermals
   const th = s.thermals || {};
   const tEl = document.getElementById('therm-val');
-  const tPow = document.getElementById('therm-power');
   const tPres = document.getElementById('therm-pressure');
-  if (th.source === 'powermetrics' && (th.package_power_w || th.cpu_power_w || th.gpu_power_w)) {
-    const total = th.package_power_w || (th.cpu_power_w + th.gpu_power_w);
-    tEl.textContent = total.toFixed(1) + ' W';
-    tPow.textContent = `CPU ${th.cpu_power_w.toFixed(1)}W · GPU ${th.gpu_power_w.toFixed(1)}W`;
+  const cpuW = th.cpu_power_w || 0, gpuW = th.gpu_power_w || 0, aneW = th.ane_power_w || 0;
+  const totalThermalW = th.package_power_w || (cpuW + gpuW + aneW);
+  if (th.source === 'powermetrics' && (totalThermalW > 0)) {
+    setNumText(tEl, totalThermalW.toFixed(1) + ' W', parseLeadingNum, v => v.toFixed(1) + ' W', 50);
   } else {
     tEl.textContent = th.needs_sudo ? 'sudo needed' : (th.thermal_pressure || '--');
-    tPow.textContent = th.needs_sudo ? 'see below' : '';
     if (th.needs_sudo) tEl.title = 'Add to sudoers for power data:\n%admin ALL=(root) NOPASSWD: /usr/bin/powermetrics';
   }
+  // Stacked CPU/GPU/ANE power bar (item 13)
+  const denom = totalThermalW || 1;
+  const segCpu = document.querySelector('#therm-power-bar .seg.cpu');
+  const segGpu = document.querySelector('#therm-power-bar .seg.gpu');
+  const segAne = document.querySelector('#therm-power-bar .seg.ane');
+  if (segCpu) segCpu.style.width = (cpuW / denom * 100).toFixed(1) + '%';
+  if (segGpu) segGpu.style.width = (gpuW / denom * 100).toFixed(1) + '%';
+  if (segAne) segAne.style.width = (aneW / denom * 100).toFixed(1) + '%';
+  const lgC = document.getElementById('lg-cpu'); if (lgC) lgC.textContent = `cpu ${cpuW.toFixed(1)}w`;
+  const lgG = document.getElementById('lg-gpu'); if (lgG) lgG.textContent = `gpu ${gpuW.toFixed(1)}w`;
+  const lgA = document.getElementById('lg-ane'); if (lgA) lgA.textContent = `ane ${aneW.toFixed(1)}w`;
   tPres.textContent = th.thermal_pressure || '--';
   tPres.className = 'therm-pressure ' + (th.thermal_pressure || 'nominal');
 
@@ -775,14 +1131,22 @@ function update(s) {
   // Uptime
   document.getElementById('uptime-val').textContent = s.uptime;
 
-  // Telemetry strip
+  // Telemetry strip (item 14: tween + glyph)
   const tkVram = (s.running_models || []).reduce((a, m) => a + (m.vram_gb || 0), 0);
   const tkTh = s.thermals || {};
   const totalW = tkTh.package_power_w || ((tkTh.cpu_power_w || 0) + (tkTh.gpu_power_w || 0)) || 0;
-  setTk('tk-load', s.cpu.load_1m.toFixed(2));
-  setTk('tk-mem',  s.memory.percent.toFixed(0) + '%');
-  setTk('tk-vram', tkVram.toFixed(1) + 'g');
-  setTk('tk-pwr',  totalW > 0 ? totalW.toFixed(1) + 'w' : '—');
+  pushGlyph('load', s.cpu.load_1m);
+  pushGlyph('mem',  s.memory.percent);
+  pushGlyph('vram', tkVram);
+  pushGlyph('pwr',  totalW);
+  setNumText(document.getElementById('tk-load'), s.cpu.load_1m.toFixed(2), parseLeadingNum, v => v.toFixed(2), Math.max(1, s.cpu.cores));
+  setNumText(document.getElementById('tk-mem'),  s.memory.percent.toFixed(0) + '%', parseLeadingNum, v => v.toFixed(0) + '%', 100);
+  setNumText(document.getElementById('tk-vram'), tkVram.toFixed(1) + 'g', parseLeadingNum, v => v.toFixed(1) + 'g', Math.max(1, tkVram + 1));
+  setNumText(document.getElementById('tk-pwr'),  totalW > 0 ? totalW.toFixed(1) + 'w' : '—', parseLeadingNum, v => v.toFixed(1) + 'w', 50);
+  const g1 = document.getElementById('tk-load-g'); if (g1) g1.textContent = renderGlyph('load');
+  const g2 = document.getElementById('tk-mem-g');  if (g2) g2.textContent = renderGlyph('mem');
+  const g3 = document.getElementById('tk-vram-g'); if (g3) g3.textContent = renderGlyph('vram');
+  const g4 = document.getElementById('tk-pwr-g');  if (g4) g4.textContent = renderGlyph('pwr');
 
   // Subtitle
   document.getElementById('subtitle').textContent =
@@ -814,15 +1178,21 @@ function update(s) {
     if (el) el.textContent = 'pid ' + pid;
   }
 
-  // Running models
+  // Running models (item 2: FLIP cascade)
   const rEl = document.getElementById('running-models');
   const running = s.running_models || [];
+  window._lastRunning = running;
   const runSet = new Set(running.map(m => m.name));
+  // Snapshot rects by model name before re-render
+  const prevRects = {};
+  rEl.querySelectorAll('.running-item[data-model]').forEach(el => {
+    prevRects[el.dataset.model] = el.getBoundingClientRect();
+  });
   if (!running.length) {
     rEl.innerHTML = '<span class="empty">no models in memory</span>';
   } else {
     rEl.innerHTML = running.map(m =>
-      `<div class="running-item">
+      `<div class="running-item" data-model="${escAttr(m.name)}">
          <span class="running-name" title="${escAttr(m.name)}" style="cursor:pointer" onclick="openDrawer('${escAttr(m.name)}')">${esc(m.name)}</span>
          <div class="model-actions">
            <span class="running-vram">${m.vram_gb.toFixed(1)} GB</span>
@@ -830,6 +1200,22 @@ function update(s) {
          </div>
        </div>`
     ).join('');
+    // FLIP: animate survivors from their previous Y to new Y
+    rEl.querySelectorAll('.running-item[data-model]').forEach(el => {
+      const name = el.dataset.model;
+      const prev = prevRects[name];
+      if (!prev) return;
+      const curr = el.getBoundingClientRect();
+      const dy = prev.top - curr.top;
+      if (Math.abs(dy) > 0.5) {
+        el.style.transition = 'none';
+        el.style.transform = `translateY(${dy}px)`;
+        requestAnimationFrame(() => {
+          el.style.transition = 'transform .32s cubic-bezier(.22,1,.36,1)';
+          el.style.transform = '';
+        });
+      }
+    });
   }
 
   // Fetch full model list less frequently (only if we don't have it yet or count changed)
@@ -843,32 +1229,67 @@ function update(s) {
   }
 }
 
+// item 18+19: filter, sort-by-size-desc, family-grouping
+const FILTER_KEY = 'macnode.filter';
+function modelFamily(name) { return name.toLowerCase().split(/[:\-_]/)[0]; }
+function matchesFilter(m, runSet, filter) {
+  if (!filter) return true;
+  const tokens = filter.toLowerCase().split(/\s+/).filter(Boolean);
+  for (const tk of tokens) {
+    if (tk === 'loaded:' || tk === 'loaded') {
+      if (!runSet.has(m.name)) return false;
+    } else if (tk.startsWith('family:')) {
+      const fam = tk.slice(7);
+      if (!modelFamily(m.name).includes(fam)) return false;
+    } else if (tk.startsWith('>')) {
+      const gb = parseFloat(tk.slice(1));
+      if (isFinite(gb) && (m.size / 1e9) < gb) return false;
+    } else {
+      if (!m.name.toLowerCase().includes(tk)) return false;
+    }
+  }
+  return true;
+}
 function renderModels(models, runSet) {
   const el = document.getElementById('model-list');
   if (!models.length) { el.innerHTML = '<span class="empty">no models</span>'; return; }
-  const sorted = models.slice().sort((a, b) => a.name.localeCompare(b.name));
-  el.innerHTML = sorted.map(m => {
-      const gb = (m.size / 1e9).toFixed(1);
-      const isLoaded = runSet.has(m.name);
-      const loaded = isLoaded ? '<span class="model-loaded">LOADED</span>' : '';
-      const draft = findDraftFor(m, sorted);
-      const specBadge = draft
-        ? `<span class="spec-badge" title="speculative-decoding draft candidate: ${draft.name} (${(draft.size/1e9).toFixed(1)} GB) — same arch family">spec→${draft.name.split(':')[0]}</span>`
-        : '';
-      const loadBtn = isLoaded
-        ? `<button class="mbtn eject" onclick="event.stopPropagation();ollamaAction('unload','${escAttr(m.name)}',this)">eject</button>`
-        : `<button class="mbtn load" onclick="event.stopPropagation();ollamaAction('preload','${escAttr(m.name)}',this)">load</button>`;
-      return `<div class="model-item">
-        <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;cursor:pointer" title="${escAttr(m.name)}" onclick="openDrawer('${escAttr(m.name)}')">
-          <span class="model-name">${esc(m.name)}</span>${loaded}${specBadge}
-        </span>
-        <div class="model-actions">
-          <span class="model-size">${gb} GB</span>
-          ${loadBtn}
-          <button class="mbtn del" onclick="event.stopPropagation();ollamaAction('delete','${escAttr(m.name)}',this)">del</button>
-        </div>
-      </div>`;
-    }).join('');
+  let filter = '';
+  try { filter = (localStorage.getItem(FILTER_KEY) || '').trim(); } catch {}
+  const filterEl = document.getElementById('model-filter');
+  if (filterEl && filterEl.value !== filter) filterEl.value = filter;
+  const sorted = models.slice().sort((a, b) => b.size - a.size);
+  const filtered = sorted.filter(m => matchesFilter(m, runSet, filter));
+  if (!filtered.length) { el.innerHTML = '<span class="empty">no matches</span>'; return; }
+  let lastFam = null;
+  const out = [];
+  for (const m of filtered) {
+    const fam = modelFamily(m.name);
+    if (fam !== lastFam) {
+      out.push(`<div class="family-hairline">${esc(fam)}</div>`);
+      lastFam = fam;
+    }
+    const gb = (m.size / 1e9).toFixed(1);
+    const isLoaded = runSet.has(m.name);
+    const loaded = isLoaded ? '<span class="model-loaded">LOADED</span>' : '';
+    const draft = findDraftFor(m, sorted);
+    const specBadge = draft
+      ? `<span class="spec-badge" title="speculative-decoding draft candidate: ${draft.name} (${(draft.size/1e9).toFixed(1)} GB) — same arch family">spec→${draft.name.split(':')[0]}</span>`
+      : '';
+    const loadBtn = isLoaded
+      ? `<button class="mbtn eject" onclick="event.stopPropagation();ollamaAction('unload','${escAttr(m.name)}',this)">eject</button>`
+      : `<button class="mbtn load" onclick="event.stopPropagation();ollamaAction('preload','${escAttr(m.name)}',this)">load</button>`;
+    out.push(`<div class="model-item">
+      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;cursor:pointer" title="${escAttr(m.name)}" onclick="openDrawer('${escAttr(m.name)}')">
+        <span class="model-name">${esc(m.name)}</span>${loaded}${specBadge}
+      </span>
+      <div class="model-actions">
+        <span class="model-size">${gb} GB</span>
+        ${loadBtn}
+        <button class="mbtn del" onclick="event.stopPropagation();ollamaAction('delete','${escAttr(m.name)}',this)">del</button>
+      </div>
+    </div>`);
+  }
+  el.innerHTML = out.join('');
 }
 
 function findDraftFor(big, all) {
@@ -891,17 +1312,31 @@ function escAttr(s) {
 }
 
 function toast(msg, kind) {
-  let t = document.getElementById('toast');
-  if (!t) {
-    t = document.createElement('div');
-    t.id = 'toast';
-    t.className = 'toast';
-    document.body.appendChild(t);
+  const stack = document.getElementById('toast-stack');
+  if (!stack) {
+    // legacy fallback
+    let t = document.getElementById('toast');
+    if (!t) { t = document.createElement('div'); t.id = 'toast'; t.className = 'toast'; document.body.appendChild(t); }
+    t.textContent = msg; t.className = 'toast show ' + (kind || '');
+    clearTimeout(t._tm); t._tm = setTimeout(() => { t.className = 'toast ' + (kind || ''); }, 3500);
+    return;
   }
-  t.textContent = msg;
+  const t = document.createElement('div');
   t.className = 'toast show ' + (kind || '');
-  clearTimeout(t._tm);
-  t._tm = setTimeout(() => { t.className = 'toast ' + (kind || ''); }, 3500);
+  t.textContent = msg;
+  if (kind === 'err') {
+    const drain = document.createElement('div');
+    drain.className = 'drain';
+    t.appendChild(drain);
+  }
+  stack.appendChild(t);
+  // sound effect
+  if (kind === 'ok') playTone(880, 30, 'square');
+  else if (kind === 'err') playTone(200, 200, 'triangle');
+  // announce
+  announce(`${kind === 'err' ? 'error: ' : ''}${msg}`);
+  const dur = kind === 'err' ? 9000 : 3500;
+  setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 220); }, dur);
 }
 
 function ollamaAction(action, model, btn) {
@@ -912,6 +1347,11 @@ function ollamaAction(action, model, btn) {
   btn.classList.add('busy');
   btn.disabled = true;
   btn.textContent = labels[action] || '...';
+  // Eject animation (item 2): tag the row to animate before re-render
+  if (action === 'unload') {
+    const row = btn.closest('.running-item');
+    if (row) row.classList.add('ejecting');
+  }
   fetch(`/api/ollama/${action}`, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -922,6 +1362,7 @@ function ollamaAction(action, model, btn) {
     if (res.status === 'ok') {
       toast(`${action}: ${model.length > 50 ? model.slice(0,50)+'…' : model}`, 'ok');
       if (action === 'delete') modelListCache = null;
+      pushStatusAction(`${action} ${model.split(':')[0]}`);
     } else {
       toast(`${action} failed: ${res.error || 'unknown'}`, 'err');
     }
@@ -934,6 +1375,93 @@ function ollamaAction(action, model, btn) {
   });
 }
 
+// ─── WebAudio + sound toggle (item 26) ─────────────────────────
+const SND_KEY = 'macnode.muted';
+// Default OFF (muted) per spec; only stored '0' enables sound.
+let _muted = (() => { try { return localStorage.getItem(SND_KEY) !== '0'; } catch { return true; } })();
+let _audio = null;
+function audioCtx() {
+  if (_muted) return null;
+  if (!_audio) {
+    try { _audio = new (window.AudioContext || window.webkitAudioContext)(); }
+    catch { return null; }
+  }
+  return _audio;
+}
+function playTone(freq, durMs, type) {
+  if (_muted) return;
+  const ctx = audioCtx(); if (!ctx) return;
+  try {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.value = freq;
+    gain.gain.value = 0.05;
+    osc.connect(gain).connect(ctx.destination);
+    const now = ctx.currentTime;
+    gain.gain.setValueAtTime(0.05, now);
+    gain.gain.linearRampToValueAtTime(0, now + durMs/1000);
+    osc.start(now);
+    osc.stop(now + durMs/1000 + 0.02);
+  } catch {}
+}
+function toggleSound() {
+  _muted = !_muted;
+  try { localStorage.setItem(SND_KEY, _muted ? '1' : '0'); } catch {}
+  const btn = document.getElementById('snd-btn');
+  if (btn) { btn.textContent = _muted ? 'snd: off' : 'snd: on'; btn.setAttribute('aria-pressed', String(!_muted)); }
+}
+// init label on load
+(function initSndBtn(){
+  const btn = document.getElementById('snd-btn');
+  if (btn) { btn.textContent = _muted ? 'snd: off' : 'snd: on'; btn.setAttribute('aria-pressed', String(!_muted)); }
+})();
+
+// ─── Live-region announcer (item 23) ─────────────────────────────
+function announce(msg) {
+  const el = document.getElementById('sr-live');
+  if (!el) return;
+  el.textContent = '';
+  setTimeout(() => { el.textContent = msg; }, 30);
+}
+
+// ─── Status peripheral bar (item 22) ─────────────────────────────
+const _statusActions = [];
+function pushStatusAction(text) {
+  const ts = new Date();
+  const time = `${String(ts.getHours()).padStart(2,'0')}:${String(ts.getMinutes()).padStart(2,'0')}:${String(ts.getSeconds()).padStart(2,'0')}`;
+  _statusActions.unshift(`${time} ${text}`);
+  while (_statusActions.length > 3) _statusActions.pop();
+  const el = document.getElementById('sb-actions');
+  if (el) el.textContent = _statusActions.join('  |  ');
+}
+
+// ─── WebSocket connect + reconnect banner (items 20, 22, 23, 26) ──
+let _disconnectedAt = null;
+let _bannerTimer = null;
+function showBanner(text, restored) {
+  const b = document.getElementById('ws-banner');
+  const t = document.getElementById('ws-banner-text');
+  if (!b || !t) return;
+  t.textContent = text;
+  b.classList.toggle('restored', !!restored);
+  b.classList.add('show');
+}
+function hideBanner() {
+  const b = document.getElementById('ws-banner');
+  if (b) b.classList.remove('show');
+}
+function fmtSecs(s) {
+  s = Math.max(0, Math.floor(s));
+  const mm = String(Math.floor(s/60)).padStart(2,'0');
+  const ss = String(s%60).padStart(2,'0');
+  return `${mm}:${ss}`;
+}
+function setSbWs(state) {
+  const el = document.getElementById('sb-ws');
+  if (el) el.textContent = state;
+}
+
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${proto}//${location.host}/ws`);
@@ -942,6 +1470,19 @@ function connect() {
     const b = document.getElementById('ws-badge');
     b.textContent = 'live';
     b.className = 'ws-status connected';
+    setSbWs('live');
+    if (_disconnectedAt) {
+      const held = Math.round((Date.now() - _disconnectedAt) / 1000);
+      clearInterval(_bannerTimer); _bannerTimer = null;
+      showBanner(`LINK RESTORED · held ${held}s`, true);
+      setTimeout(hideBanner, 1400);
+      announce(`link restored after ${held} seconds`);
+      playTone(1200, 60, 'sine');
+      pushStatusAction(`ws restored (${held}s)`);
+      _disconnectedAt = null;
+    } else {
+      playTone(1200, 50, 'sine');
+    }
   };
 
   ws.onmessage = (e) => {
@@ -952,6 +1493,21 @@ function connect() {
     const b = document.getElementById('ws-badge');
     b.textContent = 'reconnecting...';
     b.className = 'ws-status disconnected';
+    setSbWs('reconnecting');
+    if (!_disconnectedAt) {
+      _disconnectedAt = Date.now();
+      announce('websocket link lost');
+      // descending dual-tone
+      playTone(1000, 100, 'sine');
+      setTimeout(() => playTone(600, 100, 'sine'), 100);
+      pushStatusAction('ws lost');
+      showBanner('LINK LOST · 00:00', false);
+      clearInterval(_bannerTimer);
+      _bannerTimer = setInterval(() => {
+        const dt = (Date.now() - _disconnectedAt) / 1000;
+        showBanner(`LINK LOST · ${fmtSecs(dt)}`, false);
+      }, 1000);
+    }
     setTimeout(connect, 3000);
   };
 }
@@ -975,6 +1531,7 @@ function appendLine(entry) {
   div.textContent = entry.line;
   el.appendChild(div);
   lineCount++;
+  if (entry.source === 'stderr') announce('stderr: ' + (entry.line || '').slice(0, 120));
 
   // Trim old lines if over limit
   while (el.childElementCount > MAX_LINES) {
@@ -1024,6 +1581,7 @@ function switchLog(svc, btn) {
   document.querySelectorAll('.log-tab').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
   connectLogWs(svc);
+  try { localStorage.setItem('macnode.activeLog', svc); } catch {}
 }
 
 function clearLogView() {
@@ -1079,6 +1637,7 @@ function restartSvc(svc, btn) {
     btn.textContent = res.status === 'ok' ? 'restarted' : 'failed';
     const pidEl = document.getElementById('pid-' + svc);
     if (pidEl && res.pid) pidEl.textContent = 'pid ' + res.pid;
+    pushStatusAction(`restart ${svc} ${res.status}`);
     setTimeout(() => {
       btn.textContent = 'restart';
       btn.classList.remove('restarting');
@@ -1143,10 +1702,13 @@ function buildVLLMCards(instances) {
 
   container.innerHTML = instances.map(inst => `
     <div class="svc" id="svc-${inst.label}">
-      <div class="svc-header"><span class="svc-name">${inst.description}</span><span class="dot" id="dot-${inst.label}"></span></div>
-      <div class="svc-meta">:${inst.port} &mdash; ${(inst.tags || []).join(', ')}</div>
-      <div class="svc-stat">Log: <span id="${inst.label}-log">--</span></div>
-      <div class="svc-footer"><span class="svc-pid" id="pid-${inst.label}"></span><a href="http://localhost:${inst.port}/v1/models" target="_blank">API</a> <button class="svc-restart" onclick="restartSvc('${inst.label}',this)">restart</button><button class="svc-toggle stop" id="toggle-${inst.label}" onclick="toggleSvc('${inst.label}',this)">stop</button></div>
+      <span class="dot" id="dot-${inst.label}"></span>
+      <span class="svc-name">${inst.description}</span>
+      <span class="svc-port">:${inst.port}</span>
+      <span class="svc-pid" id="pid-${inst.label}"></span>
+      <span class="svc-loginfo">log:<b id="${inst.label}-log">--</b></span>
+      <span class="svc-loginfo"></span>
+      <span class="svc-actions"><a href="http://localhost:${inst.port}/v1/models" target="_blank">API</a><button class="svc-restart" onclick="restartSvc('${inst.label}',this)">restart</button><button class="svc-toggle stop" id="toggle-${inst.label}" onclick="toggleSvc('${inst.label}',this)">stop</button></span>
     </div>
   `).join('');
 
@@ -1193,36 +1755,70 @@ function drawSpark(key, svgSel, labelSel, fmt) {
   const data = sparkSeries[key];
   const svg = document.querySelector(svgSel);
   if (!svg || !data.length) return;
-  const W = 200, H = 36;
+  const W = 200, H = 48, PLOT_H = 36;
+  // resize svg viewBox to include ticks
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
   const max = Math.max(...data, 1);
   const min = Math.min(...data, 0);
   const range = max - min || 1;
   const step = data.length > 1 ? W / (data.length - 1) : 0;
   const points = data.map((v, i) => {
     const x = i * step;
-    const y = H - ((v - min) / range) * (H - 4) - 2;
+    const y = PLOT_H - ((v - min) / range) * (PLOT_H - 4) - 2;
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
   const last = data[data.length - 1];
-  const lastY = H - ((last - min) / range) * (H - 4) - 2;
-  const areaPoints = `0,${H} ${points} ${(data.length-1)*step},${H}`;
+  const lastY = PLOT_H - ((last - min) / range) * (PLOT_H - 4) - 2;
+  const areaPoints = `0,${PLOT_H} ${points} ${(data.length-1)*step},${PLOT_H}`;
+
+  // Calibration ticks (item 15) — :00..:05 minute marks across 300s window
+  // sample cadence ~2s, SPARK_MAX=150 ≈ 5 min. Tick every 30s ≈ every 15 samples.
+  const TICK_BASE_Y = PLOT_H + 1;
+  const ticks = [];
+  for (let s = 30; s <= 300; s += 30) {
+    const px = W - (s / 300) * W;
+    const major = (s % 60 === 0);
+    ticks.push(`<line x1="${px.toFixed(1)}" y1="${TICK_BASE_Y}" x2="${px.toFixed(1)}" y2="${TICK_BASE_Y + (major ? 4 : 2)}" stroke="var(--faint)" stroke-width="0.5"/>`);
+    if (major) {
+      const mins = Math.round(s / 60);
+      ticks.push(`<text x="${px.toFixed(1)}" y="${H - 0.5}" font-size="6" font-family="B612 Mono, monospace" fill="var(--faint)" text-anchor="middle">:${String(mins).padStart(2,'0')}</text>`);
+    }
+  }
   svg.innerHTML = `
+    <line x1="0" y1="${PLOT_H/2}" x2="${W}" y2="${PLOT_H/2}" stroke="var(--faint)" stroke-width="0.4" opacity="0.5"/>
     <polyline points="${areaPoints}" fill="var(--accent)" opacity="0.08"/>
     <polyline points="${points}" fill="none" stroke="var(--accent)" stroke-width="1.2"/>
     <circle cx="${(data.length-1)*step}" cy="${lastY}" r="2" fill="var(--accent)"/>
-    <line x1="${(data.length-1)*step}" y1="${lastY}" x2="${(data.length-1)*step}" y2="${H}" stroke="var(--accent)" stroke-width="0.5" opacity="0.3"/>
+    <line x1="${(data.length-1)*step}" y1="${lastY}" x2="${(data.length-1)*step}" y2="${PLOT_H}" stroke="var(--accent)" stroke-width="0.5" opacity="0.3"/>
+    <g class="ticks">${ticks.join('')}</g>
   `;
-  document.querySelector(labelSel).textContent = fmt(last);
+  const lblEl = document.querySelector(labelSel);
+  if (lblEl) {
+    setNumText(lblEl, fmt(last), parseLeadingNum, v => {
+      // try to keep original suffix
+      const newS = fmt(last);
+      const m = newS.match(/[^\d.\-]+$/);
+      const suffix = m ? m[0] : '';
+      return v.toFixed(1) + suffix;
+    }, range || 1);
+  }
 }
 
 // ─── Drawer (model metadata) ────────────────────────────────────
+const DRAWER_KEY = 'macnode.openDrawer';
 function openDrawer(model) {
   const overlay = document.getElementById('drawer-overlay');
   const drawer = document.getElementById('drawer');
   document.getElementById('drawer-title').textContent = model;
-  document.getElementById('drawer-body').textContent = 'loading...';
+  // Skeleton shimmer (item 6)
+  document.getElementById('drawer-body').innerHTML = `
+    <div class="skeleton" style="width:60%"></div>
+    <div class="skeleton" style="width:80%"></div>
+    <div class="skeleton" style="width:45%"></div>
+  `;
   overlay.classList.add('open');
   drawer.classList.add('open');
+  try { localStorage.setItem(DRAWER_KEY, model); } catch {}
   fetch('/api/ollama/show', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -1235,6 +1831,7 @@ function openDrawer(model) {
 function closeDrawer() {
   document.getElementById('drawer-overlay').classList.remove('open');
   document.getElementById('drawer').classList.remove('open');
+  try { localStorage.removeItem(DRAWER_KEY); } catch {}
 }
 function renderDrawer(model, d) {
   if (d.error || d.status === 'error') {
@@ -1259,12 +1856,12 @@ function renderDrawer(model, d) {
       <dt>families</dt><dd>${esc((det.families || []).join(', ') || '?')}</dd>
       <dt>capabilities</dt><dd>${esc((d.capabilities || []).join(', ') || '?')}</dd>
     </dl>`;
-  document.getElementById('drawer-body').innerHTML = `
-    <div class="drawer-section"><h4>Overview</h4>${kv}</div>
-    ${d.parameters ? `<div class="drawer-section"><h4>Parameters</h4><pre>${esc(d.parameters)}</pre></div>` : ''}
-    ${d.template ? `<div class="drawer-section"><h4>Template</h4><pre>${esc(d.template)}</pre></div>` : ''}
-    ${d.modelfile ? `<div class="drawer-section"><h4>Modelfile</h4><pre>${esc(d.modelfile)}</pre></div>` : ''}
-  `;
+  const sections = [];
+  sections.push(`<div class="drawer-section" style="--i:0"><h4>Overview</h4>${kv}</div>`);
+  if (d.parameters) sections.push(`<div class="drawer-section" style="--i:${sections.length}"><h4>Parameters</h4><pre>${esc(d.parameters)}</pre></div>`);
+  if (d.template)   sections.push(`<div class="drawer-section" style="--i:${sections.length}"><h4>Template</h4><pre>${esc(d.template)}</pre></div>`);
+  if (d.modelfile)  sections.push(`<div class="drawer-section" style="--i:${sections.length}"><h4>Modelfile</h4><pre>${esc(d.modelfile)}</pre></div>`);
+  document.getElementById('drawer-body').innerHTML = sections.join('');
 }
 
 // ─── Bottom panel tab switching ─────────────────────────────────
@@ -1273,15 +1870,50 @@ function switchBottom(tab, btn) {
   document.querySelectorAll('.bottom-content').forEach(c => c.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById('bc-' + tab).classList.add('active');
+  try { localStorage.setItem('macnode.bottomTab', tab); } catch {}
   if (tab === 'events') refreshEvents();
 }
 
-// ─── Events table ───────────────────────────────────────────────
+// ─── Events table + duration dot-plot (item 16) ──────────────────
+let _lastEventCount = 0;
+function drawDurationPlot(rows) {
+  const svg = document.getElementById('duration-plot');
+  if (!svg) return;
+  const W = 600, H = 60, PAD_L = 26, PAD_R = 8, PAD_T = 4, PAD_B = 12;
+  const now = Date.now() / 1000;
+  const window_s = 3600; // last hour
+  const pts = (rows || []).filter(e =>
+    (e.action === 'preload' || e.action === 'load_external') && e.duration_ms && (now - e.ts) <= window_s
+  );
+  // y = log10(ms), clamp to [1, 5] (10ms..100s)
+  const yMin = 1, yMax = 5;
+  const xOf = ts => PAD_L + ((window_s - (now - ts)) / window_s) * (W - PAD_L - PAD_R);
+  const yOf = ms => {
+    const v = Math.max(yMin, Math.min(yMax, Math.log10(Math.max(1, ms))));
+    return PAD_T + (1 - (v - yMin) / (yMax - yMin)) * (H - PAD_T - PAD_B);
+  };
+  const colorFor = ms => ms > 15000 ? 'var(--alert)' : (ms > 5000 ? 'var(--warn)' : 'var(--ok)');
+  const gridLines = [];
+  for (let v = yMin; v <= yMax; v++) {
+    const y = yOf(Math.pow(10, v));
+    gridLines.push(`<line x1="${PAD_L}" y1="${y}" x2="${W-PAD_R}" y2="${y}" stroke="var(--hairline)" stroke-width="0.4"/>`);
+    gridLines.push(`<text x="${PAD_L-3}" y="${y+2}" font-size="6" font-family="B612 Mono, monospace" fill="var(--faint)" text-anchor="end">${Math.pow(10,v)>=1000?(Math.pow(10,v)/1000)+'s':Math.pow(10,v)+'ms'}</text>`);
+  }
+  const dots = pts.map(e => `<circle cx="${xOf(e.ts).toFixed(1)}" cy="${yOf(e.duration_ms).toFixed(1)}" r="2" fill="${colorFor(e.duration_ms)}"><title>${esc(e.model)} — ${e.duration_ms}ms</title></circle>`).join('');
+  svg.innerHTML = `${gridLines.join('')}${dots}`;
+}
 function refreshEvents() {
-  fetch('/api/events?limit=100').then(r => r.json()).then(rows => {
+  fetch('/api/events?limit=200').then(r => r.json()).then(rows => {
     const tb = document.getElementById('events-body');
+    drawDurationPlot(rows);
+    // Announce new entries (item 23)
+    if (rows && rows.length > _lastEventCount && _lastEventCount > 0) {
+      const diff = rows.length - _lastEventCount;
+      announce(`${diff} new event${diff===1?'':'s'} in ring`);
+    }
+    if (rows && rows.length) _lastEventCount = rows.length;
     if (!rows || !rows.length) { tb.innerHTML = '<tr><td colspan="5" class="empty">no events yet</td></tr>'; return; }
-    tb.innerHTML = rows.slice().reverse().map(e => {
+    tb.innerHTML = rows.slice().reverse().slice(0,100).map(e => {
       const t = new Date(e.ts * 1000);
       const time = t.toLocaleTimeString();
       const dur = e.duration_ms ? `${e.duration_ms} ms` : '—';
@@ -1397,25 +2029,83 @@ fetch('/api/config')
   })
   .catch(() => {});
 
-// ─── Page tabs ──────────────────────────────────────────────────
+// ─── Page tabs (item 3: scan-line wipe) ────────────────────────
 const PAGE_KEY = 'macnode.activePage';
+let _switchingPage = false;
 function switchPage(name) {
-  document.querySelectorAll('.page').forEach(p => {
-    p.hidden = p.dataset.page !== name;
-  });
+  if (_switchingPage) return;
+  const incoming = document.querySelector(`.page[data-page="${name}"]`);
+  if (!incoming) return;
+  const outgoing = Array.from(document.querySelectorAll('.page')).find(p => !p.hidden && p !== incoming);
   document.querySelectorAll('.page-nav button').forEach(b => {
     b.classList.toggle('active', b.dataset.page === name);
   });
   try { localStorage.setItem(PAGE_KEY, name); } catch {}
-  if (name === 'lab' && document.getElementById('bc-events').classList.contains('active')) {
-    refreshEvents();
+  const finishSwitch = () => {
+    document.querySelectorAll('.page').forEach(p => {
+      if (p === incoming) return;
+      p.hidden = true;
+      p.classList.remove('leaving', 'entering');
+    });
+    incoming.hidden = false;
+    incoming.classList.remove('leaving');
+    incoming.classList.add('entering');
+    incoming.addEventListener('animationend', function _h() {
+      incoming.classList.remove('entering');
+      incoming.removeEventListener('animationend', _h);
+    });
+    if (name === 'lab' && document.getElementById('bc-events').classList.contains('active')) {
+      refreshEvents();
+    }
+    // restore scroll positions (item 25)
+    if (name === 'models') {
+      const ml = document.getElementById('model-list');
+      try { if (ml) ml.scrollTop = parseInt(localStorage.getItem('macnode.scroll.models') || '0', 10) || 0; } catch {}
+    }
+    if (name === 'logs') {
+      const lc = document.getElementById('log-content');
+      try { if (lc) lc.scrollTop = parseInt(localStorage.getItem('macnode.scroll.logs') || '0', 10) || 0; } catch {}
+    }
+    _switchingPage = false;
+  };
+  if (outgoing && !outgoing.hidden) {
+    _switchingPage = true;
+    outgoing.classList.add('leaving');
+    outgoing.addEventListener('animationend', function _h() {
+      outgoing.removeEventListener('animationend', _h);
+      outgoing.classList.remove('leaving');
+      finishSwitch();
+    });
+    // fallback in case animationend doesn't fire
+    setTimeout(() => { if (_switchingPage) finishSwitch(); }, 300);
+  } else {
+    finishSwitch();
   }
 }
 const _savedPage = (() => { try { return localStorage.getItem(PAGE_KEY); } catch { return null; } })() || 'overview';
 switchPage(_savedPage);
 
-// Start streaming default tab
-connectLogWs('ollama');
+// Start streaming default tab (item 25: restore saved log)
+(function _restoreLog(){
+  let svc = 'ollama';
+  try { svc = localStorage.getItem('macnode.activeLog') || 'ollama'; } catch {}
+  activeLog = svc;
+  // mark the matching tab active
+  document.querySelectorAll('.log-tab').forEach(t => {
+    const lab = t.textContent.trim();
+    t.classList.toggle('active', lab === svc || lab.endsWith(svc));
+  });
+  connectLogWs(svc);
+})();
+
+// Restore bottom tab (item 25)
+(function _restoreBottom(){
+  let tab = null;
+  try { tab = localStorage.getItem('macnode.bottomTab'); } catch {}
+  if (!tab) return;
+  const btn = document.querySelector(`.bottom-tab[data-tab="${tab}"]`);
+  if (btn) switchBottom(tab, btn);
+})();
 
 // Scratchpad: load + auto-save on input (debounced)
 let scratchTm;
@@ -1424,6 +2114,52 @@ document.getElementById('scratch').addEventListener('input', () => {
   scratchTm = setTimeout(scratchSave, 400);
 });
 scratchLoad();
+
+// Model filter wiring (item 18) + persisted state (item 25)
+(function wireFilter(){
+  const inp = document.getElementById('model-filter');
+  if (!inp) return;
+  try { inp.value = localStorage.getItem(FILTER_KEY) || ''; } catch {}
+  // initial sb-filter state
+  if (inp.value) {
+    const wrap = document.getElementById('sb-filter-wrap');
+    const f = document.getElementById('sb-filter');
+    if (wrap && f) { wrap.style.display = ''; f.textContent = inp.value; }
+  }
+  inp.addEventListener('input', () => {
+    try { localStorage.setItem(FILTER_KEY, inp.value); } catch {}
+    const wrap = document.getElementById('sb-filter-wrap');
+    const f = document.getElementById('sb-filter');
+    if (wrap && f) {
+      if (inp.value) { wrap.style.display = ''; f.textContent = inp.value; }
+      else { wrap.style.display = 'none'; }
+    }
+    if (modelListCache) {
+      const runSet = new Set((window._lastRunning || []).map(m => m.name));
+      renderModels(modelListCache, runSet);
+    }
+  });
+})();
+
+// Persist scroll positions (item 25)
+(function wireScroll(){
+  const ml = document.getElementById('model-list');
+  if (ml) ml.addEventListener('scroll', () => {
+    try { localStorage.setItem('macnode.scroll.models', String(ml.scrollTop)); } catch {}
+  });
+  const lc = document.getElementById('log-content');
+  if (lc) lc.addEventListener('scroll', () => {
+    try { localStorage.setItem('macnode.scroll.logs', String(lc.scrollTop)); } catch {}
+  });
+})();
+
+// Re-open drawer if it was open (item 25)
+(function reopenDrawer(){
+  try {
+    const m = localStorage.getItem(DRAWER_KEY);
+    if (m) openDrawer(m);
+  } catch {}
+})();
 
 // Initial events table fetch
 refreshEvents();
