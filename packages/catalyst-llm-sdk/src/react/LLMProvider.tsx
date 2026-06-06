@@ -9,8 +9,10 @@ import {
 import {
   CatalystLLMClient,
   LLMConfig,
+  LiteLLMModelSource,
   type ChatParams,
   type LLMConfigInit,
+  type ModelSource,
 } from "../client/index.js";
 import { CatalystAgentClient } from "../agent/index.js";
 import { useChatStore } from "./chat/index.js";
@@ -26,6 +28,12 @@ interface LLMContextValue {
    * from the React layer entirely.
    */
   agentClient: CatalystAgentClient | null;
+  /**
+   * Strategy that ``useModels()`` consults for the catalogue. Defaults
+   * to ``LiteLLMModelSource(client)``. Hosts override to point at
+   * Ollama, a static list, an HTTP proxy, etc. with one prop change.
+   */
+  modelSource: ModelSource;
 }
 
 const LLMContext = createContext<LLMContextValue | null>(null);
@@ -49,6 +57,17 @@ export interface LLMProviderProps {
   defaultParams?: ChatParams;
   /** Default system prompt for new chats. */
   defaultSystemPrompt?: string;
+  /**
+   * Strategy for the model catalogue (op-m6t). When omitted, defaults
+   * to ``LiteLLMModelSource(client)`` (legacy behaviour). Hosts pass
+   * ``new OllamaModelSource()``, ``new StaticModelSource([...])``,
+   * ``new HttpModelSource('/api/agent/models')``, or any custom
+   * ``ModelSource`` impl to swap.
+   *
+   * Hot-swappable: pass a new instance and useModels() re-fetches on
+   * the next refresh.
+   */
+  modelSource?: ModelSource;
 }
 
 export function LLMProvider({
@@ -59,6 +78,7 @@ export function LLMProvider({
   defaultModel,
   defaultParams,
   defaultSystemPrompt,
+  modelSource,
 }: LLMProviderProps) {
   const clientRef = useRef<CatalystLLMClient | null>(null);
 
@@ -103,12 +123,18 @@ export function LLMProvider({
     };
   }, []);
 
+  const resolvedModelSource = useMemo<ModelSource>(
+    () => modelSource ?? new LiteLLMModelSource(resolvedClient),
+    [modelSource, resolvedClient],
+  );
+
   const value = useMemo<LLMContextValue>(
     () => ({
       client: resolvedClient,
       agentClient: agentClient ?? null,
+      modelSource: resolvedModelSource,
     }),
-    [resolvedClient, agentClient],
+    [resolvedClient, agentClient, resolvedModelSource],
   );
 
   return <LLMContext.Provider value={value}>{children}</LLMContext.Provider>;

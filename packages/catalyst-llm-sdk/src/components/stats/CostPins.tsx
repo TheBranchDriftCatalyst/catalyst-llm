@@ -23,6 +23,9 @@ export interface CostPinsProps {
   chat: Chat | undefined;
   /** Briefly highlight the cost pin when a new turn lands. Default true. */
   flashOnUpdate?: boolean;
+  /** Compact rail variant — no per-pin border, no flashing ring, tighter
+   *  padding, smaller font. Designed for the dense ChatStatsRow. */
+  compact?: boolean;
   className?: string;
 }
 
@@ -32,9 +35,30 @@ interface PinProps {
   value: string;
   flash?: boolean;
   emphasis?: "default" | "primary" | "muted";
+  compact?: boolean;
 }
 
-function Pin({ icon: Icon, label, value, flash, emphasis = "default" }: PinProps) {
+function Pin({ icon: Icon, label, value, flash, emphasis = "default", compact }: PinProps) {
+  if (compact) {
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center gap-1 px-1 transition-colors",
+          emphasis === "primary"
+            ? "text-primary"
+            : emphasis === "muted"
+              ? "text-muted-foreground"
+              : "text-foreground",
+        )}
+      >
+        <Icon className="h-2.5 w-2.5 opacity-70" />
+        <span className="text-[8.5px] uppercase tracking-[0.18em] opacity-70">
+          {label}
+        </span>
+        <span className="font-mono text-[10px] tabular-nums">{value}</span>
+      </span>
+    );
+  }
   return (
     <div
       className={cn(
@@ -64,7 +88,12 @@ function Pin({ icon: Icon, label, value, flash, emphasis = "default" }: PinProps
  * borrowing the pattern from langgraph-dev's CostTicker so the operator
  * notices spend changes in their peripheral vision.
  */
-export function CostPins({ chat, flashOnUpdate = true, className }: CostPinsProps) {
+export function CostPins({
+  chat,
+  flashOnUpdate = true,
+  compact = false,
+  className,
+}: CostPinsProps) {
   const { models } = useModels();
   const stats = useChatCost(chat, models);
   const [flash, setFlash] = useState(false);
@@ -78,37 +107,55 @@ export function CostPins({ chat, flashOnUpdate = true, className }: CostPinsProp
   }, [stats.calls, stats.lastTurnCostUsd, flashOnUpdate]);
 
   return (
-    <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
-      <Pin icon={Activity} label="calls" value={String(stats.calls)} />
+    <div
+      className={cn(
+        "flex items-center",
+        compact
+          ? "flex-nowrap gap-0 divide-x divide-border/30"
+          : "flex-wrap gap-1.5",
+        className,
+      )}
+    >
+      <Pin
+        icon={Activity}
+        label="calls"
+        value={String(stats.calls)}
+        compact={compact}
+      />
       <Pin
         icon={ArrowUp}
         label="in"
         value={formatTokens(stats.inputTokens)}
         emphasis="muted"
+        compact={compact}
       />
       <Pin
         icon={ArrowDown}
         label="out"
         value={formatTokens(stats.outputTokens)}
         emphasis="muted"
+        compact={compact}
       />
       <Pin
         icon={Timer}
         label="ttft"
         value={formatMs(stats.lastTtftMs)}
         emphasis={stats.lastTtftMs === null ? "muted" : "default"}
+        compact={compact}
       />
       <Pin
         icon={Zap}
         label="tok/s"
         value={formatRate(stats.lastTokensPerSec)}
         emphasis={stats.lastTokensPerSec === null ? "muted" : "default"}
+        compact={compact}
       />
       <Pin
         icon={Gauge}
         label="rt"
         value={formatMs(stats.lastLatencyMs)}
         emphasis="muted"
+        compact={compact}
       />
       <Pin
         icon={Coins}
@@ -116,6 +163,7 @@ export function CostPins({ chat, flashOnUpdate = true, className }: CostPinsProp
         value={formatUsd(stats.costUsd)}
         emphasis="primary"
         flash={flash}
+        compact={compact}
       />
     </div>
   );

@@ -33,12 +33,12 @@ export function ChatStatsRow({
   return (
     <div
       className={cn(
-        "shrink-0 border-t border-border/60 bg-card/30 flex items-center gap-2 overflow-x-auto",
+        "shrink-0 border-t border-border/40 bg-background flex items-center gap-2 overflow-x-auto",
         dense ? "px-2 py-1" : "px-4 py-2",
         className,
       )}
     >
-      <CostPins chat={chat} />
+      <CostPins chat={chat} compact={dense} flashOnUpdate={!dense} />
       {chat.isStreaming && (
         <span
           className={cn(

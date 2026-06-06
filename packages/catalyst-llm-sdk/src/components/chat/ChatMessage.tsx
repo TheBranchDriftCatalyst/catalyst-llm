@@ -204,7 +204,7 @@ interface DenseChatMessageProps {
 function DenseChatMessage({ message, isStreaming }: DenseChatMessageProps) {
   const isUser = message.role === "user";
   return (
-    <li className="flex flex-col gap-1 px-2 py-2.5 group hover:bg-muted/[0.04] transition-colors">
+    <li className="flex flex-col gap-1 px-2 py-1.5">
       <div
         className={cn(
           "text-[8.5px] uppercase tracking-[0.22em] flex items-center gap-1.5",
@@ -256,20 +256,19 @@ function DenseChatMessage({ message, isStreaming }: DenseChatMessageProps) {
           />
         ))}
 
-      {/* Message content. Both roles get a subtle hairline box so the
-          chat thread has visual rhythm — user gets primary-tinted to
-          signal authorship, agent gets neutral hairline. Tight padding
-          + monospace + leading-relaxed for readability. */}
+      {/* Message content. User: subtle primary-tinted background WITH
+          NO border. Agent: floating mono text, no chrome — relies on
+          the role label + divide-y between turns for rhythm. */}
       {isUser ? (
-        <div className="rounded-sm border border-primary/30 bg-primary/[0.05] px-2 py-1.5 font-mono text-[10.5px] leading-relaxed text-foreground whitespace-pre-wrap break-words">
+        <div className="rounded-sm bg-primary/[0.07] px-2 py-1 font-mono text-[10.5px] leading-relaxed text-foreground whitespace-pre-wrap break-words">
           {message.content}
         </div>
       ) : isStreaming && !message.content && !message.tool_calls?.length && !message.error ? (
-        <div className="rounded-sm border border-border/40 bg-muted/20 px-2 py-1.5 font-mono text-[10.5px] italic text-muted-foreground">
-          <span className="animate-pulse">...</span>
-        </div>
+        <span className="px-1 font-mono text-[10.5px] italic text-muted-foreground animate-pulse">
+          ...
+        </span>
       ) : message.content ? (
-        <div className="rounded-sm border border-border/40 bg-muted/[0.15] px-2 py-1.5 font-mono text-[10.5px] leading-relaxed text-foreground">
+        <div className="px-1 font-mono text-[10.5px] leading-relaxed text-foreground">
           {splitReasoning(message.content).map((seg, i) =>
             seg.kind === "thinking" ? (
               <ReasoningBlock

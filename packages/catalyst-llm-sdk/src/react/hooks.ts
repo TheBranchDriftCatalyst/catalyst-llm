@@ -129,23 +129,28 @@ export interface UseModelsResult {
 }
 
 export function useModels(): UseModelsResult {
-  const client = useLLM();
+  const { modelSource } = useLLMContext();
   const [models, setModels] = useState<ModelWithRouting[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
+    // Strategy pattern (op-m6t): the catalogue source is whatever
+    // LLMProvider was configured with — defaults to LiteLLM, but
+    // operator-style hosts swap in OllamaModelSource / HttpModelSource
+    // / StaticModelSource so the chat surface works without a remote
+    // proxy.
     setLoading(true);
     setError(null);
     try {
-      const data = await client.getModelsWithRouting();
+      const data = await modelSource.listModels();
       setModels(data);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setLoading(false);
     }
-  }, [client]);
+  }, [modelSource]);
 
   useEffect(() => {
     void refresh();
