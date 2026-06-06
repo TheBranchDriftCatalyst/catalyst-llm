@@ -95,7 +95,7 @@ export function ChatComposer({
       className={cn(
         "bg-background",
         dense
-          ? "border-t border-border/40 px-2 py-1.5"
+          ? "border-t border-border/20 px-2 py-1.5"
           : "border-t border-border p-4",
         className,
       )}
@@ -153,7 +153,7 @@ export function ChatComposer({
             className={cn(
               "resize-none",
               dense
-                ? "min-h-[24px] max-h-[120px] py-1 px-2 text-[11px] font-mono border-border/30 bg-muted/[0.15] focus-visible:ring-0 focus-visible:border-primary/40"
+                ? "min-h-[24px] max-h-[120px] py-1 px-2 text-[11px] font-mono border-border/15 bg-muted/[0.12] focus-visible:ring-0 focus-visible:border-primary/40 rounded-sm"
                 : "min-h-[44px] max-h-[200px] pr-12",
             )}
           />

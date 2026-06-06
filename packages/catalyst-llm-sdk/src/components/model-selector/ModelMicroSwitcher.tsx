@@ -234,15 +234,15 @@ export function ModelMicroSwitcher({
         }
         onClick={() => setOpen((o) => !o)}
         className={cn(
-          "inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-card/60 px-2 py-1 text-xs font-mono",
-          "hover:border-primary/60 hover:bg-accent/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          "inline-flex items-center gap-1.5 rounded-sm px-1.5 py-0.5 text-[10.5px] font-mono",
+          "text-foreground hover:text-primary transition-colors focus-visible:outline-none",
         )}
       >
-        <SelectedIcon className="h-3 w-3 text-primary" aria-hidden="true" />
-        <span className="max-w-[180px] truncate">
+        <SelectedIcon className="h-2.5 w-2.5 text-primary" aria-hidden="true" />
+        <span className="max-w-[200px] truncate">
           {selected?.id ?? "select model"}
         </span>
-        <ChevronsUpDown className="h-3 w-3 opacity-60" aria-hidden="true" />
+        <ChevronsUpDown className="h-2.5 w-2.5 opacity-50" aria-hidden="true" />
       </button>
       {/* Portal the popover so it escapes any ancestor stacking
        * context (reactflow nodes set `transform`, which creates a

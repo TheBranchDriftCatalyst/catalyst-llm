@@ -44,21 +44,20 @@ export function ChatTabs({ onExportToCompare }: ChatTabsProps = {}) {
   }
 
   return (
-    <div className="border-b border-border bg-muted/20">
+    <div className="border-b border-border/20 bg-background">
       <Tabs value={activeChat} onValueChange={setActiveChat}>
-        <div className="flex items-center px-2 py-1">
+        <div className="flex items-center px-2 py-0.5">
           <TabsList className="h-auto bg-transparent p-0 gap-1">
             {chats.map((chat) => (
               <TabsTrigger
                 key={chat.id}
                 value={chat.id}
                 className={cn(
-                  "group relative flex items-center gap-2 px-3 py-1.5 text-sm rounded-md",
-                  "border border-transparent",
-                  "data-[state=active]:bg-background data-[state=active]:border-border",
-                  "data-[state=active]:shadow-sm",
-                  "hover:bg-muted/50 transition-colors",
-                  "max-w-[180px]",
+                  "group relative flex items-center gap-2 px-2 py-1 text-[11px] font-mono rounded-sm",
+                  "border border-transparent shadow-none",
+                  "data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none data-[state=active]:border-transparent",
+                  "hover:text-primary transition-colors",
+                  "max-w-[200px]",
                 )}
               >
                 <span className="truncate">{chat.model || chat.name}</span>
@@ -106,8 +105,8 @@ export function ChatTabs({ onExportToCompare }: ChatTabsProps = {}) {
               }
               aria-label="Export to Compare with this chat's models and last prompt"
               className={cn(
-                "ml-auto inline-flex items-center gap-1 rounded-md border border-border/60 bg-card/40 px-2 py-1 text-[11px] font-medium",
-                "hover:border-primary/60 hover:bg-accent/40 hover:text-foreground transition-colors",
+                "ml-auto inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] font-mono text-muted-foreground",
+                "hover:text-primary transition-colors",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 "disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-card/40",
               )}

@@ -111,7 +111,7 @@ export function CostPins({
       className={cn(
         "flex items-center",
         compact
-          ? "flex-nowrap gap-0 divide-x divide-border/30"
+          ? "flex-nowrap gap-0 divide-x divide-border/15"
           : "flex-wrap gap-1.5",
         className,
       )}

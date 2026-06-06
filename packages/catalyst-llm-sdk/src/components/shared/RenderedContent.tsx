@@ -289,9 +289,9 @@ function CodeFence({
   return (
     <div
       data-block-passthrough
-      className="my-2 overflow-hidden rounded-md border border-border/60 bg-card/60"
+      className="my-1.5 overflow-hidden rounded-sm border border-border/25 bg-muted/[0.12]"
     >
-      <div className="flex items-center justify-between border-b border-border/60 bg-muted/30 px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+      <div className="flex items-center justify-between border-b border-border/20 bg-muted/[0.10] px-2 py-0.5 text-[9px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
         <span>{lang ?? "text"}</span>
         <button
           type="button"
@@ -304,18 +304,18 @@ function CodeFence({
               /* noop — clipboard blocked, keep going */
             }
           }}
-          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] hover:bg-accent/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex items-center gap-1 rounded-sm px-1 py-0.5 text-[9px] hover:text-primary focus-visible:outline-none transition-colors"
           aria-label={copied ? "Copied" : "Copy code to clipboard"}
         >
           {copied ? (
-            <Check className="h-3 w-3 text-primary" aria-hidden="true" />
+            <Check className="h-2.5 w-2.5 text-primary" aria-hidden="true" />
           ) : (
-            <Copy className="h-3 w-3" aria-hidden="true" />
+            <Copy className="h-2.5 w-2.5" aria-hidden="true" />
           )}
           {copied ? "copied" : "copy"}
         </button>
       </div>
-      <pre className="overflow-x-auto p-3 text-xs leading-relaxed">
+      <pre className="overflow-x-auto px-2 py-1 text-[10px] leading-relaxed">
         <code className={cn("font-mono", className)}>{code}</code>
       </pre>
     </div>
