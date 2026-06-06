@@ -37,6 +37,10 @@ export interface ToolCallCardProps {
   className?: string;
   /** Default open state (otherwise collapsed for compactness). */
   defaultOpen?: boolean;
+  /** Terminal aesthetic. When true the row collapses to a single line:
+   *  chevron · wrench · name · status word. Args + result render as
+   *  mono pre blocks when expanded. Use inside ChatPanel dense mode. */
+  dense?: boolean;
 }
 
 const TOOL_ICONS: Record<string, React.ElementType> = {
@@ -48,6 +52,7 @@ export function ToolCallCard({
   record,
   className,
   defaultOpen = false,
+  dense = false,
 }: ToolCallCardProps) {
   const [open, setOpen] = useState(defaultOpen);
   const Icon = TOOL_ICONS[record.call.function.name] ?? Wrench;
@@ -60,6 +65,94 @@ export function ToolCallCard({
   const subToolCount = subEvents.filter((e) => e.kind === "tool_call_start").length;
   const subIterCount = subEvents.filter((e) => e.kind === "iteration").length;
   const hasSubEvents = subEvents.length > 0;
+  const done = record.finished_at > 0;
+
+  if (dense) {
+    return (
+      <div
+        className={cn(
+          "rounded-sm border bg-muted/20 font-mono text-[10px]",
+          isError ? "border-destructive/40" : "border-border/60",
+          className,
+        )}
+      >
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="flex w-full items-center gap-1.5 px-2 py-1 text-left hover:text-primary transition-colors cursor-pointer"
+          aria-expanded={open}
+        >
+          {open ? (
+            <ChevronDown className="h-2.5 w-2.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+          ) : (
+            <ChevronRight className="h-2.5 w-2.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+          )}
+          <Icon
+            className={cn(
+              "h-2.5 w-2.5 shrink-0",
+              isError ? "text-destructive" : done ? "text-emerald-500" : "text-primary",
+            )}
+            aria-hidden="true"
+          />
+          <span className="truncate text-foreground">
+            {record.call.function.name}
+          </span>
+          {hasSubEvents && (
+            <span
+              className="ml-auto inline-flex shrink-0 items-center gap-0.5 rounded-sm border border-primary/40 bg-primary/10 px-1 py-0.5 text-[8px] uppercase tracking-wider text-primary"
+              title={`${subToolCount} nested · ${subIterCount} iters`}
+            >
+              <Activity className="h-2 w-2" aria-hidden="true" />
+              {subToolCount > 0 && <span className="tabular-nums">{subToolCount}</span>}
+            </span>
+          )}
+          <span
+            className={cn(
+              "shrink-0 text-[8.5px] uppercase tracking-[0.18em]",
+              hasSubEvents ? "" : "ml-auto",
+              isError ? "text-destructive" : done ? "text-muted-foreground" : "text-primary",
+            )}
+          >
+            {isError ? "error" : done ? "done" : "running…"}
+          </span>
+        </button>
+        {open && (
+          <div className="border-t border-border/40 px-2 py-1.5 space-y-1.5">
+            <div>
+              <div className="text-[8.5px] uppercase tracking-[0.22em] text-muted-foreground mb-0.5">
+                args
+              </div>
+              <pre className="text-[9.5px] text-muted-foreground whitespace-pre-wrap break-all leading-relaxed">
+                {JSON.stringify(record.args ?? {}, null, 2)}
+              </pre>
+            </div>
+            {record.error && (
+              <div>
+                <div className="text-[8.5px] uppercase tracking-[0.22em] text-destructive mb-0.5">
+                  error
+                </div>
+                <pre className="text-[9.5px] text-destructive whitespace-pre-wrap break-all leading-relaxed">
+                  {record.error}
+                </pre>
+              </div>
+            )}
+            {done && record.result !== undefined && (
+              <div>
+                <div className="text-[8.5px] uppercase tracking-[0.22em] text-muted-foreground mb-0.5">
+                  output
+                </div>
+                <pre className="text-[9.5px] text-muted-foreground whitespace-pre-wrap break-all leading-relaxed">
+                  {typeof record.result === "string"
+                    ? record.result
+                    : JSON.stringify(record.result, null, 2)}
+                </pre>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div

@@ -14,6 +14,10 @@ export interface ReasoningBlockProps {
    * surface. The "thinking…" indicator in the collapsed header
    * still shows the user that something is happening during stream. */
   defaultOpen?: boolean;
+  /** Terminal aesthetic: tight monospace, ◇ glyph instead of Brain
+   *  icon, micro tracking-wide summary, hairline border. Used when
+   *  mounted inside a rail-friendly ChatPanel dense mode. */
+  dense?: boolean;
 }
 
 /**
@@ -27,10 +31,42 @@ export function ReasoningBlock({
   content,
   isStreaming = false,
   defaultOpen = false,
+  dense = false,
 }: ReasoningBlockProps) {
   const [open, setOpen] = useState(defaultOpen);
   const trimmed = content.trim();
   if (!trimmed && !isStreaming) return null;
+
+  if (dense) {
+    return (
+      <div className="rounded-sm border border-border/60 bg-muted/20 font-mono text-[10px]">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="flex w-full items-center gap-1.5 px-2 py-1 text-left text-[9px] uppercase tracking-[0.22em] text-muted-foreground hover:text-primary transition-colors cursor-pointer"
+          aria-expanded={open}
+        >
+          <span className="text-primary">◇</span>
+          <span>reasoning</span>
+          {isStreaming && (
+            <span className="ml-1 text-primary/70 italic normal-case tracking-normal animate-pulse">
+              thinking…
+            </span>
+          )}
+          {!isStreaming && trimmed && (
+            <span className="ml-1 text-muted-foreground/60 normal-case tracking-normal tabular-nums">
+              {trimmed.length.toLocaleString()}c
+            </span>
+          )}
+        </button>
+        {open && (
+          <pre className="border-t border-border/40 px-2 py-1.5 whitespace-pre-wrap break-words text-[10px] leading-relaxed text-muted-foreground italic">
+            {trimmed || (isStreaming ? "…" : "")}
+          </pre>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div

@@ -12,11 +12,14 @@ import {
   Wrench,
   Check,
   ChevronDown,
+  Settings,
+  X,
 } from "lucide-react";
 import { useChatStore, type Chat } from "../../react/chat/index.js";
 import { ChatMessage } from "./ChatMessage.js";
 import { ModelSelector } from "../model-selector/ModelSelector.js";
 import { ModelSelectorRich } from "../model-selector/ModelSelectorRich.js";
+import { ModelMicroSwitcher } from "../model-selector/ModelMicroSwitcher.js";
 import { ModelInfoCard } from "../model-selector/ModelInfoCard.js";
 import { CostPins } from "../stats/CostPins.js";
 import { ContextMeter } from "../stats/ContextMeter.js";
@@ -47,9 +50,17 @@ export interface ChatPanelProps {
    * ``draft`` is provided; ignored otherwise.
    */
   onDraftChange?: (next: string) => void;
+  /**
+   * Dense (rail-friendly) mode. Hides the left configuration sidebar
+   * and moves model+params+system-prompt into a compact header strip
+   * with an expandable settings panel. Use when the panel is mounted
+   * in a narrow surface (~380px) like the operator chat rail. Default
+   * false — preserves the full two-column layout for standalone pages.
+   */
+  dense?: boolean;
 }
 
-export function ChatPanel({ chat, draft, onDraftChange }: ChatPanelProps) {
+export function ChatPanel({ chat, draft, onDraftChange, dense = false }: ChatPanelProps) {
   // Controlled draft path: host owns the value (e.g., per-session
   // persistence). Uncontrolled fallback keeps a local input for
   // hosts that don't care about reload survival.
@@ -125,9 +136,25 @@ export function ChatPanel({ chat, draft, onDraftChange }: ChatPanelProps) {
     }
   }, [input]);
 
+  // In dense mode the panel is a single column that flips between
+  // CHAT and SETTINGS views — gear flips to settings, X flips back.
+  // No more side-by-side rendering. Aimed at narrow-rail surfaces
+  // where pixels are scarce.
+  const [denseView, setDenseView] = useState<"chat" | "settings">("chat");
+  // Show the settings view inline in dense mode by reusing the same
+  // controls (ModelSelector, ParameterControls, etc.) the legacy
+  // sidebar uses — just stacked vertically and tightened up.
+  const showDenseSettings = dense && denseView === "settings";
+
   return (
     <div className="flex h-full">
-      <div className="w-80 border-r border-border p-4 space-y-6 overflow-y-auto shrink-0 bg-muted/10">
+      {/* Legacy two-column sidebar — only rendered in standard mode.
+          Dense mode flips the entire panel between chat ↔ settings
+          views instead of placing them side by side. */}
+      {!dense && (
+      <div
+        className="w-80 border-r border-border p-4 space-y-6 overflow-y-auto shrink-0 bg-muted/10"
+      >
         <ModelSelector
           value={chat.model}
           onChange={(model) => setModel(chat.id, model)}
@@ -173,61 +200,170 @@ export function ChatPanel({ chat, draft, onDraftChange }: ChatPanelProps) {
           </Button>
         </div>
       </div>
+      )}
 
       <div className="flex-1 flex flex-col min-w-0">
-        <div className="flex items-center justify-between gap-3 bg-card/30 px-4 py-2">
-          <CostPins chat={chat} />
-          <div className="flex items-center gap-3">
-            {availableTools.length > 0 && (
-              <ToolsToggle
-                tools={availableTools}
-                enabled={chat.enabledTools ?? []}
-                onChange={(names) => setEnabledTools(chat.id, names)}
-              />
-            )}
-            {chat.isStreaming && (
-              <span className="text-[10px] uppercase tracking-wider text-primary animate-pulse">
-                streaming…
-              </span>
-            )}
-          </div>
-        </div>
-        {/* Full-width context gauge under the stats chips. Spans the
-            chat window so the operator can see fill-level at a glance
-            without having to read a small embedded bar. */}
-        <ContextMeter
-          chat={chat}
-          model={selectedModel}
-          variant="bar"
-          className="border-b border-border bg-card/30"
-        />
-        <div className="flex-1 overflow-y-auto">
-          {chat.messages.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-muted-foreground">
-              {chat.model ? (
-                <Card interactive={false} className="max-w-md">
-                  <CardContent className="pt-6 text-center">
-                    <p className="text-lg font-medium mb-2">
-                      Start a conversation
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      Type a message below to begin chatting with {chat.model}
-                    </p>
-                  </CardContent>
-                </Card>
+        {dense && (
+          <>
+            {/* Compact header strip: tiny model switcher + gear flip
+                + clear. Gear flips the WHOLE panel to settings; X (in
+                settings view) flips back. No side-by-side rendering
+                so every pixel of width belongs to the active view. */}
+            <div className="flex items-center gap-1 border-b border-border bg-card/30 px-2 py-1">
+              <div className="flex-1 min-w-0">
+                <ModelMicroSwitcher
+                  value={chat.model}
+                  onChange={(model) => setModel(chat.id, model)}
+                />
+              </div>
+              {showDenseSettings ? (
+                <button
+                  type="button"
+                  onClick={() => setDenseView("chat")}
+                  title="back to chat"
+                  aria-label="back to chat"
+                  className="h-6 w-6 p-0 inline-flex items-center justify-center rounded-sm text-muted-foreground hover:text-primary hover:bg-muted/40 transition-colors"
+                >
+                  <X className="h-3 w-3" />
+                </button>
               ) : (
-                <Card interactive={false} className="max-w-md">
-                  <CardContent className="pt-6 text-center">
-                    <p className="text-lg font-medium mb-2">Select a model</p>
-                    <p className="text-sm text-muted-foreground">
-                      Choose a model from the sidebar to get started
-                    </p>
-                  </CardContent>
-                </Card>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setDenseView("settings")}
+                    title="settings"
+                    aria-label="settings"
+                    className="h-6 w-6 p-0 inline-flex items-center justify-center rounded-sm text-muted-foreground hover:text-primary hover:bg-muted/40 transition-colors"
+                  >
+                    <Settings className="h-3 w-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => clearChat(chat.id)}
+                    disabled={chat.isStreaming || chat.messages.length === 0}
+                    title="clear chat"
+                    aria-label="clear chat"
+                    className="h-6 w-6 p-0 inline-flex items-center justify-center rounded-sm text-muted-foreground hover:text-destructive hover:bg-muted/40 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-muted-foreground"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </>
               )}
             </div>
+            {showDenseSettings && (
+              <div className="flex-1 overflow-y-auto p-2 space-y-3 bg-muted/10 font-mono">
+                <div>
+                  <div className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground mb-1.5">
+                    model
+                  </div>
+                  <ModelSelector
+                    value={chat.model}
+                    onChange={(model) => setModel(chat.id, model)}
+                  />
+                </div>
+                <div>
+                  <div className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground mb-1.5">
+                    system prompt
+                  </div>
+                  <SystemPromptEditor
+                    value={chat.systemPrompt}
+                    onChange={(prompt) => setSystemPrompt(chat.id, prompt)}
+                  />
+                </div>
+                <div>
+                  <div className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground mb-1.5">
+                    parameters
+                  </div>
+                  <ParameterControls
+                    params={chat.params}
+                    onChange={(params) => setParams(chat.id, params)}
+                    model={selectedModel}
+                  />
+                </div>
+                {selectedModel && (
+                  <div>
+                    <div className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground mb-1.5">
+                      details
+                    </div>
+                    <ModelInfoCard model={selectedModel} />
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
+        {/* Chat surface (CostPins + ContextMeter + messages + composer).
+            In dense settings view this entire block is hidden — the
+            flip replaces it, doesn't overlay it. */}
+        {!showDenseSettings && (
+          <>
+        {/* CostPins / tools / streaming pulse strip. In dense mode this
+            moves to a tiny single-line bottom strip below the composer
+            so the chat surface stays focused on messages. */}
+        {!dense && (
+          <div className="flex items-center justify-between gap-3 bg-card/30 px-4 py-2">
+            <CostPins chat={chat} />
+            <div className="flex items-center gap-3">
+              {availableTools.length > 0 && (
+                <ToolsToggle
+                  tools={availableTools}
+                  enabled={chat.enabledTools ?? []}
+                  onChange={(names) => setEnabledTools(chat.id, names)}
+                />
+              )}
+              {chat.isStreaming && (
+                <span className="text-[10px] uppercase tracking-wider text-primary animate-pulse">
+                  streaming…
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+        {/* Context gauge under the stats chips — only in non-dense.
+            Dense surfaces context as a tiny number in the bottom stat
+            strip, not a full bar (every pixel matters in a rail). */}
+        {!dense && (
+          <ContextMeter
+            chat={chat}
+            model={selectedModel}
+            variant="bar"
+            className="border-b border-border bg-card/30"
+          />
+        )}
+        <div className="flex-1 overflow-y-auto">
+          {chat.messages.length === 0 ? (
+            dense ? (
+              // Dense empty state — single tracking-wide line, no big card.
+              <div className="flex items-center justify-center h-full text-[10px] uppercase tracking-[0.22em] text-muted-foreground font-mono">
+                {chat.model ? "send to begin" : "select model"}
+              </div>
+            ) : (
+              <div className="flex items-center justify-center h-full text-muted-foreground">
+                {chat.model ? (
+                  <Card interactive={false} className="max-w-md">
+                    <CardContent className="pt-6 text-center">
+                      <p className="text-lg font-medium mb-2">
+                        Start a conversation
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Type a message below to begin chatting with {chat.model}
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <Card interactive={false} className="max-w-md">
+                    <CardContent className="pt-6 text-center">
+                      <p className="text-lg font-medium mb-2">Select a model</p>
+                      <p className="text-sm text-muted-foreground">
+                        Choose a model from the sidebar to get started
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            )
           ) : (
-            <div className="divide-y divide-border">
+            <div className={dense ? "" : "divide-y divide-border"}>
               {chat.messages.map((message, idx) => (
                 <ChatMessage
                   key={message.id}
@@ -235,6 +371,7 @@ export function ChatPanel({ chat, draft, onDraftChange }: ChatPanelProps) {
                   isStreaming={
                     chat.isStreaming && idx === chat.messages.length - 1
                   }
+                  dense={dense}
                 />
               ))}
               <div ref={messagesEndRef} />
@@ -273,44 +410,50 @@ export function ChatPanel({ chat, draft, onDraftChange }: ChatPanelProps) {
           </div>
         )}
 
-        <ResponseViewer chat={chat} />
+        {!dense && <ResponseViewer chat={chat} />}
 
         <form
           onSubmit={handleSubmit}
-          className="p-4 border-t border-border bg-background"
+          className={cn(
+            "border-t border-border bg-background",
+            dense ? "p-2" : "p-4",
+          )}
         >
-          {(() => {
-            const bundle = getPresetsForModel(chat.model);
-            return (
-              <PromptPresets
-                className="mb-2"
-                presets={bundle.presets}
-                label={bundle.label}
-                labelIcon={bundle.icon}
-                onApply={(p) => {
-                  if (p.user) setInput(p.user);
-                  if (p.systemPrompt) setSystemPrompt(chat.id, p.systemPrompt);
-                  textareaRef.current?.focus();
-                }}
-              />
-            );
-          })()}
+          {!dense &&
+            (() => {
+              const bundle = getPresetsForModel(chat.model);
+              return (
+                <PromptPresets
+                  className="mb-2"
+                  presets={bundle.presets}
+                  label={bundle.label}
+                  labelIcon={bundle.icon}
+                  onApply={(p) => {
+                    if (p.user) setInput(p.user);
+                    if (p.systemPrompt) setSystemPrompt(chat.id, p.systemPrompt);
+                    textareaRef.current?.focus();
+                  }}
+                />
+              );
+            })()}
           <div className="flex items-end gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={() => setShowVisionStub(true)}
-              disabled={!chat.model}
-              title={
-                selectedModel?.metadata?.supports_vision
-                  ? "Attach image (coming soon)"
-                  : "Vision upload (coming soon — selected model also lacks vision support)"
-              }
-              className="shrink-0"
-            >
-              <ImageIcon className="h-4 w-4" />
-            </Button>
+            {!dense && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => setShowVisionStub(true)}
+                disabled={!chat.model}
+                title={
+                  selectedModel?.metadata?.supports_vision
+                    ? "Attach image (coming soon)"
+                    : "Vision upload (coming soon — selected model also lacks vision support)"
+                }
+                className="shrink-0"
+              >
+                <ImageIcon className="h-4 w-4" />
+              </Button>
+            )}
             <div className="flex-1">
               <Textarea
                 ref={textareaRef}
@@ -318,11 +461,16 @@ export function ChatPanel({ chat, draft, onDraftChange }: ChatPanelProps) {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={
-                  chat.model ? "Type a message..." : "Select a model first"
+                  chat.model ? (dense ? "message · ⌘⏎ send" : "Type a message...") : "Select a model first"
                 }
                 disabled={!chat.model}
                 rows={1}
-                className="min-h-[44px] max-h-[200px] resize-none pr-12"
+                className={cn(
+                  "resize-none",
+                  dense
+                    ? "min-h-[28px] max-h-[120px] py-1.5 px-2 text-[11px] font-mono"
+                    : "min-h-[44px] max-h-[200px] pr-12",
+                )}
               />
             </div>
 
@@ -330,27 +478,47 @@ export function ChatPanel({ chat, draft, onDraftChange }: ChatPanelProps) {
               <Button
                 type="button"
                 variant="destructive"
-                size="icon"
+                size={dense ? "sm" : "icon"}
                 onClick={() => stopStreaming(chat.id)}
                 title="Stop generating"
+                className={dense ? "h-7 w-7 p-0 shrink-0" : ""}
               >
-                <Square className="h-4 w-4" />
+                <Square className={dense ? "h-3 w-3" : "h-4 w-4"} />
               </Button>
             ) : (
               <Button
                 type="submit"
-                size="icon"
+                size={dense ? "sm" : "icon"}
                 disabled={!input.trim() || !chat.model}
                 title="Send message"
+                className={dense ? "h-7 w-7 p-0 shrink-0" : ""}
               >
-                <Send className="h-4 w-4" />
+                <Send className={dense ? "h-3 w-3" : "h-4 w-4"} />
               </Button>
             )}
           </div>
-          <div className="text-xs text-muted-foreground mt-2">
-            Press Enter to send, Shift+Enter for new line
-          </div>
+          {!dense && (
+            <div className="text-xs text-muted-foreground mt-2">
+              Press Enter to send, Shift+Enter for new line
+            </div>
+          )}
         </form>
+        {/* Dense bottom stat strip — tiny single-line summary with the
+            cost pin row + context meter folded into one row. Only
+            appears when the chat has activity (otherwise stays hidden
+            so an empty rail looks clean). */}
+        {dense && (chat.messages.length > 0 || chat.isStreaming) && (
+          <div className="shrink-0 border-t border-border/60 bg-card/30 px-2 py-1 flex items-center gap-2 overflow-x-auto">
+            <CostPins chat={chat} />
+            {chat.isStreaming && (
+              <span className="ml-auto shrink-0 text-[9px] uppercase tracking-[0.22em] text-primary animate-pulse">
+                ◇ streaming
+              </span>
+            )}
+          </div>
+        )}
+          </>
+        )}
       </div>
 
       {showVisionStub && (

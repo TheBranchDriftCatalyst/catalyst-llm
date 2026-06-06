@@ -74,6 +74,29 @@ export { ChatPanel, type ChatPanelProps } from "./chat/ChatPanel.js";
 export { ChatTabs, type ChatTabsProps } from "./chat/ChatTabs.js";
 export { ChatMessage, type ChatMessageProps } from "./chat/ChatMessage.js";
 export { ToolCallCard, type ToolCallCardProps } from "./chat/ToolCallCard.js";
+// Sliced sub-components (op-m6t) — consumers compose their own chat
+// layouts using these instead of the full ChatPanel kitchen sink.
+export {
+  ChatMessageList,
+  type ChatMessageListProps,
+} from "./chat/ChatMessageList.js";
+export {
+  ChatComposer,
+  type ChatComposerProps,
+} from "./chat/ChatComposer.js";
+export {
+  ChatHeader,
+  type ChatHeaderProps,
+  type ChatHeaderView,
+} from "./chat/ChatHeader.js";
+export {
+  ChatSettingsPanel,
+  type ChatSettingsPanelProps,
+} from "./chat/ChatSettingsPanel.js";
+export {
+  ChatStatsRow,
+  type ChatStatsRowProps,
+} from "./chat/ChatStatsRow.js";
 export {
   ReasoningBlock,
   splitReasoning,
