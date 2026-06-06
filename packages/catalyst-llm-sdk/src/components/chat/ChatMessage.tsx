@@ -204,16 +204,16 @@ interface DenseChatMessageProps {
 function DenseChatMessage({ message, isStreaming }: DenseChatMessageProps) {
   const isUser = message.role === "user";
   return (
-    <li className="flex flex-col gap-1.5 px-2 py-1.5">
+    <li className="flex flex-col gap-1 px-2 py-2.5 group hover:bg-muted/[0.04] transition-colors">
       <div
         className={cn(
-          "text-[8.5px] uppercase tracking-[0.22em]",
+          "text-[8.5px] uppercase tracking-[0.22em] flex items-center gap-1.5",
           isUser ? "text-primary" : "text-muted-foreground",
         )}
       >
-        {isUser ? "you" : "agent"}
+        <span>{isUser ? "you" : "agent"}</span>
         {!isUser && isStreaming && (
-          <span className="ml-1 animate-pulse text-primary">◇</span>
+          <span className="animate-pulse text-primary">◇</span>
         )}
       </div>
 
@@ -256,19 +256,20 @@ function DenseChatMessage({ message, isStreaming }: DenseChatMessageProps) {
           />
         ))}
 
-      {/* Message content. User: bordered orange-tinted box. Agent:
-          plain mono with subtle elevation. Split <think> tags inline
-          for reasoning models that emit them as content. */}
+      {/* Message content. Both roles get a subtle hairline box so the
+          chat thread has visual rhythm — user gets primary-tinted to
+          signal authorship, agent gets neutral hairline. Tight padding
+          + monospace + leading-relaxed for readability. */}
       {isUser ? (
-        <div className="rounded-sm border border-primary/40 bg-primary/[0.06] px-2 py-1.5 font-mono text-[10.5px] leading-relaxed text-foreground whitespace-pre-wrap">
+        <div className="rounded-sm border border-primary/30 bg-primary/[0.05] px-2 py-1.5 font-mono text-[10.5px] leading-relaxed text-foreground whitespace-pre-wrap break-words">
           {message.content}
         </div>
       ) : isStreaming && !message.content && !message.tool_calls?.length && !message.error ? (
-        <span className="px-2 font-mono text-[10.5px] italic text-muted-foreground">
-          ...
-        </span>
+        <div className="rounded-sm border border-border/40 bg-muted/20 px-2 py-1.5 font-mono text-[10.5px] italic text-muted-foreground">
+          <span className="animate-pulse">...</span>
+        </div>
       ) : message.content ? (
-        <div className="px-1 font-mono text-[10.5px] leading-relaxed text-foreground">
+        <div className="rounded-sm border border-border/40 bg-muted/[0.15] px-2 py-1.5 font-mono text-[10.5px] leading-relaxed text-foreground">
           {splitReasoning(message.content).map((seg, i) =>
             seg.kind === "thinking" ? (
               <ReasoningBlock

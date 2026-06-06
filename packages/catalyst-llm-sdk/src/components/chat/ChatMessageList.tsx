@@ -74,7 +74,13 @@ export function ChatMessageList({
 
   return (
     <div className={cn("flex-1 overflow-y-auto", className)}>
-      <div className={dense ? "" : "divide-y divide-border"}>
+      <div
+        className={
+          dense
+            ? "divide-y divide-border/30"
+            : "divide-y divide-border"
+        }
+      >
         {chat.messages.map((message, idx) => (
           <ChatMessage
             key={message.id}
