@@ -25,6 +25,86 @@ export type {
   ToolSubEvent,
 } from "./types.js";
 
+/** Auto-derive a chat name from the first user message when the chat
+ *  still has its default placeholder name. Keeps tabs readable without
+ *  forcing the host to manage titles. No-op if the chat already has a
+ *  user-set name or any prior user messages.
+ *
+ *  Default names recognized: "New Chat", "" (empty), or any falsy.
+ */
+function deriveChatName(
+  currentName: string,
+  existingMessages: ChatTurn[],
+  newUserContent: string,
+): string {
+  const isDefault =
+    !currentName || currentName.trim() === "" || currentName === "New Chat";
+  const hadPriorUser = existingMessages.some((m) => m.role === "user");
+  if (!isDefault || hadPriorUser) return currentName;
+  const trimmed = newUserContent.trim().replace(/\s+/g, " ");
+  if (!trimmed) return currentName;
+  if (trimmed.length <= 32) return trimmed;
+  return trimmed.slice(0, 32).trimEnd() + "…";
+}
+
+/** localStorage watermark eviction (op-w76). zustand's persist middleware
+ *  doesn't cap by size — it just writes JSON until the browser quota
+ *  errors. Wrap the storage so writes that exceed MAX_BYTES drop the
+ *  oldest chats (by lastActiveAt / latest message timestamp) until we
+ *  fit. Reads pass through. Quota errors caught and logged.
+ *
+ *  Default cap is 2MB matching catalyst-operator's chatStore policy.
+ */
+const MAX_BYTES = 2 * 1024 * 1024;
+
+function evictingStorage(): Storage {
+  const ls =
+    typeof window !== "undefined"
+      ? window.localStorage
+      : (undefined as unknown as Storage);
+  return {
+    getItem: (k) => ls?.getItem(k) ?? null,
+    setItem: (k, v) => {
+      if (!ls) return;
+      let value = v;
+      while (value.length > MAX_BYTES) {
+        try {
+          const parsed = JSON.parse(value);
+          const state =
+            (parsed?.state as { chats?: Chat[] } | undefined) ?? parsed;
+          const chats = state?.chats;
+          if (!Array.isArray(chats) || chats.length <= 1) break;
+          // Score each chat by its latest message timestamp; evict
+          // lowest (oldest activity) first.
+          const scored = chats.map((c) => ({
+            id: c.id,
+            score:
+              c.messages?.[c.messages.length - 1]?.timestamp ?? c.id.length,
+          }));
+          scored.sort((a, b) => a.score - b.score);
+          const drop = scored[0]?.id;
+          if (!drop) break;
+          state.chats = chats.filter((c) => c.id !== drop);
+          value = JSON.stringify(parsed);
+        } catch {
+          break;
+        }
+      }
+      try {
+        ls.setItem(k, value);
+      } catch {
+        // Quota exceeded even after eviction — best-effort drop.
+      }
+    },
+    removeItem: (k) => ls?.removeItem(k),
+    clear: () => ls?.clear(),
+    get length() {
+      return ls?.length ?? 0;
+    },
+    key: (i) => ls?.key(i) ?? null,
+  };
+}
+
 export const useChatStore = create<ChatStore>()(
   persist(
     (set, get) => ({
@@ -154,6 +234,10 @@ export const useChatStore = create<ChatStore>()(
         c.id === chatId
           ? {
               ...c,
+              // Auto-derive name from first user message — only when
+              // the chat still has its default name. Keeps tabs
+              // readable without forcing the host to manage titles.
+              name: deriveChatName(c.name, c.messages, content),
               messages: [...c.messages, userMessage, assistantMessage],
               isStreaming: true,
               error: undefined,
@@ -326,16 +410,58 @@ export const useChatStore = create<ChatStore>()(
           case "iteration":
             iteration = ev.n;
             break;
-          case "token":
-          case "reasoning": {
-            // Both flow into the assistant's content. Reasoning
-            // segments are recognised + collapsed downstream by
-            // ChatMessage's splitReasoning() — the wire format
-            // doesn't need to differentiate yet.
+          case "token": {
             if (!get().chats.find((c) => c.id === chatId)?.firstTokenTime) {
               get().setFirstTokenTime(chatId);
             }
             get().appendToken(chatId, ev.content);
+            break;
+          }
+          case "reasoning": {
+            // op-w76: reasoning deltas land in the assistant turn's
+            // `reasoning` field, NOT in `content`. Distinct from the
+            // <think>-tag splitter splitReasoning() runs on content —
+            // some backends emit reasoning as its own event stream
+            // and never mix it into the answer text. ChatMessage
+            // renders both: the `reasoning` field above the answer,
+            // and any <think> tags split from content inline.
+            if (!get().chats.find((c) => c.id === chatId)?.firstTokenTime) {
+              get().setFirstTokenTime(chatId);
+            }
+            set((s) => ({
+              chats: s.chats.map((c) => {
+                if (c.id !== chatId) return c;
+                const msgs = [...c.messages];
+                const last = msgs[msgs.length - 1];
+                if (last?.role !== "assistant") return c;
+                msgs[msgs.length - 1] = {
+                  ...last,
+                  reasoning: (last.reasoning ?? "") + ev.content,
+                };
+                return { ...c, messages: msgs };
+              }),
+            }));
+            break;
+          }
+          case "tool_router_selected": {
+            // op-w76: stash router picks on the assistant turn so
+            // ChatMessage renders the chip. We only persist `picks`
+            // (the over-defaults delta) so the chip is suppressed
+            // automatically when the router didn't add anything.
+            const picks = ev.picks ?? [];
+            set((s) => ({
+              chats: s.chats.map((c) => {
+                if (c.id !== chatId) return c;
+                const msgs = [...c.messages];
+                const last = msgs[msgs.length - 1];
+                if (last?.role !== "assistant") return c;
+                msgs[msgs.length - 1] = {
+                  ...last,
+                  routerPicks: picks,
+                };
+                return { ...c, messages: msgs };
+              }),
+            }));
             break;
           }
           case "tool_call_start": {
@@ -557,7 +683,10 @@ export const useChatStore = create<ChatStore>()(
     }),
     {
       name: "catalyst-llm-sdk:chat",
-      storage: createJSONStorage(() => localStorage),
+      // op-w76: evicting storage caps localStorage at 2MB; drops the
+      // oldest chats first so a long-lived session set doesn't blow
+      // the browser quota.
+      storage: createJSONStorage(() => evictingStorage()),
       // Persist conversations + per-chat config; skip non-serializable
       // (client, abortControllers) and skip transient streaming flags. After
       // a page refresh any chat marked `isStreaming: true` had its fetch

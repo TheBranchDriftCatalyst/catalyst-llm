@@ -93,6 +93,25 @@ export interface Cancelled {
   propagated_to?: string[] | null;
 }
 
+/** Per-turn tool-router selection event (op-w76).
+ *
+ * Backends that pre-route a tool subset per turn (e.g., catalyst-operator's
+ * select_tools prefilter + router LLM) emit this so the chat UI can
+ * render which tools the model HAD AVAILABLE this turn — distinct from
+ * which it actually called. The split into ``defaults`` (always-bound
+ * safety floor) + ``picks`` (what the router added on top) lets the UI
+ * suppress the chip when picks is empty (i.e., the router fell back to
+ * defaults and didn't actually do anything). */
+export interface ToolRouterSelected {
+  type: "tool_router_selected";
+  /** Every tool bound this turn (defaults ∪ picks). */
+  tools: string[];
+  /** Always-bound safety-floor subset (e.g., DEFAULT_TOOL_NAMES). */
+  defaults?: string[];
+  /** What the router LLM / prefilter added on top of defaults. */
+  picks?: string[];
+}
+
 export type AgentEvent =
   | RunStarted
   | Token
@@ -102,7 +121,8 @@ export type AgentEvent =
   | Iteration
   | MessageDone
   | ErrorEvent
-  | Cancelled;
+  | Cancelled
+  | ToolRouterSelected;
 
 /** All event-type discriminators in one place, useful for exhaustiveness checks. */
 export const AGENT_EVENT_TYPES = [
@@ -115,6 +135,7 @@ export const AGENT_EVENT_TYPES = [
   "message_done",
   "error",
   "cancelled",
+  "tool_router_selected",
 ] as const;
 export type AgentEventType = (typeof AGENT_EVENT_TYPES)[number];
 

@@ -8,7 +8,7 @@ export interface ModelCapabilities {
 
 /**
  * Best-effort model capability detection. Delegates to inferModelHints, which
- * checks the generated registry (packages/mac-node/models.yaml → JSON) first
+ * checks the generated registry (../mac-sdlc-node/models.yaml → JSON) first
  * and the hand-written regex rules in modelHints.ts as a fallback. The proxy
  * is still the source of truth for runtime calls — this is just a UI-side
  * shortcut for gating optional controls.

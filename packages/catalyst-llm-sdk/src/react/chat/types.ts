@@ -96,6 +96,23 @@ export interface ChatTurn {
    * text that streamed before the error stays visible.
    */
   error?: string;
+  /**
+   * Accumulated reasoning content for this turn — distinct from the
+   * `<think>...</think>` tag pattern that splitReasoning() extracts
+   * from `content`. Backends that emit reasoning as a separate event
+   * stream (e.g., catalyst-operator's `reasoning` SSE event delta)
+   * land deltas here so the reasoning never pollutes the main
+   * content. Rendered via ReasoningBlock above the content block by
+   * ChatMessage when present.
+   */
+  reasoning?: string;
+  /**
+   * Per-turn tool-router selection (op-w76). When a backend pre-routes
+   * a tool subset, the SDK stashes the picks here so ChatMessage can
+   * render the "router picked X, Y, Z" chip above the answer. Hidden
+   * when picks is empty — same suppression semantics as the operator.
+   */
+  routerPicks?: string[];
 }
 
 export interface Chat {

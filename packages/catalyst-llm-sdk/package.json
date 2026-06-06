@@ -1,6 +1,6 @@
 {
   "name": "@catalyst/llm-sdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Unified LLM access SDK for Catalyst — client, React Provider/hooks, and UI components routing through the LiteLLM proxy",
   "type": "module",
@@ -31,6 +31,8 @@
       "types": "./dist/components/index.d.ts",
       "import": "./dist/components/index.js"
     },
+    "./components/styles.css": "./dist/components/index.css",
+    "./styles.css": "./dist/index.css",
     "./dev": {
       "types": "./dist/dev/index.d.ts",
       "import": "./dist/dev/index.js"

@@ -34,10 +34,35 @@ import { cn } from "../shared/utils.js";
 
 export interface ChatPanelProps {
   chat: Chat;
+  /**
+   * Controlled composer text (op-w76). When provided, the textarea is
+   * fully controlled — useful for hosts that want to persist the
+   * draft to localStorage / a session store / etc. across reloads or
+   * tab switches. When omitted, ChatPanel manages its own internal
+   * input state (the legacy behaviour). Pair with ``onDraftChange``.
+   */
+  draft?: string;
+  /**
+   * Notification for every composer-text change. Required when
+   * ``draft`` is provided; ignored otherwise.
+   */
+  onDraftChange?: (next: string) => void;
 }
 
-export function ChatPanel({ chat }: ChatPanelProps) {
-  const [input, setInput] = useState("");
+export function ChatPanel({ chat, draft, onDraftChange }: ChatPanelProps) {
+  // Controlled draft path: host owns the value (e.g., per-session
+  // persistence). Uncontrolled fallback keeps a local input for
+  // hosts that don't care about reload survival.
+  const isControlled = draft !== undefined;
+  const [internalInput, setInternalInput] = useState("");
+  const input = isControlled ? (draft as string) : internalInput;
+  const setInput = (next: string) => {
+    if (isControlled) {
+      onDraftChange?.(next);
+    } else {
+      setInternalInput(next);
+    }
+  };
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 

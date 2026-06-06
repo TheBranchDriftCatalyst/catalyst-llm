@@ -7,7 +7,7 @@ import generatedHints from "./generated/modelHints.json" with { type: "json" };
  * model database isn't seeded.
  *
  * Two-tier lookup:
- *   1. Generated table from packages/mac-node/models.yaml (every mac/* model).
+ *   1. Generated table from ../mac-sdlc-node/models.yaml (every mac/* model).
  *      Adds entries are automatic — run `task models` to regen.
  *   2. Hand-written regex RULES below, used when the generated table has no
  *      key for this model (hosted providers, models not in the mac-node

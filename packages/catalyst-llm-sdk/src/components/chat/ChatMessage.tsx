@@ -71,6 +71,41 @@ export function ChatMessage({ message, isStreaming }: ChatMessageProps) {
         >
           {isAssistant ? (
             <>
+              {/* Router-picked chip (op-w76). Hidden when picks is
+                  empty or undefined — i.e., the router either wasn't
+                  used or fell back to defaults and didn't actually
+                  add anything. Same suppression semantics as the
+                  operator's chip so we never show a chip "for show". */}
+              {message.routerPicks && message.routerPicks.length > 0 && (
+                <div
+                  data-testid="router-selected-chip"
+                  className="mb-2 flex flex-wrap items-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground"
+                >
+                  <span className="text-primary">⌥ router picked</span>
+                  {message.routerPicks.map((t) => (
+                    <span
+                      key={t}
+                      className="rounded-sm border border-border/40 bg-muted/30 px-1.5 py-0.5 text-foreground"
+                    >
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {/* Reasoning event accumulator (op-w76). Distinct from
+                  the <think>-tag splitter below: this slot is for
+                  backends that emit reasoning deltas as their own
+                  event stream, never mixed into content. Rendered
+                  above the answer so the user can read it before the
+                  conclusion. */}
+              {message.reasoning && (
+                <ReasoningBlock
+                  content={message.reasoning}
+                  isStreaming={
+                    !!isStreaming && !message.content && !message.error
+                  }
+                />
+              )}
               {/* Tool invocations land before / between content chunks
                   in the multi-iteration loop; render them inline so
                   the user sees the "model searched, then read this
