@@ -286,12 +286,33 @@ function CodeFence({
   className?: string;
 }) {
   const [copied, setCopied] = useState(false);
+  // Short single-line snippets (e.g. the model fences a single word
+  // for emphasis: ```text\nfoo\n```) shouldn't get the full header
+  // chrome — render as a tight inline-style chip instead. The user
+  // can still highlight + copy via the normal selection path.
+  const trimmed = code.replace(/\s+$/, "");
+  const isShortInline =
+    !trimmed.includes("\n") && trimmed.length <= 80 && (!lang || lang === "text");
+  if (isShortInline) {
+    return (
+      <code
+        data-block-passthrough
+        className={cn(
+          "inline rounded-sm border border-border/20 bg-muted/[0.12] px-1 py-0 text-[10px] font-mono text-foreground",
+          className,
+        )}
+      >
+        {trimmed}
+      </code>
+    );
+  }
+
   return (
     <div
       data-block-passthrough
-      className="my-1.5 overflow-hidden rounded-sm border border-border/25 bg-muted/[0.12]"
+      className="my-1.5 overflow-hidden rounded-sm border border-border/20 bg-muted/[0.08]"
     >
-      <div className="flex items-center justify-between border-b border-border/20 bg-muted/[0.10] px-2 py-0.5 text-[9px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+      <div className="flex items-center justify-between border-b border-border/15 px-2 py-0.5 text-[9px] font-mono uppercase tracking-[0.18em] text-muted-foreground/70">
         <span>{lang ?? "text"}</span>
         <button
           type="button"

@@ -205,4 +205,11 @@ export {
   RenderedContent,
   type RenderedContentProps,
 } from "./shared/RenderedContent.js";
+// Generic monospace dropdown — drop-in replacement for native <select>.
+// TODO: move-to-catalyst-ui — base primitive useful outside SDK.
+export {
+  DenseSelect,
+  type DenseSelectOption,
+  type DenseSelectProps,
+} from "./shared/DenseSelect.js";
 export { fuzzyScore, fuzzyFilter } from "./shared/fuzzy.js";

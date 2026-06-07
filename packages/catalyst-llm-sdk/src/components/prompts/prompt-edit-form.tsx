@@ -27,6 +27,7 @@ import { Label } from "@thebranchdriftcatalyst/catalyst-ui/ui/label";
 import { Textarea } from "@thebranchdriftcatalyst/catalyst-ui/ui/textarea";
 import type { CustomPreset } from "../../react/promptStore.js";
 import { cn } from "../shared/utils.js";
+import { DenseSelect } from "../shared/DenseSelect.js";
 import { CATEGORY_META } from "./prompt-picker-list.js";
 
 export type PromptDraft = {
@@ -239,18 +240,22 @@ export function PromptEditForm({
           <Label htmlFor="prompt-cat" className="text-[10px] uppercase tracking-wider text-muted-foreground">
             Category
           </Label>
-          <select
-            id="prompt-cat"
+          <DenseSelect
+            ariaLabel="Category"
             value={draft.category}
-            onChange={(e) => onField("category", e.target.value as PromptDraft["category"])}
-            className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {(Object.keys(CATEGORY_META) as Array<keyof typeof CATEGORY_META>).map((k) => (
-              <option key={k} value={k}>
-                {CATEGORY_META[k].label} — {CATEGORY_META[k].hint}
-              </option>
-            ))}
-          </select>
+            onChange={(v) =>
+              onField("category", v as PromptDraft["category"])
+            }
+            options={(
+              Object.keys(CATEGORY_META) as Array<keyof typeof CATEGORY_META>
+            ).map((k) => ({
+              value: k as string,
+              label: CATEGORY_META[k].label,
+              description: CATEGORY_META[k].hint,
+            }))}
+            className="w-full"
+            triggerClassName="h-8 border border-border/30 bg-background"
+          />
         </div>
         <div className="col-span-2 space-y-1">
           <Label htmlFor="prompt-desc" className="text-[10px] uppercase tracking-wider text-muted-foreground">

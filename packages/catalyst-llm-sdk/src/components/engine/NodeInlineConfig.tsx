@@ -34,6 +34,7 @@ import type {
 } from "../../agent/events.js";
 import { usePromptStore } from "../../react/promptStore.js";
 import { ModelMicroSwitcher } from "../model-selector/ModelMicroSwitcher.js";
+import { DenseSelect } from "../shared/DenseSelect.js";
 import { cn } from "../shared/utils.js";
 
 // Same cast shape AgentConfigForm uses — catalyst-ui's Slider extends
@@ -272,17 +273,14 @@ function FieldRow({
           {label}
         </span>
         <div className="nodrag nopan nowheel flex-1">
-          <select
+          <DenseSelect
             value={String(value ?? "")}
-            onChange={(e) => onChange(e.target.value)}
-            className="h-6 w-full rounded border border-border bg-background px-1 text-[11px]"
-          >
-            {field.enum.map((opt) => (
-              <option key={opt} value={opt}>
-                {opt}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => onChange(v)}
+            options={field.enum.map((opt) => ({ value: opt, label: opt }))}
+            ariaLabel={label}
+            className="w-full"
+            triggerClassName="h-6 border border-border/30 bg-background"
+          />
         </div>
         {isOverridden && <ResetButton onReset={onReset} />}
       </div>

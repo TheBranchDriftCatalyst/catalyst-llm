@@ -44,37 +44,42 @@ export function ChatSettingsPanel({
   const selectedModel = models.find((m) => m.id === chat.model);
 
   if (dense) {
+    // Drop the wrapper DenseSection labels — the SDK inner components
+    // already render their own headers (Model, System Prompt,
+    // Parameters). Stacking ours on top produced duplicate noise
+    // ("MODEL" + "Model" etc). Descendant selectors (Tailwind v4) dim
+    // ALL inner control borders + backgrounds in one place so we
+    // don't have to fork every shadcn primitive.
     return (
       <div
         className={cn(
-          "flex-1 overflow-y-auto p-2 space-y-3 bg-muted/10 font-mono",
+          "flex-1 overflow-y-auto p-2 space-y-3 bg-background font-mono",
+          // Borders across the board: trigger buttons, comboboxes,
+          // textareas, model-info cards — drop opacity hard.
+          "[&_textarea]:border-border/15 [&_textarea]:bg-muted/[0.08]",
+          "[&_button[role=combobox]]:border-border/20 [&_button[role=combobox]]:bg-muted/[0.08]",
+          "[&_[role=dialog]]:border-border/20",
+          // ModelInfoCard, container divs with rounded-md border
+          "[&_.rounded-md.border]:border-border/15 [&_.rounded-md.border]:bg-muted/[0.05]",
+          // Tighten internal label sizes so they aren't huge sans-serif
+          "[&_label]:text-[10px] [&_label]:font-mono [&_label]:text-muted-foreground",
           className,
         )}
       >
-        <DenseSection label="model">
-          <ModelSelector
-            value={chat.model}
-            onChange={(model) => setModel(chat.id, model)}
-          />
-        </DenseSection>
-        <DenseSection label="system prompt">
-          <SystemPromptEditor
-            value={chat.systemPrompt}
-            onChange={(prompt) => setSystemPrompt(chat.id, prompt)}
-          />
-        </DenseSection>
-        <DenseSection label="parameters">
-          <ParameterControls
-            params={chat.params}
-            onChange={(params) => setParams(chat.id, params)}
-            model={selectedModel}
-          />
-        </DenseSection>
-        {selectedModel && (
-          <DenseSection label="details">
-            <ModelInfoCard model={selectedModel} />
-          </DenseSection>
-        )}
+        <ModelSelector
+          value={chat.model}
+          onChange={(model) => setModel(chat.id, model)}
+        />
+        <SystemPromptEditor
+          value={chat.systemPrompt}
+          onChange={(prompt) => setSystemPrompt(chat.id, prompt)}
+        />
+        <ParameterControls
+          params={chat.params}
+          onChange={(params) => setParams(chat.id, params)}
+          model={selectedModel}
+        />
+        {selectedModel && <ModelInfoCard model={selectedModel} />}
       </div>
     );
   }
@@ -136,19 +141,3 @@ export function ChatSettingsPanel({
   );
 }
 
-function DenseSection({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <div className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground mb-1.5">
-        {label}
-      </div>
-      {children}
-    </div>
-  );
-}
