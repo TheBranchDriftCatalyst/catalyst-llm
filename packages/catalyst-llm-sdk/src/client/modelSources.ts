@@ -104,6 +104,12 @@ interface OllamaTag {
  * Just Works. Pricing is left undefined since local models have no
  * per-token cost — CostPins will render $0.00 which is correct.
  *
+ * Context limits: Ollama exposes the actual context window via
+ * /api/show per model. We fan out N parallel /api/show fetches on
+ * each listModels() call and parse ``num_ctx`` out of the parameters
+ * blob so the chat UI's ctx gauge shows the real limit (e.g.,
+ * qwen3:32b → 40k instead of the 8k fallback).
+ *
  * baseUrl defaults to ``http://localhost:11434``; pass a different
  * URL when Ollama is mounted under an operator proxy.
  */
@@ -121,26 +127,90 @@ export class OllamaModelSource implements ModelSource {
     }
     const data = (await resp.json()) as { models?: OllamaTag[] };
     const tags = data.models ?? [];
-    return tags.map((t) => ({
-      id: t.name,
-      object: "model" as const,
-      created: t.modified_at ? Date.parse(t.modified_at) / 1000 : 0,
-      owned_by: "ollama",
-      endpoint: getEndpointInfo(this.baseUrl),
-      underlyingModel: `ollama/${t.name}`,
-      metadata: t.details
-        ? {
-            // Best-effort metadata mapping — Ollama doesn't expose
-            // context limit or pricing; leave them undefined so the
-            // UI renders gracefully (CostPins shows $0.00, context
-            // meter hides).
-            model_info: {
-              parameter_size: t.details.parameter_size,
-              quantization_level: t.details.quantization_level,
-              family: t.details.family,
-            },
-          }
-        : undefined,
-    })) as ModelWithRouting[];
+    // Parallel /api/show probes for each model to extract num_ctx.
+    // Best-effort: a single failed /api/show shouldn't break the
+    // whole catalogue load. Promise.allSettled + safe access.
+    const ctxLimits = await Promise.allSettled(
+      tags.map((t) => this._fetchCtxLimit(t.name)),
+    );
+    return tags.map((t, i) => {
+      const ctxResult = ctxLimits[i];
+      const num_ctx =
+        ctxResult.status === "fulfilled" ? ctxResult.value : undefined;
+      return {
+        id: t.name,
+        object: "model" as const,
+        created: t.modified_at ? Date.parse(t.modified_at) / 1000 : 0,
+        owned_by: "ollama",
+        endpoint: getEndpointInfo(this.baseUrl),
+        underlyingModel: `ollama/${t.name}`,
+        metadata: {
+          model_info: {
+            parameter_size: t.details?.parameter_size,
+            quantization_level: t.details?.quantization_level,
+            family: t.details?.family,
+            // ctx limit goes here so SDK consumers like the chat
+            // header / ctx gauge can read it via
+            // selectedModel.metadata.max_input_tokens
+            ...(num_ctx !== undefined
+              ? { max_input_tokens: num_ctx }
+              : {}),
+          },
+          // Mirror to top-level metadata key too — different chat
+          // surfaces (CostPins, ChatHeader, ChatSettingsPanel) read
+          // from slightly different paths.
+          ...(num_ctx !== undefined
+            ? { max_input_tokens: num_ctx }
+            : {}),
+        },
+      } as ModelWithRouting;
+    });
+  }
+
+  /**
+   * Fetch /api/show for a single model and pull its trained context
+   * window. Ollama exposes two ctx signals:
+   *
+   *   1. ``parameters`` (multi-line string) may contain a runtime
+   *      ``num_ctx N`` override — most modelfiles don't set this so
+   *      it's often absent.
+   *   2. ``model_info`` always contains the GGUF metadata, including
+   *      ``<family>.context_length`` (e.g., ``qwen3.context_length =
+   *      40960``). This is the model's TRAINED context window — the
+   *      ceiling users care about for the UI gauge.
+   *
+   * Strategy: prefer the trained ctx from model_info (more accurate),
+   * fall back to a num_ctx override in parameters, fall back to
+   * undefined so the caller uses the SDK default.
+   */
+  private async _fetchCtxLimit(name: string): Promise<number | undefined> {
+    try {
+      const resp = await fetch(`${this.baseUrl}/api/show`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!resp.ok) return undefined;
+      const data = (await resp.json()) as {
+        parameters?: string;
+        model_info?: Record<string, unknown>;
+      };
+      // 1. Trained ctx from model_info.<family>.context_length
+      const modelInfo = data.model_info ?? {};
+      for (const [k, v] of Object.entries(modelInfo)) {
+        if (k.endsWith(".context_length") && typeof v === "number") {
+          return v;
+        }
+      }
+      // 2. Runtime override in parameters
+      const params = data.parameters ?? "";
+      for (const line of params.split(/\n/)) {
+        const m = line.trim().match(/^num_ctx\s+(\d+)/);
+        if (m) return Number.parseInt(m[1], 10);
+      }
+      return undefined;
+    } catch {
+      return undefined;
+    }
   }
 }
