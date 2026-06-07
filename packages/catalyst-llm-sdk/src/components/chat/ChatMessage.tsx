@@ -207,13 +207,14 @@ function DenseChatMessage({ message, isStreaming }: DenseChatMessageProps) {
     <li className="flex flex-col gap-1 px-2 py-1.5">
       <div
         className={cn(
-          "text-[8.5px] uppercase tracking-[0.22em] flex items-center gap-1.5",
+          "text-[8.5px] uppercase tracking-[0.22em] flex items-center gap-1.5 whitespace-nowrap",
           isUser ? "text-primary" : "text-muted-foreground",
         )}
+        data-testid={isUser ? "chat-role-user" : "chat-role-agent"}
       >
-        <span>{isUser ? "you" : "agent"}</span>
+        <span className="shrink-0">{isUser ? "you" : "agent"}</span>
         {!isUser && isStreaming && (
-          <span className="animate-pulse text-primary">◇</span>
+          <span className="animate-pulse text-primary shrink-0">◇</span>
         )}
       </div>
 
@@ -256,11 +257,13 @@ function DenseChatMessage({ message, isStreaming }: DenseChatMessageProps) {
           />
         ))}
 
-      {/* Message content. User: subtle primary-tinted background WITH
-          NO border. Agent: floating mono text, no chrome — relies on
-          the role label + divide-y between turns for rhythm. */}
+      {/* Message content. User: a marked-up quote — barely-there primary
+          tint + a 2px primary-accent left rail. Reads as "this is what
+          you asked", not as a button. Agent: floating mono text, no
+          chrome — relies on the role label + divide-y between turns
+          for rhythm. */}
       {isUser ? (
-        <div className="rounded-sm bg-primary/[0.07] px-2 py-1 font-mono text-[10.5px] leading-relaxed text-foreground whitespace-pre-wrap break-words">
+        <div className="rounded-sm bg-primary/[0.04] border-l-2 border-primary/40 px-2 py-1 font-mono text-[10.5px] leading-relaxed text-foreground whitespace-pre-wrap break-words">
           {message.content}
         </div>
       ) : isStreaming && !message.content && !message.tool_calls?.length && !message.error ? (

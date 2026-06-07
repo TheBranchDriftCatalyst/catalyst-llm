@@ -36,14 +36,20 @@ interface PinProps {
   flash?: boolean;
   emphasis?: "default" | "primary" | "muted";
   compact?: boolean;
+  /** When true and ``compact``, the pin is hidden in narrow containers
+   *  (<360px) via a Tailwind v4 @container query. Three priority pins
+   *  (calls, cost, ttft) leave this off so they always survive. */
+  collapsible?: boolean;
 }
 
-function Pin({ icon: Icon, label, value, flash, emphasis = "default", compact }: PinProps) {
+function Pin({ icon: Icon, label, value, flash, emphasis = "default", compact, collapsible }: PinProps) {
   if (compact) {
     return (
       <span
+        data-testid={`cost-pin-${label}`}
         className={cn(
-          "inline-flex items-center gap-1 px-1 transition-colors",
+          "inline-flex items-center gap-1 px-1 shrink-0 min-w-0 transition-colors",
+          collapsible && "@max-[360px]:hidden",
           emphasis === "primary"
             ? "text-primary"
             : emphasis === "muted"
@@ -51,8 +57,8 @@ function Pin({ icon: Icon, label, value, flash, emphasis = "default", compact }:
               : "text-foreground",
         )}
       >
-        <Icon className="h-2.5 w-2.5 opacity-70" />
-        <span className="text-[8.5px] uppercase tracking-[0.18em] opacity-70">
+        <Icon className="h-2.5 w-2.5 opacity-70 shrink-0" />
+        <span className="text-[8.5px] uppercase tracking-[0.18em] opacity-70 tabular-nums">
           {label}
         </span>
         <span className="font-mono text-[10px] tabular-nums">{value}</span>
@@ -108,10 +114,11 @@ export function CostPins({
 
   return (
     <div
+      data-testid="cost-pins"
       className={cn(
-        "flex items-center",
+        "flex items-center min-w-0",
         compact
-          ? "flex-nowrap gap-0 divide-x divide-border/15"
+          ? "flex-nowrap gap-0 divide-x divide-border/15 overflow-hidden"
           : "flex-wrap gap-1.5",
         className,
       )}
@@ -128,6 +135,7 @@ export function CostPins({
         value={formatTokens(stats.inputTokens)}
         emphasis="muted"
         compact={compact}
+        collapsible
       />
       <Pin
         icon={ArrowDown}
@@ -135,6 +143,7 @@ export function CostPins({
         value={formatTokens(stats.outputTokens)}
         emphasis="muted"
         compact={compact}
+        collapsible
       />
       <Pin
         icon={Timer}
@@ -149,6 +158,7 @@ export function CostPins({
         value={formatRate(stats.lastTokensPerSec)}
         emphasis={stats.lastTokensPerSec === null ? "muted" : "default"}
         compact={compact}
+        collapsible
       />
       <Pin
         icon={Gauge}
@@ -156,6 +166,7 @@ export function CostPins({
         value={formatMs(stats.lastLatencyMs)}
         emphasis="muted"
         compact={compact}
+        collapsible
       />
       <Pin
         icon={Coins}

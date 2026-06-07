@@ -175,7 +175,18 @@ export function ChatComposer({
             size={dense ? "sm" : "icon"}
             disabled={!input.trim() || !chat.model}
             title="Send message"
-            className={dense ? "h-7 w-7 p-0 shrink-0" : ""}
+            data-testid="chat-send-button"
+            // Explicit orange-tinted hover so the affordance reads in
+            // dense mode; the catalyst-ui sm button is otherwise too
+            // quiet. Disabled state stays clearly inert (opacity-50
+            // via Button base + no hover tint applied) to meet
+            // WCAG AA contrast on the Send icon.
+            className={cn(
+              "border border-transparent transition-colors",
+              "hover:bg-primary/15 hover:border-primary/50",
+              "disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:border-transparent",
+              dense && "h-7 w-7 p-0 shrink-0",
+            )}
           >
             <Send className={dense ? "h-3 w-3" : "h-4 w-4"} />
           </Button>
