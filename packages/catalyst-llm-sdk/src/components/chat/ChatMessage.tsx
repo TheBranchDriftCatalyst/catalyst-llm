@@ -267,6 +267,7 @@ function DenseChatMessage({
         {!isUser && isStreaming && (
           <span className="animate-pulse text-primary shrink-0">◇</span>
         )}
+        {isAssistant && <IterationCounter message={message} />}
         {isAssistant && chat && (
           <TtftSparkline series={ttftSeries} />
         )}
@@ -392,6 +393,34 @@ function DenseChatMessage({
         </span>
       )}
     </li>
+  );
+}
+
+// ── PRO7: iteration counter ──────────────────────────────────────────
+//
+// LangGraph multi-iteration loops set `iteration` on each tool_call
+// record (0-based). When the assistant turn went through >=1 iterations
+// we expose a compact `↻ N` glyph in the AGENT label row so the operator
+// can tell at a glance "this answer was 3 tool-loop turns deep".
+//
+// Hidden when the message has no tool_calls or the max iteration is 0
+// (the common single-shot case) — otherwise every plain reply would
+// carry a meaningless `↻ 1` and clutter the row.
+
+function IterationCounter({ message }: { message: ChatTurn }) {
+  const calls = message.tool_calls;
+  if (!calls || calls.length === 0) return null;
+  const last = calls[calls.length - 1];
+  const iter = typeof last?.iteration === "number" ? last.iteration : 0;
+  if (iter < 1) return null;
+  return (
+    <span
+      data-testid="chat-iteration-counter"
+      className="shrink-0 tabular-nums text-muted-foreground normal-case tracking-normal"
+      title={`assistant turn ran ${iter} LangGraph iteration${iter === 1 ? "" : "s"}`}
+    >
+      ↻ {iter}
+    </span>
   );
 }
 

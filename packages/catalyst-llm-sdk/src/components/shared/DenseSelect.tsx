@@ -50,6 +50,40 @@ export interface DenseSelectOption<V extends string = string> {
    *  orange dot before the label). Call-site is responsible for the
    *  recency rule (e.g. touched <24h, run_count > 0). */
   recent?: boolean;
+  /** DS-PRO2: optional Unix epoch ms of last-touched time. When ANY
+   *  option in the list carries this field, the popover renders a
+   *  right-aligned relative timestamp ("2h", "yesterday", "3d") in
+   *  tabular-nums + opacity-40 and groups are MRU-sorted DESC by this
+   *  field (preserving disabled separator order). Call sites attach
+   *  this from row-level metadata (e.g. last_active_at, updated_at). */
+  recentTs?: number;
+}
+
+/** DS-PRO2: format a Unix epoch ms timestamp as a compact relative
+ *  string. <60s='now', <60min='Nm', <24h='Nh', <7d='Nd' (with
+ *  'yesterday' for the 1d case), else a short date. Used by the right-
+ *  rail timestamp affordance inside the popover. */
+export function _fmtRelative(ts: number): string {
+  const now = Date.now();
+  const diff = Math.max(0, now - ts);
+  const SEC = 1000;
+  const MIN = 60 * SEC;
+  const HOUR = 60 * MIN;
+  const DAY = 24 * HOUR;
+  if (diff < 60 * SEC) return "now";
+  if (diff < 60 * MIN) return `${Math.floor(diff / MIN)}m`;
+  if (diff < 24 * HOUR) return `${Math.floor(diff / HOUR)}h`;
+  if (diff < 7 * DAY) {
+    const days = Math.floor(diff / DAY);
+    if (days === 1) return "yesterday";
+    return `${days}d`;
+  }
+  // Fall through to a short ISO date (YYYY-MM-DD).
+  try {
+    return new Date(ts).toISOString().slice(0, 10);
+  } catch {
+    return "";
+  }
 }
 
 /** DS-PRO6: threshold above which the popover renders a fuzzy filter
@@ -82,6 +116,26 @@ export interface DenseSelectProps<V extends string = string> {
    *  surfaces where the picker itself carries a context glyph (e.g. a
    *  folder icon on the workspace picker). */
   triggerIcon?: ReactNode;
+  /** DS-PRO7: HOST-managed convenience persistence key.
+   *
+   *  When set, DenseSelect:
+   *    - reads `localStorage["dense-select:${persistKey}"]` on first
+   *      mount as initial value (ONLY when the controlled `value` prop
+   *      is `undefined` — explicit values from the host always win)
+   *    - writes the selected value to that same key on every onChange
+   *
+   *  This is a primitive-level convenience for ephemeral last-selected
+   *  state and is intentionally LOSSY: there's no validation that the
+   *  persisted value still exists in the current options list.
+   *
+   *  For canonical URL-state persistence (back/forward, sharable links),
+   *  the HOST should use `useUrlState` directly and pass `value` +
+   *  `onChange` like any other controlled binding — do NOT use this prop.
+   *
+   *  DS-PRO9 pin affordance also gates on this key — shift+click only
+   *  pins when persistKey is present (pins live at
+   *  `localStorage["dense-select-pins:${persistKey}"]`). */
+  persistKey?: string;
 }
 
 const POPOVER_MIN_W = 160;
@@ -117,6 +171,7 @@ export function DenseSelect<V extends string = string>({
   popoverClassName,
   portal = true,
   triggerIcon,
+  persistKey,
 }: DenseSelectProps<V>) {
   const id = useId();
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -134,10 +189,132 @@ export function DenseSelect<V extends string = string>({
   // next open starts with the full list.
   const [filterQuery, setFilterQuery] = useState("");
 
+  // DS-PRO9: pinned values for this persistKey instance. JSON array of
+  // option values stored at `dense-select-pins:${persistKey}`. Only
+  // active when persistKey is set; otherwise pins is a stable empty
+  // array (shift+click is a no-op without a persistKey).
+  const [pins, setPins] = useState<V[]>(() => {
+    if (!persistKey || typeof window === "undefined") return [];
+    try {
+      const raw = window.localStorage.getItem(
+        `dense-select-pins:${persistKey}`,
+      );
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed as V[];
+      return [];
+    } catch {
+      return [];
+    }
+  });
+
+  // DS-PRO7: hydration of last-selected from localStorage on first
+  // mount. Only fires when `value` is undefined (host-supplied values
+  // always win) and only when persistKey is set. The hydration calls
+  // onChange so the host's state gets the persisted value — DenseSelect
+  // itself stays purely controlled.
+  //
+  // For URL-state persistence (sharable links, back/forward), the host
+  // should use `useUrlState` directly and pass value + onChange. This
+  // prop is a *convenience* primitive for ephemeral last-selection
+  // memory, not a state store.
+  const didHydrateRef = useRef(false);
+  useEffect(() => {
+    if (didHydrateRef.current) return;
+    didHydrateRef.current = true;
+    if (!persistKey) return;
+    if (value !== undefined) return;
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(`dense-select:${persistKey}`);
+      if (raw == null) return;
+      // Stored as a JSON string so empty-string values round-trip.
+      const parsed = JSON.parse(raw) as V;
+      onChange(parsed);
+    } catch {
+      /* corrupt entry — ignore */
+    }
+    // We deliberately only run this on mount; subsequent value changes
+    // are host-driven and must not re-hydrate from storage.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const selected = useMemo(
     () => options.find((o) => o.value === value),
     [options, value],
   );
+
+  // DS-PRO2: detect whether the caller has tagged any option with a
+  // `recentTs`. When true we (a) render right-aligned relative
+  // timestamps inline and (b) MRU-sort each group DESC by recentTs,
+  // preserving the position of disabled separator rows so groups stay
+  // intact.
+  const hasRecentTs = useMemo(
+    () => options.some((o) => typeof o.recentTs === "number"),
+    [options],
+  );
+
+  // DS-PRO2 + DS-PRO9: produce the in-popover option list with two
+  // transforms applied to the caller's options:
+  //
+  //   1. MRU-sort options DESC by recentTs WITHIN each group, where a
+  //      group is the run of selectable options between disabled
+  //      separator rows. Disabled rows keep their original positions
+  //      so the user-visible section headers don't reflow.
+  //   2. When pins exist (DS-PRO9), prepend a synthetic `── pinned ──`
+  //      separator + the pinned options at the top of the list.
+  const effectiveOptions = useMemo<ReadonlyArray<DenseSelectOption<V>>>(() => {
+    // Step 1 — MRU sort within groups.
+    let sorted: DenseSelectOption<V>[] = options.slice();
+    if (hasRecentTs) {
+      sorted = [];
+      let group: DenseSelectOption<V>[] = [];
+      const flush = () => {
+        group.sort((a, b) => {
+          const at = typeof a.recentTs === "number" ? a.recentTs : -Infinity;
+          const bt = typeof b.recentTs === "number" ? b.recentTs : -Infinity;
+          return bt - at;
+        });
+        sorted.push(...group);
+        group = [];
+      };
+      for (const opt of options) {
+        if (opt.disabled) {
+          flush();
+          sorted.push(opt);
+        } else {
+          group.push(opt);
+        }
+      }
+      flush();
+    }
+
+    // Step 2 — prepend pinned group when pins exist AND persistKey is
+    // active. Pins reference values; we resolve them against the
+    // (already MRU-sorted) options and skip any stale entries.
+    if (persistKey && pins.length > 0) {
+      const byValue = new Map(sorted.map((o) => [o.value, o] as const));
+      const pinnedRows = pins
+        .map((v) => byValue.get(v))
+        .filter((o): o is DenseSelectOption<V> => Boolean(o));
+      if (pinnedRows.length > 0) {
+        const separator: DenseSelectOption<V> = {
+          // Synthetic value — disabled rows aren't selectable so this
+          // never collides with a real option value path.
+          value: ("__dense-select-pinned-separator__" as unknown) as V,
+          label: "── pinned ──",
+          disabled: true,
+        };
+        // Remove pinned values from their original positions so they
+        // don't render twice — they'll surface in the pinned group only.
+        const pinnedSet = new Set(pins);
+        const rest = sorted.filter((o) => !pinnedSet.has(o.value));
+        return [separator, ...pinnedRows, ...rest];
+      }
+    }
+
+    return sorted;
+  }, [options, hasRecentTs, persistKey, pins]);
 
   // DS-PRO6: filter input renders only when options.length > threshold.
   const filterEnabled = options.length > FILTER_THRESHOLD;
@@ -151,12 +328,12 @@ export function DenseSelect<V extends string = string>({
   // a selectable row that follows it (before the next separator)
   // survived. Cheap enough at typical option counts.
   const renderedOptions = useMemo(() => {
-    if (!filterEnabled || !filterQuery.trim()) return options;
+    if (!filterEnabled || !filterQuery.trim()) return effectiveOptions;
     const getText = (o: DenseSelectOption<V>) =>
       typeof o.label === "string" ? o.label : String(o.value);
     const matchedSet = new Set(
       fuzzyFilter(
-        options.filter((o) => !o.disabled),
+        effectiveOptions.filter((o) => !o.disabled),
         filterQuery,
         getText,
       ),
@@ -164,15 +341,15 @@ export function DenseSelect<V extends string = string>({
     // Walk forward, emit separators only if followed by at least one
     // surviving option before the next separator.
     const tmp: DenseSelectOption<V>[] = [];
-    for (let i = 0; i < options.length; i++) {
-      const opt = options[i];
+    for (let i = 0; i < effectiveOptions.length; i++) {
+      const opt = effectiveOptions[i];
       if (opt.disabled) {
         // Peek ahead — keep the separator only if at least one
         // selectable surviving option exists before the next separator.
         let keep = false;
-        for (let j = i + 1; j < options.length; j++) {
-          if (options[j].disabled) break;
-          if (matchedSet.has(options[j])) {
+        for (let j = i + 1; j < effectiveOptions.length; j++) {
+          if (effectiveOptions[j].disabled) break;
+          if (matchedSet.has(effectiveOptions[j])) {
             keep = true;
             break;
           }
@@ -182,8 +359,8 @@ export function DenseSelect<V extends string = string>({
         tmp.push(opt);
       }
     }
-    return tmp as unknown as typeof options;
-  }, [options, filterEnabled, filterQuery]);
+    return tmp as unknown as typeof effectiveOptions;
+  }, [effectiveOptions, filterEnabled, filterQuery]);
 
   // Position the popover under the trigger when opened. Re-measure on
   // scroll/resize so it sticks even when an ancestor moves.
@@ -281,8 +458,45 @@ export function DenseSelect<V extends string = string>({
   function pick(opt: DenseSelectOption<V>) {
     if (opt.disabled) return;
     onChange(opt.value);
+    // DS-PRO7: write last-selected to localStorage when persistKey set.
+    // We JSON-encode so empty-string values round-trip cleanly and the
+    // hydration path can detect "no entry" vs "empty entry".
+    if (persistKey && typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem(
+          `dense-select:${persistKey}`,
+          JSON.stringify(opt.value),
+        );
+      } catch {
+        /* quota / disabled storage — swallow */
+      }
+    }
     setOpen(false);
     triggerRef.current?.focus();
+  }
+
+  // DS-PRO9: toggle pin status for an option. Shift+click on a row
+  // invokes this — when persistKey is set it persists the new pin list
+  // immediately. Pinned options render in a synthetic top group.
+  function togglePin(optValue: V) {
+    if (!persistKey) return;
+    setPins((prev) => {
+      const isPinned = prev.includes(optValue);
+      const next = isPinned
+        ? prev.filter((v) => v !== optValue)
+        : [...prev, optValue];
+      if (typeof window !== "undefined") {
+        try {
+          window.localStorage.setItem(
+            `dense-select-pins:${persistKey}`,
+            JSON.stringify(next),
+          );
+        } catch {
+          /* quota / disabled storage — swallow */
+        }
+      }
+      return next;
+    });
   }
 
   function onKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
@@ -403,6 +617,7 @@ export function DenseSelect<V extends string = string>({
       {renderedOptions.map((opt, i) => {
         const isSelected = opt.value === value;
         const isFocused = i === focusIndex && !opt.disabled;
+        const isPinned = !!persistKey && pins.includes(opt.value);
 
         // DS-C2: separator / disabled rows render as presentational <li>s.
         // They're not arrow-navigable (skipped in onKeyDown), not
@@ -441,7 +656,18 @@ export function DenseSelect<V extends string = string>({
             type="button"
             role="option"
             aria-selected={isSelected}
-            onClick={() => pick(opt)}
+            data-pinned={isPinned ? "true" : undefined}
+            onClick={(e) => {
+              // DS-PRO9: shift+click toggles pin instead of selecting.
+              // Only meaningful when persistKey is set — otherwise we
+              // have nowhere to persist the pin list.
+              if (e.shiftKey && persistKey) {
+                e.preventDefault();
+                togglePin(opt.value);
+                return;
+              }
+              pick(opt);
+            }}
             onMouseEnter={() => setFocusIndex(i)}
             className={cn(
               "block w-full px-2 py-1 text-left flex items-center gap-1.5 transition-colors",
@@ -472,6 +698,18 @@ export function DenseSelect<V extends string = string>({
                 ●
               </span>
             )}
+            {/* DS-PRO9: 📌 affordance on pinned rows — sits next to the
+                recent dot so both metadata glyphs cluster on the left. */}
+            {isPinned && (
+              <span
+                aria-hidden="true"
+                data-testid="dense-select-pin-glyph"
+                className="shrink-0 text-[9px] leading-none"
+                title="pinned (shift+click to unpin)"
+              >
+                📌
+              </span>
+            )}
             {/* DS-P3: label gets flex-1 + min-w-0 + truncate so a long
                 label collapses to an ellipsis instead of wrapping or
                 pushing the description off-screen. */}
@@ -486,6 +724,20 @@ export function DenseSelect<V extends string = string>({
               // label (which is the one that should ellipsise instead).
               <span className="shrink-0 tabular-nums max-w-[40%] truncate text-[9px] text-muted-foreground/70">
                 {opt.description}
+              </span>
+            )}
+            {/* DS-PRO2: right-aligned relative timestamp. Rendered only
+                when ANY option in the list carries recentTs (mixed lists
+                still get aligned columns because tabular-nums applies
+                uniformly). Tabular nums + opacity-40 give a muted
+                "metadata column" without competing with the label. */}
+            {hasRecentTs && typeof opt.recentTs === "number" && (
+              <span
+                data-testid="dense-select-relative-ts"
+                className="shrink-0 tabular-nums text-[9px] text-foreground opacity-40"
+                title={new Date(opt.recentTs).toISOString()}
+              >
+                {_fmtRelative(opt.recentTs)}
               </span>
             )}
           </button>
@@ -514,6 +766,20 @@ export function DenseSelect<V extends string = string>({
       className={cn("relative inline-block", className)}
       onKeyDown={onKeyDown}
     >
+      {/* DS-PRO7: hidden span exposing the active persistKey for tests.
+          The HOST should use useUrlState directly for URL-state
+          persistence; this prop is a convenience for ephemeral
+          last-selection memory only. */}
+      {persistKey && (
+        <span
+          data-testid="dense-select-persist"
+          data-persist-key={persistKey}
+          className="sr-only"
+          aria-hidden="true"
+        >
+          {persistKey}
+        </span>
+      )}
       <button
         id={`${id}-trigger`}
         ref={triggerRef}

@@ -80,6 +80,72 @@ export function ChatSettingsPanel({
       (chat.params.max_tokens ?? 2048) === p.max_tokens,
   )?.id;
 
+  // SP-PRO1: temperature distribution sparkline. Render 30 sample bars
+  // whose heights follow exp(-x²/2T²) (gaussian-ish), normalized to the
+  // max bar so we get a delta-like spike at T≈0 and a flattened plateau
+  // as T grows. T clamped to a minimum so we don't divide by zero —
+  // tiny T effectively renders a single-bar spike, which matches the
+  // intuition of a deterministic softmax.
+  const TEMP_BAR_COUNT = 30;
+  const tempForViz = Math.max(0.05, chat.params.temperature ?? 0.7);
+  const tempBars = (() => {
+    const half = (TEMP_BAR_COUNT - 1) / 2;
+    const raw: number[] = [];
+    for (let i = 0; i < TEMP_BAR_COUNT; i++) {
+      const x = (i - half) / half; // -1 .. 1
+      raw.push(Math.exp(-(x * x) / (2 * tempForViz * tempForViz)));
+    }
+    const max = Math.max(...raw, 1e-6);
+    return raw.map((v) => v / max);
+  })();
+
+  // SP-PRO2: cost-per-message estimator. For paid models we use
+  // input_cost_per_token + output_cost_per_token from selectedModel
+  // metadata (matches ChatMessage.tsx + compare-stats.ts conventions),
+  // assuming ctx-worth of input + max_tokens-worth of output. For local
+  // (no pricing) we surface tok/s instead, derived from the chat's last
+  // first-token timing where available, falling back to a 28 tok/s
+  // heuristic. Output is one italic mono line under the param sliders.
+  const inCostPerTok = selectedModel?.metadata?.input_cost_per_token ?? 0;
+  const outCostPerTok = selectedModel?.metadata?.output_cost_per_token ?? 0;
+  const maxTokensForCost = chat.params.max_tokens ?? 2048;
+  const hasPricing = inCostPerTok > 0 || outCostPerTok > 0;
+  let costEstimateText: string;
+  if (hasPricing) {
+    // Assume input ≈ current context tokens (approxTokens), output ≈
+    // max_tokens. Rough but matches what a user would feel for one
+    // round-trip cost.
+    const inputTokens = Math.max(approxTokens, 256);
+    const cost =
+      inputTokens * inCostPerTok + maxTokensForCost * outCostPerTok;
+    costEstimateText = `~ $${cost.toFixed(4)} / msg @ ${ctxK}k ctx`;
+  } else {
+    // Local model: derive tok/s from the most recent firstTokenTime →
+    // streamEndTime window if the chat has streamed at least once,
+    // otherwise default to 28 tok/s (typical Ollama mid-size model
+    // throughput on Apple Silicon).
+    const anyChat = chat as unknown as {
+      firstTokenTime?: number;
+      streamEndTime?: number;
+    };
+    let tokPerSec = 28;
+    if (anyChat.firstTokenTime && anyChat.streamEndTime) {
+      const elapsedSec =
+        (anyChat.streamEndTime - anyChat.firstTokenTime) / 1000;
+      const lastAssistant = [...chat.messages]
+        .reverse()
+        .find((m) => m.role === "assistant");
+      const outTokens = Math.round(
+        (lastAssistant?.content?.length ?? 0) / 4,
+      );
+      if (elapsedSec > 0.1 && outTokens > 8) {
+        tokPerSec = Math.round(outTokens / elapsedSec);
+      }
+    }
+    const seconds = (maxTokensForCost / Math.max(1, tokPerSec)).toFixed(1);
+    costEstimateText = `~ ${tokPerSec} tok/s · ${seconds}s @ ${maxTokensForCost} tok`;
+  }
+
   if (dense) {
     // Drop the wrapper DenseSection labels — the SDK inner components
     // already render their own headers (Model, System Prompt,
@@ -211,6 +277,51 @@ export function ChatSettingsPanel({
           onChange={(params) => setParams(chat.id, params)}
           model={selectedModel}
         />
+        {/* SP-PRO1: temperature distribution sparkline — 60x8 svg with
+            30 bars whose heights are a normalized gaussian over T. T≈0
+            shows a delta-spike, T=0.7 a moderate bell, T≥1.5 flattens
+            toward uniform. Rendered as a sibling row right under the
+            ParameterControls strip so the user can see the softmax
+            response curve change as they drag the Temperature slider. */}
+        <div
+          data-testid="settings-temp-preview"
+          className="flex items-center gap-2 text-[9px] uppercase tracking-[0.18em] text-muted-foreground/70"
+        >
+          <span>T</span>
+          <svg
+            width={60}
+            height={8}
+            viewBox={`0 0 ${TEMP_BAR_COUNT * 2} 8`}
+            preserveAspectRatio="none"
+            aria-hidden
+            className="text-primary"
+          >
+            {tempBars.map((h, i) => (
+              <rect
+                key={i}
+                x={i * 2}
+                y={8 - h * 8}
+                width={1.4}
+                height={Math.max(0.4, h * 8)}
+                fill="currentColor"
+                opacity={0.85}
+              />
+            ))}
+          </svg>
+          <span className="tabular-nums">
+            {(chat.params.temperature ?? 0.7).toFixed(2)}
+          </span>
+        </div>
+        {/* SP-PRO2: cost / throughput estimator — one italic mono line
+            below the sliders. Paid models show $/msg using metadata
+            pricing; local models surface tok/s + projected wall-clock
+            for max_tokens worth of output. */}
+        <div
+          data-testid="settings-cost-estimate"
+          className="italic font-mono text-[10px] text-muted-foreground/60 tabular-nums"
+        >
+          {costEstimateText}
+        </div>
         {/* SP-PRO8: parameter presets — micro-row of chips below the
             sliders that atomically apply temperature/top_p/max_tokens
             in known-good combinations. Active chip is highlighted via
