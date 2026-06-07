@@ -13,7 +13,6 @@ import {
   Check,
   ChevronDown,
   Settings,
-  X,
 } from "lucide-react";
 import { useChatStore, type Chat } from "../../react/chat/index.js";
 import { ChatMessage } from "./ChatMessage.js";
@@ -372,6 +371,8 @@ export function ChatPanel({ chat, draft, onDraftChange, dense = false }: ChatPan
                     chat.isStreaming && idx === chat.messages.length - 1
                   }
                   dense={dense}
+                  chat={chat}
+                  messageIndex={idx}
                 />
               ))}
               <div ref={messagesEndRef} />

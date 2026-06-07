@@ -68,14 +68,23 @@ export function ToolCallCard({
   const done = record.finished_at > 0;
 
   if (dense) {
+    // PRO5: structured single-line row. Glyph + chevron in the left
+    // gutter; tool name in a min-width-12rem truncating column so
+    // multiple tool calls stack vertically with the name column
+    // perfectly aligned; duration in tabular-nums; status word at the
+    // far right. running → `…`, error → red `error`, done → `ok`.
+    const durationLabel =
+      record.duration_ms > 0 ? fmtDuration(record.duration_ms) : "…";
+    const statusLabel = isError ? "error" : done ? "ok" : "…";
     return (
       <div
         className={cn(
-          "rounded-sm bg-muted/[0.10] font-mono text-[10px]",
-          // No bordered chrome in dense mode — relies on bg tint +
-          // hairline-only when expanded. Error state still gets a
-          // subtle accent so failures are noticeable.
-          isError && "border border-destructive/40",
+          "font-mono text-[10px]",
+          // No bg, no border. Tool-call rows flow with the surrounding
+          // chat text as plain monospace lines — they get visual weight
+          // from the chevron + wrench icons, not chrome. Error state
+          // keeps a subtle red accent so failures are noticeable.
+          isError && "border border-destructive/40 rounded-sm",
           className,
         )}
       >
@@ -97,12 +106,12 @@ export function ToolCallCard({
             )}
             aria-hidden="true"
           />
-          <span className="truncate text-foreground">
+          <span className="min-w-[12rem] truncate text-foreground">
             {record.call.function.name}
           </span>
           {hasSubEvents && (
             <span
-              className="ml-auto inline-flex shrink-0 items-center gap-0.5 rounded-sm border border-primary/40 bg-primary/10 px-1 py-0.5 text-[8px] uppercase tracking-wider text-primary"
+              className="inline-flex shrink-0 items-center gap-0.5 rounded-sm border border-primary/40 bg-primary/10 px-1 py-0.5 text-[8px] uppercase tracking-wider text-primary"
               title={`${subToolCount} nested · ${subIterCount} iters`}
             >
               <Activity className="h-2 w-2" aria-hidden="true" />
@@ -111,12 +120,22 @@ export function ToolCallCard({
           )}
           <span
             className={cn(
-              "shrink-0 text-[8.5px] uppercase tracking-[0.18em]",
-              hasSubEvents ? "" : "ml-auto",
-              isError ? "text-destructive" : done ? "text-muted-foreground" : "text-primary",
+              "ml-auto shrink-0 tabular-nums text-muted-foreground/70",
             )}
           >
-            {isError ? "error" : done ? "done" : "running…"}
+            · {durationLabel}
+          </span>
+          <span
+            className={cn(
+              "shrink-0 text-[8.5px] uppercase tracking-[0.18em]",
+              isError
+                ? "text-alert"
+                : done
+                  ? "text-muted-foreground"
+                  : "text-primary",
+            )}
+          >
+            · {statusLabel}
           </span>
         </button>
         {open && (

@@ -43,6 +43,43 @@ export function ChatSettingsPanel({
   const { models } = useModels();
   const selectedModel = models.find((m) => m.id === chat.model);
 
+  // SP-PRO3: context window gauge — same /4-chars-per-token approximation
+  // ChatHeader uses, plus pull ctxLimit from selectedModel metadata with
+  // an 8k fallback for unknown models. Computed up here so both the dense
+  // and standard branches could consume it later without divergence.
+  const totalChars = chat.messages.reduce(
+    (sum, m) => sum + (m.content?.length ?? 0),
+    0,
+  );
+  const approxTokens = Math.round(totalChars / 4);
+  const ctxLimit = selectedModel?.metadata?.max_input_tokens ?? 8192;
+  const ctxRatio = Math.min(1, approxTokens / ctxLimit);
+  const ctxFillColor =
+    ctxRatio < 0.6
+      ? "text-primary"
+      : ctxRatio < 0.85
+        ? "text-warn"
+        : "text-alert";
+  const approxK = (approxTokens / 1000).toFixed(approxTokens >= 10_000 ? 0 : 1);
+  const ctxK = Math.round(ctxLimit / 1000);
+
+  // SP-PRO8: parameter presets — clicking a chip atomically sets
+  // temperature/top_p/max_tokens. "Active" preset is detected by
+  // approximate match on all three fields so user-customized values
+  // don't false-positive as a preset.
+  const PARAM_PRESETS = [
+    { id: "deterministic", temperature: 0.0, top_p: 1.0, max_tokens: 2048 },
+    { id: "balanced", temperature: 0.7, top_p: 1.0, max_tokens: 2048 },
+    { id: "creative", temperature: 1.1, top_p: 0.95, max_tokens: 4096 },
+    { id: "brainstorm", temperature: 1.4, top_p: 0.95, max_tokens: 4096 },
+  ] as const;
+  const activePresetId = PARAM_PRESETS.find(
+    (p) =>
+      Math.abs((chat.params.temperature ?? 0.7) - p.temperature) < 0.01 &&
+      Math.abs((chat.params.top_p ?? 1.0) - p.top_p) < 0.01 &&
+      (chat.params.max_tokens ?? 2048) === p.max_tokens,
+  )?.id;
+
   if (dense) {
     // Drop the wrapper DenseSection labels — the SDK inner components
     // already render their own headers (Model, System Prompt,
@@ -118,6 +155,31 @@ export function ChatSettingsPanel({
         >
           ▸ SETTINGS
         </div>
+        {/* SP-PRO3: ctx window gauge — 60px-wide hairline bar with
+            a primary/warn/alert fill that scales with utilization.
+            Sits above the model selector so the user sees the budget
+            before they fiddle with the model. */}
+        <div
+          data-testid="settings-ctx-gauge"
+          className="flex items-center gap-2 text-[9px] uppercase tracking-[0.18em] text-muted-foreground tabular-nums"
+        >
+          <span>ctx</span>
+          <div
+            aria-hidden
+            className="relative h-px w-[60px] bg-border/40 overflow-hidden"
+          >
+            <div
+              className={cn(
+                "absolute inset-y-0 left-0 bg-current",
+                ctxFillColor,
+              )}
+              style={{ width: `${Math.round(ctxRatio * 100)}%` }}
+            />
+          </div>
+          <span className="tabular-nums">
+            {approxK}k / {ctxK}k
+          </span>
+        </div>
         <ModelSelector
           value={chat.model}
           onChange={(model) => setModel(chat.id, model)}
@@ -149,6 +211,40 @@ export function ChatSettingsPanel({
           onChange={(params) => setParams(chat.id, params)}
           model={selectedModel}
         />
+        {/* SP-PRO8: parameter presets — micro-row of chips below the
+            sliders that atomically apply temperature/top_p/max_tokens
+            in known-good combinations. Active chip is highlighted via
+            primary-tinted bg/border so the user knows which preset
+            (if any) currently maps to their slider state. */}
+        <div
+          data-testid="settings-param-presets"
+          className="flex flex-wrap gap-1 pt-1"
+        >
+          {PARAM_PRESETS.map((preset) => {
+            const isActive = preset.id === activePresetId;
+            return (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() =>
+                  setParams(chat.id, {
+                    temperature: preset.temperature,
+                    top_p: preset.top_p,
+                    max_tokens: preset.max_tokens,
+                  })
+                }
+                className={cn(
+                  "text-[9px] uppercase tracking-[0.18em] px-1.5 py-0.5 rounded-sm border transition-colors",
+                  isActive
+                    ? "bg-primary/15 text-primary border-primary/50"
+                    : "border-border/30 bg-muted/[0.10] hover:bg-primary/10 hover:text-primary hover:border-primary/40",
+                )}
+              >
+                {preset.id}
+              </button>
+            );
+          })}
+        </div>
         {/* S4/S5: ModelInfoCard removed — duplicated the selector's
             model id + endpoint and shipped its own "Local" badge in a
             non-matching orange. The selector trigger already surfaces

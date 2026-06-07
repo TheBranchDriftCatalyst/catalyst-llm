@@ -35,6 +35,7 @@ import {
 import { createPortal } from "react-dom";
 import { ChevronDown } from "lucide-react";
 import { cn } from "./utils.js";
+import { fuzzyFilter } from "./fuzzy.js";
 
 export interface DenseSelectOption<V extends string = string> {
   value: V;
@@ -45,7 +46,16 @@ export interface DenseSelectOption<V extends string = string> {
   icon?: ReactNode;
   /** Disable this option. */
   disabled?: boolean;
+  /** DS-PRO4: mark this option as recently used (rendered with a small
+   *  orange dot before the label). Call-site is responsible for the
+   *  recency rule (e.g. touched <24h, run_count > 0). */
+  recent?: boolean;
 }
+
+/** DS-PRO6: threshold above which the popover renders a fuzzy filter
+ *  input. Below this the option count fits in working memory and a
+ *  filter would be ceremony. */
+const FILTER_THRESHOLD = 10;
 
 export interface DenseSelectProps<V extends string = string> {
   value: V | undefined;
@@ -112,6 +122,7 @@ export function DenseSelect<V extends string = string>({
   const wrapRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const filterInputRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [rect, setRect] = useState<{
     top: number;
@@ -119,16 +130,69 @@ export function DenseSelect<V extends string = string>({
     width: number;
   } | null>(null);
   const [focusIndex, setFocusIndex] = useState<number>(-1);
+  // DS-PRO6: filter query is popover-local — resets on close so the
+  // next open starts with the full list.
+  const [filterQuery, setFilterQuery] = useState("");
 
   const selected = useMemo(
     () => options.find((o) => o.value === value),
     [options, value],
   );
 
+  // DS-PRO6: filter input renders only when options.length > threshold.
+  const filterEnabled = options.length > FILTER_THRESHOLD;
+
+  // DS-PRO6: derive the rendered option list from the query. Disabled
+  // separator rows are kept verbatim (they're presentational and don't
+  // participate in the fuzzy match) — but only if at least one
+  // selectable option after them survives the filter; otherwise we'd
+  // strand orphan headers. Strategy: fuzzy-filter the selectable rows
+  // only, then walk the original list and emit each separator only when
+  // a selectable row that follows it (before the next separator)
+  // survived. Cheap enough at typical option counts.
+  const renderedOptions = useMemo(() => {
+    if (!filterEnabled || !filterQuery.trim()) return options;
+    const getText = (o: DenseSelectOption<V>) =>
+      typeof o.label === "string" ? o.label : String(o.value);
+    const matchedSet = new Set(
+      fuzzyFilter(
+        options.filter((o) => !o.disabled),
+        filterQuery,
+        getText,
+      ),
+    );
+    // Walk forward, emit separators only if followed by at least one
+    // surviving option before the next separator.
+    const tmp: DenseSelectOption<V>[] = [];
+    for (let i = 0; i < options.length; i++) {
+      const opt = options[i];
+      if (opt.disabled) {
+        // Peek ahead — keep the separator only if at least one
+        // selectable surviving option exists before the next separator.
+        let keep = false;
+        for (let j = i + 1; j < options.length; j++) {
+          if (options[j].disabled) break;
+          if (matchedSet.has(options[j])) {
+            keep = true;
+            break;
+          }
+        }
+        if (keep) tmp.push(opt);
+      } else if (matchedSet.has(opt)) {
+        tmp.push(opt);
+      }
+    }
+    return tmp as unknown as typeof options;
+  }, [options, filterEnabled, filterQuery]);
+
   // Position the popover under the trigger when opened. Re-measure on
   // scroll/resize so it sticks even when an ancestor moves.
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      // DS-PRO6: clear the query on close so the next open is fresh.
+      setFilterQuery("");
+      return;
+    }
     const measure = () => {
       const r = triggerRef.current?.getBoundingClientRect();
       if (!r) return;
@@ -141,11 +205,11 @@ export function DenseSelect<V extends string = string>({
     measure();
     // Prefer the currently-selected option; fall back to the first
     // non-disabled option so separators don't get initial focus.
-    const selIdx = options.findIndex((o) => o.value === value);
+    const selIdx = renderedOptions.findIndex((o) => o.value === value);
     if (selIdx >= 0) {
       setFocusIndex(selIdx);
     } else {
-      const firstEnabled = options.findIndex((o) => !o.disabled);
+      const firstEnabled = renderedOptions.findIndex((o) => !o.disabled);
       setFocusIndex(firstEnabled >= 0 ? firstEnabled : 0);
     }
     window.addEventListener("scroll", measure, true);
@@ -154,7 +218,33 @@ export function DenseSelect<V extends string = string>({
       window.removeEventListener("scroll", measure, true);
       window.removeEventListener("resize", measure);
     };
-  }, [open, options, value]);
+  }, [open, renderedOptions, value]);
+
+  // DS-PRO6: autofocus the filter input when the popover opens (and
+  // the filter is enabled). Effect fires after the popover mounts.
+  useEffect(() => {
+    if (!open || !filterEnabled) return;
+    // Schedule on next tick so the input has actually mounted via the
+    // portal before we try to focus it.
+    const t = setTimeout(() => filterInputRef.current?.focus(), 0);
+    return () => clearTimeout(t);
+  }, [open, filterEnabled]);
+
+  // DS-PRO6: when the filter query narrows the list, the previously
+  // focused index can land on a now-stranded position. Re-clamp to the
+  // first selectable row whenever renderedOptions length changes.
+  useEffect(() => {
+    if (!open) return;
+    if (focusIndex >= 0 && focusIndex < renderedOptions.length) {
+      const cur = renderedOptions[focusIndex];
+      if (cur && !cur.disabled) return;
+    }
+    const first = renderedOptions.findIndex((o) => !o.disabled);
+    setFocusIndex(first);
+    // We intentionally exclude focusIndex from deps — including it
+    // would cause the clamp to fight every ArrowDown keypress.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, renderedOptions]);
 
   // Close on click outside (trigger + popover both count as inside).
   useEffect(() => {
@@ -214,10 +304,12 @@ export function DenseSelect<V extends string = string>({
       setFocusIndex((i) => {
         // Skip disabled options (e.g. separator rows like `── projects ──`)
         // by walking forward until we land on a selectable index. If
-        // nothing remains, stay put.
+        // nothing remains, stay put. DS-PRO6: walks renderedOptions so
+        // filtered-out rows are skipped automatically (they're not in
+        // the list at all).
         const start = i < 0 ? -1 : i;
-        for (let j = start + 1; j < options.length; j++) {
-          if (!options[j]?.disabled) return j;
+        for (let j = start + 1; j < renderedOptions.length; j++) {
+          if (!renderedOptions[j]?.disabled) return j;
         }
         return i;
       });
@@ -226,9 +318,9 @@ export function DenseSelect<V extends string = string>({
     if (e.key === "ArrowUp") {
       e.preventDefault();
       setFocusIndex((i) => {
-        const start = i < 0 ? options.length : i;
+        const start = i < 0 ? renderedOptions.length : i;
         for (let j = start - 1; j >= 0; j--) {
-          if (!options[j]?.disabled) return j;
+          if (!renderedOptions[j]?.disabled) return j;
         }
         return i;
       });
@@ -236,11 +328,19 @@ export function DenseSelect<V extends string = string>({
     }
     if (e.key === "Enter") {
       e.preventDefault();
-      const opt = options[focusIndex];
+      const opt = renderedOptions[focusIndex];
       // Disabled rows (separators) MUST NOT be selectable via Enter.
       if (opt && !opt.disabled) pick(opt);
     }
   }
+
+  // DS-PRO10: count selectable (non-separator) rows for the stats
+  // footer. Filtering changes this on the fly so the footer reflects
+  // what the user is actually looking at.
+  const selectableCount = useMemo(
+    () => renderedOptions.filter((o) => !o.disabled).length,
+    [renderedOptions],
+  );
 
   const popover = open && rect ? (
     <div
@@ -255,8 +355,13 @@ export function DenseSelect<V extends string = string>({
       className={cn(
         "fixed z-50 rounded-sm border border-border/30 bg-background/95 backdrop-blur-sm",
         "ring-1 ring-border/30 shadow-lg shadow-background/40 pointer-events-auto",
-        "py-0.5 font-mono text-[10.5px]",
-        "max-h-[280px] overflow-y-auto",
+        "font-mono text-[10.5px] overflow-hidden",
+        // DS-PRO6: filter input + DS-PRO10 footer turn this into a 3-row
+        // grid (filter | scrollable list | footer). Use flex column with
+        // the list as the only scrollable region so filter/footer stay
+        // pinned at the edges.
+        "flex flex-col",
+        "max-h-[320px]",
         popoverClassName,
       )}
       style={{
@@ -265,10 +370,37 @@ export function DenseSelect<V extends string = string>({
         width: rect.width,
       }}
     >
-      {options.length === 0 && (
+      {/* DS-PRO6: fuzzy filter input — only rendered when there are
+          enough options to justify it. Autofocused on open. Typing
+          narrows the list; arrow keys still navigate (handler is bound
+          on the wrapper, so the input doesn't intercept them). */}
+      {filterEnabled && (
+        <div className="border-b border-border/15 px-1.5 py-1 shrink-0">
+          <input
+            ref={filterInputRef}
+            type="text"
+            value={filterQuery}
+            onChange={(e) => setFilterQuery(e.target.value)}
+            placeholder="filter…"
+            data-testid="dense-select-filter"
+            className={cn(
+              "w-full bg-transparent outline-none",
+              "font-mono text-[10.5px] text-foreground",
+              "placeholder:text-muted-foreground/50",
+            )}
+            // Stop Space from toggling the popover via the wrapper's
+            // keydown handler — the input needs Space to type.
+            onKeyDown={(e) => {
+              if (e.key === " ") e.stopPropagation();
+            }}
+          />
+        </div>
+      )}
+      <div className="flex-1 min-h-0 overflow-y-auto py-0.5">
+      {renderedOptions.length === 0 && (
         <div className="px-2 py-1 text-muted-foreground italic">no options</div>
       )}
-      {options.map((opt, i) => {
+      {renderedOptions.map((opt, i) => {
         const isSelected = opt.value === value;
         const isFocused = i === focusIndex && !opt.disabled;
 
@@ -327,6 +459,19 @@ export function DenseSelect<V extends string = string>({
                 {opt.icon}
               </span>
             )}
+            {/* DS-PRO4: tiny orange dot for recently-touched options.
+                Sits to the left of the label so it's visible even when
+                a long label triggers the truncate ellipsis. */}
+            {opt.recent && (
+              <span
+                aria-hidden="true"
+                data-testid="dense-select-recent-dot"
+                className="shrink-0 text-[9px] leading-none text-orange-400"
+                title="recent"
+              >
+                ●
+              </span>
+            )}
             {/* DS-P3: label gets flex-1 + min-w-0 + truncate so a long
                 label collapses to an ellipsis instead of wrapping or
                 pushing the description off-screen. */}
@@ -346,6 +491,20 @@ export function DenseSelect<V extends string = string>({
           </button>
         );
       })}
+      </div>
+      {/* DS-PRO10: mini-stats footer — count of selectable rows currently
+          visible. Reflects the filtered list so the user sees how much
+          they've narrowed. Same tiny uppercase tracking as separators
+          for visual cohesion. */}
+      <div
+        data-testid="dense-select-stats-footer"
+        className={cn(
+          "shrink-0 border-t border-border/15 px-2 py-1",
+          "text-[8.5px] uppercase tracking-[0.22em] text-muted-foreground/60",
+        )}
+      >
+        {selectableCount} {selectableCount === 1 ? "option" : "options"}
+      </div>
     </div>
   ) : null;
 

@@ -63,7 +63,7 @@ export function ChatHeader({
   return (
     <div
       className={cn(
-        "flex flex-col border-b border-border/10 bg-background",
+        "flex flex-col bg-background",
         className,
       )}
     >
@@ -85,7 +85,7 @@ export function ChatHeader({
             aria-label="back to chat"
             className="h-6 w-6 p-0 inline-flex items-center justify-center rounded-sm text-muted-foreground hover:text-primary hover:bg-muted/40 transition-colors"
           >
-            <X className="h-3 w-3" />
+            <X className="h-2.5 w-2.5" strokeWidth={1.5} />
           </button>
         ) : (
           <>
@@ -97,7 +97,7 @@ export function ChatHeader({
                 aria-label="settings"
                 className="h-6 w-6 p-0 inline-flex items-center justify-center rounded-sm text-muted-foreground hover:text-primary hover:bg-muted/40 transition-colors"
               >
-                <Settings className="h-3 w-3" />
+                <Settings className="h-2.5 w-2.5" strokeWidth={1.5} />
               </button>
             )}
             <button
@@ -108,7 +108,7 @@ export function ChatHeader({
               aria-label="clear chat"
               className="h-6 w-6 p-0 inline-flex items-center justify-center rounded-sm text-muted-foreground hover:text-destructive hover:bg-muted/40 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-muted-foreground"
             >
-              <Trash2 className="h-3 w-3" />
+              <Trash2 className="h-2.5 w-2.5" strokeWidth={1.5} />
             </button>
           </>
         )}

@@ -18,6 +18,10 @@ export interface ReasoningBlockProps {
    *  icon, micro tracking-wide summary, hairline border. Used when
    *  mounted inside a rail-friendly ChatPanel dense mode. */
   dense?: boolean;
+  /** PRO4: wall-clock duration of the reasoning trace, in ms. When
+   *  provided and the trace is no longer streaming, the dense summary
+   *  shows it (e.g. `1.2s`). Hidden when 0 or undefined. */
+  durationMs?: number;
 }
 
 /**
@@ -32,10 +36,18 @@ export function ReasoningBlock({
   isStreaming = false,
   defaultOpen = false,
   dense = false,
+  durationMs,
 }: ReasoningBlockProps) {
   const [open, setOpen] = useState(defaultOpen);
   const trimmed = content.trim();
   if (!trimmed && !isStreaming) return null;
+
+  // PRO4: token estimate via the canonical chars/4 heuristic. Cheap,
+  // wrong by 10-20% on average, fine for a glanceable summary. We hide
+  // it during stream because the count would jump on every delta.
+  const tokenEst = trimmed ? Math.round(trimmed.length / 4) : 0;
+  const showDuration =
+    !isStreaming && typeof durationMs === "number" && durationMs > 0;
 
   if (dense) {
     return (
@@ -55,7 +67,12 @@ export function ReasoningBlock({
           )}
           {!isStreaming && trimmed && (
             <span className="ml-1 text-muted-foreground/60 normal-case tracking-normal tabular-nums">
-              {trimmed.length.toLocaleString()}c
+              · {tokenEst.toLocaleString()} tok
+            </span>
+          )}
+          {showDuration && (
+            <span className="ml-1 text-muted-foreground/60 normal-case tracking-normal tabular-nums">
+              · {formatReasoningDuration(durationMs!)}
             </span>
           )}
         </button>
@@ -118,6 +135,11 @@ export function ReasoningBlock({
       )}
     </div>
   );
+}
+
+function formatReasoningDuration(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
 }
 
 /**

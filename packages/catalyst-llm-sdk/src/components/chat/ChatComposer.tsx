@@ -95,7 +95,7 @@ export function ChatComposer({
       className={cn(
         "bg-background",
         dense
-          ? "border-t border-border/10 px-2 py-1.5"
+          ? "px-2 py-1.5"
           : "border-t border-border p-4",
         className,
       )}

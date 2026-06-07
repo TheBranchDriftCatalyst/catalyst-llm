@@ -1,5 +1,6 @@
 import { AlertTriangle, OctagonX, User, Bot } from "lucide-react";
-import type { ChatTurn } from "../../react/chat/index.js";
+import type { Chat, ChatTurn } from "../../react/chat/index.js";
+import { useModels } from "../../react/hooks.js";
 import { RenderedContent } from "../shared/RenderedContent.js";
 import { ReasoningBlock, splitReasoning } from "./ReasoningBlock.js";
 import { ToolCallCard } from "./ToolCallCard.js";
@@ -15,10 +16,31 @@ export interface ChatMessageProps {
    *  for narrow rail surfaces (~380px). Defaults to false, which keeps
    *  the legacy two-column avatar layout for standalone full-page use. */
   dense?: boolean;
+  /** Optional full chat context. When provided in dense mode, the
+   *  assistant role-row gets a TTFT sparkline (PRO1) and each assistant
+   *  turn gets a per-turn + cumulative cost micro-row (PRO2). */
+  chat?: Chat;
+  /** Index of this message inside `chat.messages`. Used to compute the
+   *  cumulative cost up-to-and-including this turn. */
+  messageIndex?: number;
 }
 
-export function ChatMessage({ message, isStreaming, dense = false }: ChatMessageProps) {
-  if (dense) return <DenseChatMessage message={message} isStreaming={isStreaming} />;
+export function ChatMessage({
+  message,
+  isStreaming,
+  dense = false,
+  chat,
+  messageIndex,
+}: ChatMessageProps) {
+  if (dense)
+    return (
+      <DenseChatMessage
+        message={message}
+        isStreaming={isStreaming}
+        chat={chat}
+        messageIndex={messageIndex}
+      />
+    );
 
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
@@ -199,10 +221,39 @@ export function ChatMessage({ message, isStreaming, dense = false }: ChatMessage
 interface DenseChatMessageProps {
   message: ChatTurn;
   isStreaming?: boolean;
+  chat?: Chat;
+  messageIndex?: number;
 }
 
-function DenseChatMessage({ message, isStreaming }: DenseChatMessageProps) {
+function DenseChatMessage({
+  message,
+  isStreaming,
+  chat,
+  messageIndex,
+}: DenseChatMessageProps) {
   const isUser = message.role === "user";
+  const isAssistant = message.role === "assistant";
+
+  // PRO1: TTFT sparkline — derive a series of per-turn ttft_ms values
+  // from the chat history. Only assistant turns with `meta.ttft_ms`
+  // contribute; we draw a flat polyline when the series is empty so
+  // the slot is reserved (helps avoid layout jitter on first answer).
+  const ttftSeries: number[] = isAssistant && chat ? collectTtftSeries(chat) : [];
+
+  // PRO2: per-turn cost + cumulative. We walk the chat up to and
+  // including this message index, summing assistant-turn usage
+  // multiplied by the per-turn model price (turn.meta.model overrides
+  // chat.model when present — matches useChatCost's logic).
+  const { models } = useModels();
+  const turnCost =
+    isAssistant && chat && typeof messageIndex === "number"
+      ? perTurnCost(chat, messageIndex, models)
+      : null;
+  const cumulativeCost =
+    isAssistant && chat && typeof messageIndex === "number"
+      ? cumulativeUpTo(chat, messageIndex, models)
+      : null;
+
   return (
     <li className="flex flex-col gap-1 px-2 py-1.5">
       <div
@@ -215,6 +266,9 @@ function DenseChatMessage({ message, isStreaming }: DenseChatMessageProps) {
         <span className="shrink-0">{isUser ? "you" : "agent"}</span>
         {!isUser && isStreaming && (
           <span className="animate-pulse text-primary shrink-0">◇</span>
+        )}
+        {isAssistant && chat && (
+          <TtftSparkline series={ttftSeries} />
         )}
       </div>
 
@@ -302,6 +356,20 @@ function DenseChatMessage({ message, isStreaming }: DenseChatMessageProps) {
         </div>
       )}
 
+      {/* PRO2: per-turn cost delta + cumulative. Hidden when the
+          cumulative is exactly zero (local model / no usage logged). */}
+      {isAssistant && turnCost !== null && cumulativeCost !== null && cumulativeCost > 0 && (
+        <div
+          data-testid="chat-turn-cost"
+          className={cn(
+            "text-[8.5px] uppercase tracking-[0.22em] px-1 whitespace-nowrap tabular-nums",
+            costColorClass(turnCost),
+          )}
+        >
+          · {formatTinyUsd(turnCost)} · Σ {formatTinyUsd(cumulativeCost)}
+        </div>
+      )}
+
       {/* Cooperative-stop badge — kept in dense so the user sees the
           STOP was structured, not a connection drop. */}
       {message.role === "assistant" && message.meta?.finish_reason === "abort" && (
@@ -325,4 +393,133 @@ function DenseChatMessage({ message, isStreaming }: DenseChatMessageProps) {
       )}
     </li>
   );
+}
+
+// ── PRO1: TTFT sparkline ──────────────────────────────────────────────
+//
+// Inline 32×8 svg next to the AGENT label. Walks chat history,
+// pulls each assistant turn's `meta.ttft_ms` (when present), and
+// plots a polyline normalized to the local min/max. With <2 data
+// points we draw a flat midline so the slot is still visually
+// reserved and the test target is always mountable.
+
+const SPARK_W = 32;
+const SPARK_H = 8;
+
+function collectTtftSeries(chat: Chat): number[] {
+  const out: number[] = [];
+  for (const turn of chat.messages) {
+    if (turn.role !== "assistant") continue;
+    const m = turn.meta as (typeof turn.meta & { ttft_ms?: number }) | undefined;
+    const ttft = typeof m?.ttft_ms === "number" ? m.ttft_ms : null;
+    if (ttft !== null && ttft >= 0) out.push(ttft);
+  }
+  return out;
+}
+
+function TtftSparkline({ series }: { series: number[] }) {
+  // Take last 12 samples max so the chart doesn't squish to noise.
+  const samples = series.slice(-12);
+  let points: string;
+  if (samples.length < 2) {
+    // Flat midline reserves the slot even when we have no data yet.
+    const y = SPARK_H / 2;
+    points = `0,${y} ${SPARK_W},${y}`;
+  } else {
+    const min = Math.min(...samples);
+    const max = Math.max(...samples);
+    const span = max - min || 1;
+    const stride = SPARK_W / (samples.length - 1);
+    points = samples
+      .map((v, i) => {
+        const x = i * stride;
+        // Invert Y so larger TTFT = lower on screen (faster = higher).
+        const y = SPARK_H - ((v - min) / span) * SPARK_H;
+        return `${x.toFixed(2)},${y.toFixed(2)}`;
+      })
+      .join(" ");
+  }
+  return (
+    <svg
+      data-testid="chat-ttft-spark"
+      width={SPARK_W}
+      height={SPARK_H}
+      viewBox={`0 0 ${SPARK_W} ${SPARK_H}`}
+      className="shrink-0 opacity-40"
+      aria-hidden="true"
+    >
+      <polyline
+        points={points}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+// ── PRO2: per-turn cost helpers ───────────────────────────────────────
+
+function priceForTurn(
+  turn: ChatTurn,
+  chatModel: string,
+  models: ReturnType<typeof useModels>["models"],
+): { input: number; output: number } {
+  const wanted = turn.meta?.model ?? chatModel;
+  const m = models.find((mm) => mm.id === wanted);
+  return {
+    input: m?.metadata?.input_cost_per_token ?? 0,
+    output: m?.metadata?.output_cost_per_token ?? 0,
+  };
+}
+
+function perTurnCost(
+  chat: Chat,
+  idx: number,
+  models: ReturnType<typeof useModels>["models"],
+): number | null {
+  const turn = chat.messages[idx];
+  if (!turn || turn.role !== "assistant") return null;
+  const usage = turn.meta?.usage;
+  if (!usage) return null;
+  const price = priceForTurn(turn, chat.model, models);
+  return (
+    price.input * (usage.prompt_tokens ?? 0) +
+    price.output * (usage.completion_tokens ?? 0)
+  );
+}
+
+function cumulativeUpTo(
+  chat: Chat,
+  idx: number,
+  models: ReturnType<typeof useModels>["models"],
+): number {
+  let sum = 0;
+  for (let i = 0; i <= idx && i < chat.messages.length; i++) {
+    const t = chat.messages[i];
+    if (t.role !== "assistant") continue;
+    const usage = t.meta?.usage;
+    if (!usage) continue;
+    const price = priceForTurn(t, chat.model, models);
+    sum +=
+      price.input * (usage.prompt_tokens ?? 0) +
+      price.output * (usage.completion_tokens ?? 0);
+  }
+  return sum;
+}
+
+function costColorClass(cost: number): string {
+  if (cost < 0.01) return "text-ok";
+  if (cost < 0.05) return "text-warn";
+  return "text-alert";
+}
+
+function formatTinyUsd(n: number): string {
+  if (n === 0) return "$0.0000";
+  // Always show 4 decimals — the micro-row is the place where deltas
+  // smaller than a cent matter. Larger costs still read cleanly because
+  // the value column is mono and right-aligned by the surrounding flow.
+  return `$${n.toFixed(4)}`;
 }
