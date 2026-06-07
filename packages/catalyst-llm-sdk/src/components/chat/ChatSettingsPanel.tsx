@@ -88,6 +88,24 @@ export function ChatSettingsPanel({
           // thumb (8px on every side → ~28px hit box). Pointer-events
           // inherit through Radix's thumb element.
           "[&_[role=slider]]:relative [&_[role=slider]]:after:absolute [&_[role=slider]]:after:inset-[-8px] [&_[role=slider]]:after:content-['']",
+          // SP1: ParameterControls renders `<div class="flex justify-between
+          // text-sm"><Label>Temperature</Label><span>0.7</span></div>` but
+          // the prior `[&_label]:text-[10px]` shrank only the label while
+          // the sibling span kept text-sm — baselines drifted apart and
+          // the value floated above the label. Pin both children to the
+          // same micro-font + mono + tabular-nums and force the row to
+          // items-center so the value sits on the label's baseline.
+          "[&_label]:flex [&_label]:items-center [&_label]:font-mono [&_label]:text-[10px]",
+          // Scope the row-alignment fix to ParameterControls' specific
+          // `flex justify-between text-sm` row — `.text-sm` keeps us off
+          // our own SP3 header (which is `text-[9px]` / `text-[8px]`).
+          "[&_.flex.justify-between.text-sm]:items-center",
+          "[&_.flex.justify-between.text-sm_span]:font-mono [&_.flex.justify-between.text-sm_span]:text-[10px] [&_.flex.justify-between.text-sm_span]:tabular-nums",
+          // SP3: SystemPromptEditor renders an internal `<Label>System
+          // Prompt</Label>` immediately followed by `<Textarea>`. We hide
+          // that inner label (using :has(+textarea) to scope precisely)
+          // and render our own header row above it with an autosave hint.
+          "[&_label:has(+textarea)]:hidden",
           className,
         )}
       >
@@ -104,6 +122,24 @@ export function ChatSettingsPanel({
           value={chat.model}
           onChange={(model) => setModel(chat.id, model)}
         />
+        {/* SP3: SystemPromptEditor stores every keystroke through
+            useChatStore → persists to localStorage. There was no UI
+            signal of that. Render our own header row above it (the
+            internal Label is hidden via the `:has(+textarea)` selector
+            on the panel root) with a tracking-wide section heading +
+            a dimmer "· auto-saved" sibling so users see the autosave
+            contract without us having to fork SystemPromptEditor. */}
+        <div
+          data-testid="system-prompt-header"
+          className="flex items-center justify-between mb-1"
+        >
+          <span className="text-[9px] uppercase tracking-[0.22em] text-muted-foreground">
+            system prompt
+          </span>
+          <span className="text-[8px] uppercase tracking-[0.22em] text-muted-foreground/50">
+            · auto-saved
+          </span>
+        </div>
         <SystemPromptEditor
           value={chat.systemPrompt}
           onChange={(prompt) => setSystemPrompt(chat.id, prompt)}

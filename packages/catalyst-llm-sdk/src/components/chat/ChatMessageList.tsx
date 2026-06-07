@@ -49,8 +49,15 @@ export function ChatMessageList({
         {renderEmpty ? (
           renderEmpty(chat)
         ) : dense ? (
-          <div className="flex h-full items-center justify-center font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
-            {chat.model ? "send to begin" : "select model"}
+          <div
+            className="flex h-full items-center justify-center px-3"
+            data-testid="chat-empty-hints"
+          >
+            <div className="flex flex-col gap-0.5 font-mono italic text-[9.5px] leading-snug text-muted-foreground/60">
+              <span>&rarr; ask: &quot;show me ready beads&quot;</span>
+              <span>&rarr; ask: &quot;what&apos;s open this week?&quot;</span>
+              <span>&rarr; ask: &quot;review recent commits&quot;</span>
+            </div>
           </div>
         ) : (
           <div className="flex h-full items-center justify-center text-muted-foreground">

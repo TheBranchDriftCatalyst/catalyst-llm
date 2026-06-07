@@ -67,9 +67,33 @@ export interface DenseSelectProps<V extends string = string> {
   /** Render the popover into document.body so it escapes ancestor
    *  transforms / overflow clipping. Default true. */
   portal?: boolean;
+  /** DS-P8: optional leading icon rendered before the label inside the
+   *  trigger button (independent of any per-option icons). Use for
+   *  surfaces where the picker itself carries a context glyph (e.g. a
+   *  folder icon on the workspace picker). */
+  triggerIcon?: ReactNode;
 }
 
 const POPOVER_MIN_W = 160;
+
+// DS-P6: module-scoped registry of open DenseSelect close handlers.
+// Each instance registers its `setOpen(false)` closer under its useId
+// when it opens; opening any instance first calls every OTHER registered
+// closer, then registers itself. This guarantees only one DenseSelect
+// popover can be visible at a time across the entire app.
+const OPEN_INSTANCES = new Map<string, () => void>();
+
+function closeOtherInstances(selfId: string) {
+  for (const [id, close] of OPEN_INSTANCES) {
+    if (id === selfId) continue;
+    try {
+      close();
+    } catch {
+      /* swallow — closer may have been unmounted between registration
+         and call; the unmount-effect cleanup handles eviction. */
+    }
+  }
+}
 
 export function DenseSelect<V extends string = string>({
   value,
@@ -82,6 +106,7 @@ export function DenseSelect<V extends string = string>({
   triggerClassName,
   popoverClassName,
   portal = true,
+  triggerIcon,
 }: DenseSelectProps<V>) {
   const id = useId();
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -138,11 +163,30 @@ export function DenseSelect<V extends string = string>({
       const t = e.target as Node;
       if (wrapRef.current?.contains(t)) return;
       if (popoverRef.current?.contains(t)) return;
+      // DS-P7: click-outside closes but intentionally does NOT restore
+      // focus to the trigger — the user clicked away, so refocusing the
+      // trigger would yank focus away from whatever they actually
+      // wanted to interact with.
       setOpen(false);
     };
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [open]);
+
+  // DS-P6: register this instance's closer while open, and evict any
+  // OTHER currently-open instance. Cleanup deregisters on close /
+  // unmount so the registry can never accumulate stale closers.
+  useEffect(() => {
+    if (!open) {
+      OPEN_INSTANCES.delete(id);
+      return;
+    }
+    closeOtherInstances(id);
+    OPEN_INSTANCES.set(id, () => setOpen(false));
+    return () => {
+      OPEN_INSTANCES.delete(id);
+    };
+  }, [open, id]);
 
   function pick(opt: DenseSelectOption<V>) {
     if (opt.disabled) return;
@@ -203,6 +247,7 @@ export function DenseSelect<V extends string = string>({
       ref={popoverRef}
       role="listbox"
       aria-labelledby={`${id}-trigger`}
+      data-testid="dense-select-popover"
       // DS-C1: explicit hairline ring + shadow so the popover visually
       // separates from sibling controls beneath in narrow rails. The
       // `pointer-events-auto` ensures clicks land here, not on whatever
@@ -282,12 +327,19 @@ export function DenseSelect<V extends string = string>({
                 {opt.icon}
               </span>
             )}
+            {/* DS-P3: label gets flex-1 + min-w-0 + truncate so a long
+                label collapses to an ellipsis instead of wrapping or
+                pushing the description off-screen. */}
             <span className="flex-1 min-w-0 truncate">{opt.label}</span>
             {isSelected && (
               <span className="shrink-0 text-primary text-[10px]">✓</span>
             )}
             {opt.description && (
-              <span className="shrink-0 text-[9px] text-muted-foreground/70 truncate max-w-[40%]">
+              // DS-P3: description is capped at 40% of the row width,
+              // tabular-nums so numeric metadata (counts, dates) line up
+              // visually, shrink-0 so it never gets squashed by a long
+              // label (which is the one that should ellipsise instead).
+              <span className="shrink-0 tabular-nums max-w-[40%] truncate text-[9px] text-muted-foreground/70">
                 {opt.description}
               </span>
             )}
@@ -310,6 +362,7 @@ export function DenseSelect<V extends string = string>({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={ariaLabel}
+        data-testid="dense-select-trigger"
         disabled={disabled}
         onClick={() => !disabled && setOpen((o) => !o)}
         className={cn(
@@ -320,7 +373,16 @@ export function DenseSelect<V extends string = string>({
           triggerClassName,
         )}
       >
-        {selected?.icon && (
+        {/* DS-P8: static leading icon for the trigger itself — distinct
+            from per-option icons, which only apply when an option is
+            selected. Useful for surfaces where the picker carries a
+            persistent context glyph (e.g. workspace = folder icon). */}
+        {triggerIcon && (
+          <span className="shrink-0 inline-flex items-center text-primary">
+            {triggerIcon}
+          </span>
+        )}
+        {!triggerIcon && selected?.icon && (
           <span className="shrink-0 inline-flex items-center text-primary">
             {selected.icon}
           </span>

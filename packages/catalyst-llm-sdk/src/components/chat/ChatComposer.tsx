@@ -141,10 +141,11 @@ export function ChatComposer({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
+            data-testid="chat-composer-input"
             placeholder={
               chat.model
                 ? dense
-                  ? "message · ⌘⏎ send"
+                  ? "> ask the operator… (⌘K for commands)"
                   : "Type a message..."
                 : "Select a model first"
             }

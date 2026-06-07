@@ -210,7 +210,10 @@ const MARKDOWN_COMPONENTS = {
     return (
       <code
         className={cn(
-          "rounded bg-muted/60 px-1 py-0.5 font-mono text-[0.85em]",
+          // Flat hairline inline code — no border, no vertical padding,
+          // just a hint of muted fill so the span reads as code without
+          // looking like a clickable pill.
+          "rounded-sm bg-muted/[0.10] border-0 px-1 py-0 font-mono text-[10.5px]",
           className,
         )}
         {...rest}
