@@ -71,8 +71,11 @@ export function ToolCallCard({
     return (
       <div
         className={cn(
-          "rounded-sm border bg-muted/20 font-mono text-[10px]",
-          isError ? "border-destructive/40" : "border-border/60",
+          "rounded-sm bg-muted/[0.10] font-mono text-[10px]",
+          // No bordered chrome in dense mode — relies on bg tint +
+          // hairline-only when expanded. Error state still gets a
+          // subtle accent so failures are noticeable.
+          isError && "border border-destructive/40",
           className,
         )}
       >
@@ -117,7 +120,7 @@ export function ToolCallCard({
           </span>
         </button>
         {open && (
-          <div className="border-t border-border/40 px-2 py-1.5 space-y-1.5">
+          <div className="border-t border-border/15 px-2 py-1.5 space-y-1.5">
             <div>
               <div className="text-[8.5px] uppercase tracking-[0.22em] text-muted-foreground mb-0.5">
                 args

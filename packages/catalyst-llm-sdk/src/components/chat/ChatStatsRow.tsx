@@ -34,7 +34,7 @@ export function ChatStatsRow({
     <div
       data-testid="chat-stats-row"
       className={cn(
-        "shrink-0 border-t border-border/20 bg-background flex items-center gap-2 min-w-0 overflow-hidden",
+        "shrink-0 border-t border-border/10 bg-background flex items-center gap-2 min-w-0 overflow-hidden",
         // @container query — CostPins reads this to collapse to the
         // three priority pins (calls / cost / ttft) under ~360px.
         dense ? "@container px-2 py-1" : "px-4 py-2",

@@ -77,7 +77,7 @@ export function ChatMessageList({
       <div
         className={
           dense
-            ? "divide-y divide-border/30"
+            ? "divide-y divide-border/10"
             : "divide-y divide-border"
         }
       >
