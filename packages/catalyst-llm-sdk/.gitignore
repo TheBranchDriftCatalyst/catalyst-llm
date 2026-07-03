@@ -1,7 +1,0 @@
-node_modules
-dist
-.tsbuildinfo
-*.tsbuildinfo
-coverage
-.env
-.env.local
