@@ -4,7 +4,7 @@
 Source of truth: packages/docker/runpod-vllm/endpoints.yaml
 Target: k8s/base/litellm/config.yaml (between anchor markers).
 
-Mirrors packages/mac-node/scripts/gen-litellm.py:
+Mirrors ../mac-sdlc-node/scripts/gen-litellm.py:
   - Reads the source YAML
   - Renders one LiteLLM model_list entry per endpoint
   - Splices the rendered block between

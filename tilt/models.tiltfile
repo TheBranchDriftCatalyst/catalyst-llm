@@ -1,16 +1,16 @@
 # tilt/models.tiltfile — hierarchical model registry loader
 #
-# Reads packages/mac-node/models.yaml (the source of truth used by
+# Reads ../mac-sdlc-node/models.yaml (the source of truth used by
 # gen-litellm.py, download-models.py, the test parametrizer, etc.) and
 # exposes Starlark helpers so Tiltfiles can build UI choice lists and
 # download loops without hardcoding model tags.
 #
-# Add a model: edit packages/mac-node/models.yaml. Nothing else.
+# Add a model: edit ../mac-sdlc-node/models.yaml. Nothing else.
 
 # read_yaml is a Tilt built-in; the path is resolved relative to the
 # directory containing *this* tiltfile (tilt/), so we hop up one level
 # to reach the repo root.
-_REGISTRY = read_yaml('../packages/mac-node/models.yaml')
+_REGISTRY = read_yaml('../../mac-sdlc-node/models.yaml')
 
 
 def _mac_targeted(model):

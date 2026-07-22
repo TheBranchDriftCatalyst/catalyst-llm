@@ -6,7 +6,7 @@ model_list:
   # --- Anthropic (Claude) ---
   # May 2026: Opus 4.7 (released 2026-04-16, 87.6% SWE-bench Verified) is
   # the flagship — replaces opus-4 + sonnet-4 from May 2025. Haiku 4.5 is
-  # the budget pair. SOTA shortlist lives in packages/mac-node/AGENTS.md.
+  # the budget pair. SOTA shortlist lives in ../mac-sdlc-node/AGENTS.md.
   - model_name: "claude-opus-4-7"
     litellm_params:
       model: "anthropic/claude-opus-4-7"
@@ -86,10 +86,10 @@ model_list:
   # 404 (pod offline as of May 2026 audit). Re-add with a fresh endpoint
   # ID if you bring runpod back up.
 
-  # >>> mac-node:auto-generated:start <<<
-  # DO NOT EDIT — managed by packages/mac-node/scripts/gen-litellm.py
-  # Source of truth: packages/mac-node/models.yaml (21 ollama, 0 vllm-mlx, 1 image_gen)
-  # Regenerate: cd packages/mac-node && task generate
+  # >>> mac-sdlc-node:auto-generated:start <<<
+  # DO NOT EDIT — managed by scripts/gen-litellm.py
+  # Source of truth: models.yaml (21 ollama, 1 vllm-mlx, 11 image_gen)
+  # Regenerate: cd packages/mac-sdlc-node && task generate
 
   # ─── Ollama (Metal accelerated) ───────────────────────────────────
   - model_name: mac/qwen3-coder
@@ -100,9 +100,6 @@ model_list:
       description: Qwen3-Coder 30B-A3B MoE @ Q8_0 (~33GB) — 256K ctx, ~Sonnet 4.5-class agentic coding, BFCL v3 top tier. Q8
         over Q4 because MoE active path is small and we have the memory. - Mac M5 Max Metal
       supports_function_calling: true
-      license: apache-2.0
-      pipeline_tag: text-generation
-      hf_repo: ggml-org/Qwen3-Coder-30B-A3B-Instruct-Q8_0-GGUF
       max_input_tokens: 262144
       max_tokens: 262144
 
@@ -114,10 +111,6 @@ model_list:
       description: Qwen3 8B (general chat) @ Q4_K_M (default) — small, fast, most-stable Ollama tool-caller in its size class
         (F1 0.933 on Docker's local-tool-use eval; rarely hallucinates calls). Ideal council member when council_size ≥ 2 —
         sub-second per turn on M5 Max, leaves headroom for parallel members. - Mac M5 Max Metal
-      license: apache-2.0
-      pipeline_tag: text-generation
-      param_count: 8190735360
-      hf_repo: Qwen/Qwen3-8B
       max_input_tokens: 40960
       max_tokens: 40960
 
@@ -166,9 +159,6 @@ model_list:
       description: DeepSeek R1 Distill Qwen 32B @ Q8_0 (~34GB) — beats o1-mini on math/code reasoning. ~7-9 tok/s on M5 Max.
         Q8 over Q4 because CoT amplifies quant noise. - Mac M5 Max Metal
       supports_reasoning: true
-      pipeline_tag: text-generation
-      param_count: 9215644672
-      hf_repo: S010/DeepSeek-R1-Distill-Qwen-32B-abliterated-Q8-mlx
       max_input_tokens: 131072
       max_tokens: 131072
 
@@ -180,9 +170,6 @@ model_list:
       description: Gemma 4 26B-A4B MoE @ Q8_0 (~28GB, multimodal + thinking). Vision routing alias for the playground until
         qwen3-vl is pulled and verified. MoE → Q8 cost is small. - Mac M5 Max Metal
       supports_vision: true
-      license: apache-2.0
-      pipeline_tag: image-text-to-text
-      hf_repo: drmcbride/gemma-4-26B-A4B-it-heretic-Q8_0-GGUF
       max_input_tokens: 262144
       max_tokens: 262144
 
@@ -204,10 +191,6 @@ model_list:
       description: Gemma 4 E4B MoE (multimodal + thinking) — fast vision-capable daily. Kept at Ollama default (Q4_K_M) because
         speed is the whole point. - Mac M5 Max Metal
       supports_vision: true
-      license: apache-2.0
-      pipeline_tag: any-to-any
-      param_count: 7996156490
-      hf_repo: google/gemma-4-E4B-it
       max_input_tokens: 131072
       max_tokens: 131072
 
@@ -219,8 +202,6 @@ model_list:
       description: Phi-4 14B @ Q8_0 (~16GB) — punches above its weight, default daily driver under 14B. Q8 because at this size
         it costs nothing. - Mac M5 Max Metal
       supports_reasoning: true
-      license: cc-by-nc-sa-4.0
-      hf_repo: yinghy2018/CLIENS_PHI4_14B_BF16-Q8_0-GGUF
       max_input_tokens: 16384
       max_tokens: 16384
 
@@ -242,8 +223,6 @@ model_list:
       description: Hermes-4 70B (Llama 3.1 70B base) @ Q5_K_M (~50GB) — top RefusalBench, hybrid <think> toggle, lowest AI-tells
         baseline. Toggle reasoning OFF for prose. ChatML. - Mac M5 Max Metal
       supports_reasoning: true
-      license: llama3
-      hf_repo: unsloth/Hermes-4-70B-GGUF
       max_input_tokens: 131072
       max_tokens: 131072
 
@@ -254,8 +233,6 @@ model_list:
     model_info:
       description: Cydonia 24B v4.3 (Mistral Small 3.2 base, Dec 2025) @ Q8_0 (~26GB) — Drummer's most-improved-prose release;
         fast 24B daily for RP. Mistral v7 Tekken template; temp 1.0 / min_p 0.05 / rep_pen 1.03. - Mac M5 Max Metal
-      pipeline_tag: text-generation
-      hf_repo: bartowski/TheDrummer_Cydonia-24B-v4.3-GGUF
       max_input_tokens: 131072
       max_tokens: 131072
 
@@ -288,10 +265,6 @@ model_list:
       description: NuExtract-2.0-8B (Qwen2.5-VL based) — beats GPT-4.1 by +9 F-score on schema extraction. Generalist extractor.
         - Mac M5 Max Metal
       supports_vision: true
-      license: mit
-      pipeline_tag: image-text-to-text
-      param_count: 8292166656
-      hf_repo: numind/NuExtract-2.0-8B-GPTQ
       max_input_tokens: 128000
       max_tokens: 128000
 
@@ -312,9 +285,6 @@ model_list:
     model_info:
       description: UniversalNER 7B — zero-shot named-entity recognition ("What describes <type> in the text?"). Specialist for
         ad-hoc NER. - Mac M5 Max Metal
-      license: cc-by-nc-4.0
-      pipeline_tag: text-generation
-      hf_repo: Universal-NER/UniNER-7B-all
       max_input_tokens: 2048
       max_tokens: 2048
 
@@ -335,10 +305,6 @@ model_list:
       description: Qwen3-VL 2B (latest) — fast OCR + visual QA, beats InternVL3 on DocVQA / OS-World at this size. Sub-second
         on M5 Max for screenshot-class tasks. - Mac M5 Max Metal
       supports_vision: true
-      license: apache-2.0
-      pipeline_tag: image-text-to-text
-      param_count: 2127532032
-      hf_repo: Qwen/Qwen3-VL-2B-Instruct
       max_input_tokens: 262144
       max_tokens: 262144
 
@@ -355,18 +321,481 @@ model_list:
       max_tokens: 262144
 
   # ─── vLLM-MLX (high throughput, OpenAI-compatible) ────────────────
+  - model_name: mac/vllm
+    litellm_params:
+      model: openai/Qwen3-VL-30B-A3B-Instruct-4bit
+      api_base: http://192.168.1.33:8001/v1
+      api_key: not-needed
+    model_info:
+      description: Qwen3-VL 30B MoE — vision-language flagship. ~17GB on disk. via vLLM-MLX - Mac M5 Max Metal
 
   # ─── Image generation (ComfyUI shim, OpenAI-compatible) ───────────
-  - model_name: mac/flux-krea
+  - model_name: mac/flux-schnell
     litellm_params:
-      model: openai/dev-krea
+      model: openai/flux-schnell-fast
       api_base: http://192.168.1.33:8012/v1
       api_key: not-needed
     model_info:
-      description: FLUX.1 Krea Dev — May 2026 SOTA personal-use image-gen, MLX-native via mflux (~12-18s/image on M5 Max, 1024²
-        @ 20 steps, Q8) via mflux shim - Mac M5 Max Metal
+      description: FLUX.1 Schnell FP8 — 4-step euler, 1024². ~6s/image on M5 Max. Apache-2 licensed (no gating). via ComfyUI
+        shim - Mac M5 Max Metal
       mode: image_generation
-  # >>> mac-node:auto-generated:end <<<
+
+  - model_name: mac/flux-dev
+    litellm_params:
+      model: openai/flux-dev-pro
+      api_base: http://192.168.1.33:8012/v1
+      api_key: not-needed
+    model_info:
+      description: FLUX.1 Dev FP8 + 4x ESRGAN upscale → 2048. ~35s/image on M5 Max. License-gated (FLUX.1-dev non-commercial).
+        via ComfyUI shim - Mac M5 Max Metal
+      mode: image_generation
+
+  - model_name: mac/chroma
+    litellm_params:
+      model: openai/chroma-hd
+      api_base: http://192.168.1.33:8012/v1
+      api_key: not-needed
+    model_info:
+      description: Chroma1-HD FP8 — community-trained Flux-arch fine-tune, distillation stripped + uncensored. Apache-2.0 (no
+        gating). 30-step euler, T5-only. ~28s/image. via ComfyUI shim - Mac M5 Max Metal
+      mode: image_generation
+
+  - model_name: mac/chroma-q8
+    litellm_params:
+      model: openai/chroma-hd-q8
+      api_base: http://192.168.1.33:8012/v1
+      api_key: not-needed
+    model_info:
+      description: Chroma1-HD GGUF Q8_0 — same model as chroma-hd, ~9GB quantized. Requires ComfyUI-GGUF custom node. via ComfyUI
+        shim - Mac M5 Max Metal
+      mode: image_generation
+
+  - model_name: mac/qwen-image
+    litellm_params:
+      model: openai/qwen-image
+      api_base: http://192.168.1.33:8012/v1
+      api_key: not-needed
+    model_info:
+      description: Qwen-Image FP8 — Alibaba 2025 SOTA, leads in-image text + bilingual EN/ZH. Apache-2.0. ~22s/image. via ComfyUI
+        shim - Mac M5 Max Metal
+      mode: image_generation
+
+  - model_name: mac/hidream
+    litellm_params:
+      model: openai/hidream-i1-fast
+      api_base: http://192.168.1.33:8012/v1
+      api_key: not-needed
+    model_info:
+      description: HiDream-I1 Fast FP8 — MIT-licensed SOTA, distilled fast variant (16 steps lcm). Uses 4 text encoders (CLIP-L
+        + CLIP-G + T5XXL + Llama-3.1-8B). ~18s/image. via ComfyUI shim - Mac M5 Max Metal
+      mode: image_generation
+
+  - model_name: mac/wai-nsfw
+    litellm_params:
+      model: openai/sdxl-wai-nsfw-illustrious
+      api_base: http://192.168.1.33:8012/v1
+      api_key: not-needed
+    model_info:
+      description: WAI NSFW Illustrious v14 — Illustrious XL SDXL fine-tune, explicit/anatomy-tuned. 28-step euler ancestral.
+        ~16s/image. via ComfyUI shim - Mac M5 Max Metal
+      mode: image_generation
+
+  - model_name: mac/pony
+    litellm_params:
+      model: openai/sdxl-pony-v6
+      api_base: http://192.168.1.33:8012/v1
+      api_key: not-needed
+    model_info:
+      description: Pony Diffusion V6 XL — stylized character/illustration SDXL fine-tune. 28-step euler ancestral. via ComfyUI
+        shim - Mac M5 Max Metal
+      mode: image_generation
+
+  - model_name: mac/illustrious
+    litellm_params:
+      model: openai/sdxl-illustrious-xl
+      api_base: http://192.168.1.33:8012/v1
+      api_key: not-needed
+    model_info:
+      description: Illustrious XL v0.1 — anime/illustration SDXL base (OnomaAI Research). 28-step euler ancestral. via ComfyUI
+        shim - Mac M5 Max Metal
+      mode: image_generation
+
+  - model_name: mac/juggernaut
+    litellm_params:
+      model: openai/sdxl-juggernaut-xl-v9
+      api_base: http://192.168.1.33:8012/v1
+      api_key: not-needed
+    model_info:
+      description: Juggernaut XL v9 — photoreal SDXL fine-tune (RunDiffusion). 28-step euler ancestral. via ComfyUI shim - Mac
+        M5 Max Metal
+      mode: image_generation
+
+  - model_name: mac/illustrious-lora
+    litellm_params:
+      model: openai/sdxl-illustrious-lora-demo
+      api_base: http://192.168.1.33:8012/v1
+      api_key: not-needed
+    model_info:
+      description: Illustrious XL + stacked LoRAs (anime-detailer 1.0 + midsommar-cartoon 0.8) — worked example of LoraLoader
+        chaining. via ComfyUI shim - Mac M5 Max Metal
+      mode: image_generation
+  # >>> mac-sdlc-node:auto-generated:end <<<
+
+  # >>> mac-sdlc-node-runpod:auto-generated:start <<<
+  # DO NOT EDIT — managed by scripts/gen-litellm.py
+  # Source of truth: models.yaml runpod: block (pending — pod_id empty; 26 ollama, 11 image_gen)
+  # Image: ghcr.io/thebranchdriftcatalyst/runpod-mac-bundle
+  # Regenerate: task runpod:generate
+
+  # ─── Ollama on RunPod (heavyweight LLMs via proxy) ────────────────
+  # - model_name: runpod/qwen3-coder
+  #   litellm_params:
+  #     model: ollama/qwen3-coder:30b-a3b-q8_0
+  #     api_base: https://<POD_ID>-11434.proxy.runpod.net
+  #     timeout: 300
+  #   model_info:
+  #     description: Qwen3-Coder 30B-A3B MoE @ Q8_0 (~33GB) — 256K ctx, ~Sonnet 4.5-class agentic coding, BFCL v3 top tier. Q8
+  #       over Q4 because MoE active path is small and we have the memory. - RunPod (sibling to Mac M5 Max)
+  #     supports_function_calling: true
+
+  # - model_name: runpod/qwen3-8b
+  #   litellm_params:
+  #     model: ollama/qwen3:8b
+  #     api_base: https://<POD_ID>-11434.proxy.runpod.net
+  #     timeout: 300
+  #   model_info:
+  #     description: Qwen3 8B (general chat) @ Q4_K_M (default) — small, fast, most-stable Ollama tool-caller in its size class
+  #       (F1 0.933 on Docker's local-tool-use eval; rarely hallucinates calls). Ideal council member when council_size ≥ 2 —
+  #       sub-second per turn on M5 Max, leaves headroom for parallel members. - RunPod (sibling to Mac M5 Max)
+
+  # - model_name: runpod/deepseek-r1
+  #   litellm_params:
+  #     model: ollama/deepseek-r1:32b-qwen-distill-q8_0
+  #     api_base: https://<POD_ID>-11434.proxy.runpod.net
+  #     timeout: 300
+  #   model_info:
+  #     description: DeepSeek R1 Distill Qwen 32B @ Q8_0 (~34GB) — beats o1-mini on math/code reasoning. ~7-9 tok/s on M5 Max.
+  #       Q8 over Q4 because CoT amplifies quant noise. - RunPod (sibling to Mac M5 Max)
+  #     supports_reasoning: true
+
+  # - model_name: runpod/gemma4-26b
+  #   litellm_params:
+  #     model: ollama/gemma4:26b-a4b-it-q8_0
+  #     api_base: https://<POD_ID>-11434.proxy.runpod.net
+  #     timeout: 300
+  #   model_info:
+  #     description: Gemma 4 26B-A4B MoE @ Q8_0 (~28GB, multimodal + thinking). Vision routing alias for the playground until
+  #       qwen3-vl is pulled and verified. MoE → Q8 cost is small. - RunPod (sibling to Mac M5 Max)
+  #     supports_vision: true
+
+  # - model_name: runpod/gemma4-vision
+  #   litellm_params:
+  #     model: ollama/gemma4:26b-a4b-it-q8_0
+  #     api_base: https://<POD_ID>-11434.proxy.runpod.net
+  #     timeout: 300
+  #   model_info:
+  #     description: alias of runpod/gemma4-26b (gemma4:26b-a4b-it-q8_0) - RunPod
+  #     supports_vision: true
+
+  # - model_name: runpod/gemma4
+  #   litellm_params:
+  #     model: ollama/gemma4:e4b
+  #     api_base: https://<POD_ID>-11434.proxy.runpod.net
+  #     timeout: 300
+  #   model_info:
+  #     description: Gemma 4 E4B MoE (multimodal + thinking) — fast vision-capable daily. Kept at Ollama default (Q4_K_M) because
+  #       speed is the whole point. - RunPod (sibling to Mac M5 Max)
+  #     supports_vision: true
+
+  # - model_name: runpod/phi4
+  #   litellm_params:
+  #     model: ollama/phi4:14b-q8_0
+  #     api_base: https://<POD_ID>-11434.proxy.runpod.net
+  #     timeout: 300
+  #   model_info:
+  #     description: Phi-4 14B @ Q8_0 (~16GB) — punches above its weight, default daily driver under 14B. Q8 because at this size
+  #       it costs nothing. - RunPod (sibling to Mac M5 Max)
+  #     supports_reasoning: true
+
+  # - model_name: runpod/nuextract2
+  #   litellm_params:
+  #     model: ollama/nuextract2:latest
+  #     api_base: https://<POD_ID>-11434.proxy.runpod.net
+  #     timeout: 300
+  #   model_info:
+  #     description: NuExtract-2.0-8B (Qwen2.5-VL based) — beats GPT-4.1 by +9 F-score on schema extraction. Generalist extractor.
+  #       - RunPod (sibling to Mac M5 Max)
+  #     supports_vision: true
+
+  # - model_name: runpod/nuextract1.5
+  #   litellm_params:
+  #     model: ollama/nuextract1.5:latest
+  #     api_base: https://<POD_ID>-11434.proxy.runpod.net
+  #     timeout: 300
+  #   model_info:
+  #     description: 'NuExtract 1.5 — template-based JSON fill (### Template / ### Text shape). Kept for legacy prompts. - RunPod
+  #       (sibling to Mac M5 Max)'
+
+  # - model_name: runpod/universalner
+  #   litellm_params:
+  #     model: ollama/universalner:latest
+  #     api_base: https://<POD_ID>-11434.proxy.runpod.net
+  #     timeout: 300
+  #   model_info:
+  #     description: UniversalNER 7B — zero-shot named-entity recognition ("What describes <type> in the text?"). Specialist for
+  #       ad-hoc NER. - RunPod (sibling to Mac M5 Max)
+
+  # - model_name: runpod/qwen3-embed-8b
+  #   litellm_params:
+  #     model: ollama/qwen3-embedding:8b
+  #     api_base: https://<POD_ID>-11434.proxy.runpod.net
+  #     timeout: 300
+  #   model_info:
+  #     description: 'Qwen3 Embedding 8B — #1 MTEB multilingual at 70.58, 100+ langs, dims 32-4096. The single embedding model
+  #       we need. - RunPod (sibling to Mac M5 Max)'
+  #     mode: embedding
+
+  # - model_name: runpod/qwen3-vl
+  #   litellm_params:
+  #     model: ollama/qwen3-vl:latest
+  #     api_base: https://<POD_ID>-11434.proxy.runpod.net
+  #     timeout: 300
+  #   model_info:
+  #     description: Qwen3-VL 2B (latest) — fast OCR + visual QA, beats InternVL3 on DocVQA / OS-World at this size. Sub-second
+  #       on M5 Max for screenshot-class tasks. - RunPod (sibling to Mac M5 Max)
+  #     supports_vision: true
+
+  # - model_name: runpod/llama3.3
+  #   litellm_params:
+  #     model: ollama/llama3.3:70b
+  #     api_base: https://<POD_ID>-11434.proxy.runpod.net
+  #     timeout: 300
+  #   model_info:
+  #     description: Meta's best open model — strong structured output - RunPod (sibling to Mac M5 Max)
+  #     supports_reasoning: true
+
+  # - model_name: runpod/qwen2.5-72b
+  #   litellm_params:
+  #     model: ollama/qwen2.5:72b-instruct
+  #     api_base: https://<POD_ID>-11434.proxy.runpod.net
+  #     timeout: 300
+  #   model_info:
+  #     description: 72B, elite structured output + extraction - RunPod (sibling to Mac M5 Max)
+  #     supports_reasoning: true
+
+  # - model_name: runpod/deepseek-r1-70b
+  #   litellm_params:
+  #     model: ollama/deepseek-r1:70b
+  #     api_base: https://<POD_ID>-11434.proxy.runpod.net
+  #     timeout: 300
+  #   model_info:
+  #     description: Best open reasoning model at scale - RunPod (sibling to Mac M5 Max)
+  #     supports_reasoning: true
+
+  # - model_name: runpod/mistral-large
+  #   litellm_params:
+  #     model: ollama/mistral-large:latest
+  #     api_base: https://<POD_ID>-11434.proxy.runpod.net
+  #     timeout: 300
+  #   model_info:
+  #     description: Mistral's flagship, 123B - RunPod (sibling to Mac M5 Max)
+  #     supports_reasoning: true
+
+  # - model_name: runpod/gemma3-27b
+  #   litellm_params:
+  #     model: ollama/gemma3:27b
+  #     api_base: https://<POD_ID>-11434.proxy.runpod.net
+  #     timeout: 300
+  #   model_info:
+  #     description: Step up from 12B benchmark tier - RunPod (sibling to Mac M5 Max)
+
+  # - model_name: runpod/qwen2.5-coder-32b
+  #   litellm_params:
+  #     model: ollama/qwen2.5-coder:32b
+  #     api_base: https://<POD_ID>-11434.proxy.runpod.net
+  #     timeout: 300
+  #   model_info:
+  #     description: Strongest open coding model - RunPod (sibling to Mac M5 Max)
+  #     supports_function_calling: true
+
+  # - model_name: runpod/command-r
+  #   litellm_params:
+  #     model: ollama/command-r:35b
+  #     api_base: https://<POD_ID>-11434.proxy.runpod.net
+  #     timeout: 300
+  #   model_info:
+  #     description: Cohere's RAG-optimized model - RunPod (sibling to Mac M5 Max)
+
+  # - model_name: runpod/qwen3-235b
+  #   litellm_params:
+  #     model: ollama/qwen3:235b-a22b
+  #     api_base: https://<POD_ID>-11434.proxy.runpod.net
+  #     timeout: 300
+  #   model_info:
+  #     description: 235B MoE (22B active), rivals GPT-4o — fits 1x A100 80GB - RunPod (sibling to Mac M5 Max)
+  #     supports_reasoning: true
+
+  # - model_name: runpod/qwen3.5-122b
+  #   litellm_params:
+  #     model: ollama/qwen3.5:122b-a10b
+  #     api_base: https://<POD_ID>-11434.proxy.runpod.net
+  #     timeout: 300
+  #   model_info:
+  #     description: 122B MoE (10B active), ~25GB Q4 - RunPod (sibling to Mac M5 Max)
+
+  # - model_name: runpod/llama3.1-405b
+  #   litellm_params:
+  #     model: ollama/llama3.1:405b
+  #     api_base: https://<POD_ID>-11434.proxy.runpod.net
+  #     timeout: 300
+  #   model_info:
+  #     description: Meta's largest — the open-source GPT-4 class (~230GB Q4) - RunPod (sibling to Mac M5 Max)
+  #     supports_reasoning: true
+
+  # - model_name: runpod/deepseek-v3
+  #   litellm_params:
+  #     model: ollama/deepseek-v3:671b
+  #     api_base: https://<POD_ID>-11434.proxy.runpod.net
+  #     timeout: 300
+  #   model_info:
+  #     description: 671B MoE (37B active), frontier-class reasoning (~400GB Q4) - RunPod (sibling to Mac M5 Max)
+  #     supports_reasoning: true
+
+  # - model_name: runpod/qwen2.5-110b
+  #   litellm_params:
+  #     model: ollama/qwen2.5:110b
+  #     api_base: https://<POD_ID>-11434.proxy.runpod.net
+  #     timeout: 300
+  #   model_info:
+  #     description: Alibaba's largest dense model (~63GB Q4) - RunPod (sibling to Mac M5 Max)
+  #     supports_reasoning: true
+
+  # - model_name: runpod/command-r-plus
+  #   litellm_params:
+  #     model: ollama/command-r-plus:104b
+  #     api_base: https://<POD_ID>-11434.proxy.runpod.net
+  #     timeout: 300
+  #   model_info:
+  #     description: Cohere's largest — RAG monster (~60GB Q4) - RunPod (sibling to Mac M5 Max)
+
+  # - model_name: runpod/falcon3
+  #   litellm_params:
+  #     model: ollama/falcon3:180b
+  #     api_base: https://<POD_ID>-11434.proxy.runpod.net
+  #     timeout: 300
+  #   model_info:
+  #     description: TII's flagship (~100GB Q4) - RunPod (sibling to Mac M5 Max)
+
+  # ─── Image generation on RunPod (ComfyUI shim via proxy) ──────────
+  # - model_name: runpod/flux-schnell
+  #   litellm_params:
+  #     model: openai/flux-schnell-fast
+  #     api_base: https://<POD_ID>-8012.proxy.runpod.net/v1
+  #     api_key: not-needed
+  #   model_info:
+  #     description: FLUX.1 Schnell FP8 — 4-step euler, 1024². ~6s/image on M5 Max. Apache-2 licensed (no gating). via ComfyUI
+  #       shim - RunPod
+  #     mode: image_generation
+
+  # - model_name: runpod/flux-dev
+  #   litellm_params:
+  #     model: openai/flux-dev-pro
+  #     api_base: https://<POD_ID>-8012.proxy.runpod.net/v1
+  #     api_key: not-needed
+  #   model_info:
+  #     description: FLUX.1 Dev FP8 + 4x ESRGAN upscale → 2048. ~35s/image on M5 Max. License-gated (FLUX.1-dev non-commercial).
+  #       via ComfyUI shim - RunPod
+  #     mode: image_generation
+
+  # - model_name: runpod/chroma
+  #   litellm_params:
+  #     model: openai/chroma-hd
+  #     api_base: https://<POD_ID>-8012.proxy.runpod.net/v1
+  #     api_key: not-needed
+  #   model_info:
+  #     description: Chroma1-HD FP8 — community-trained Flux-arch fine-tune, distillation stripped + uncensored. Apache-2.0 (no
+  #       gating). 30-step euler, T5-only. ~28s/image. via ComfyUI shim - RunPod
+  #     mode: image_generation
+
+  # - model_name: runpod/chroma-q8
+  #   litellm_params:
+  #     model: openai/chroma-hd-q8
+  #     api_base: https://<POD_ID>-8012.proxy.runpod.net/v1
+  #     api_key: not-needed
+  #   model_info:
+  #     description: Chroma1-HD GGUF Q8_0 — same model as chroma-hd, ~9GB quantized. Requires ComfyUI-GGUF custom node. via ComfyUI
+  #       shim - RunPod
+  #     mode: image_generation
+
+  # - model_name: runpod/qwen-image
+  #   litellm_params:
+  #     model: openai/qwen-image
+  #     api_base: https://<POD_ID>-8012.proxy.runpod.net/v1
+  #     api_key: not-needed
+  #   model_info:
+  #     description: Qwen-Image FP8 — Alibaba 2025 SOTA, leads in-image text + bilingual EN/ZH. Apache-2.0. ~22s/image. via ComfyUI
+  #       shim - RunPod
+  #     mode: image_generation
+
+  # - model_name: runpod/hidream
+  #   litellm_params:
+  #     model: openai/hidream-i1-fast
+  #     api_base: https://<POD_ID>-8012.proxy.runpod.net/v1
+  #     api_key: not-needed
+  #   model_info:
+  #     description: HiDream-I1 Fast FP8 — MIT-licensed SOTA, distilled fast variant (16 steps lcm). Uses 4 text encoders (CLIP-L
+  #       + CLIP-G + T5XXL + Llama-3.1-8B). ~18s/image. via ComfyUI shim - RunPod
+  #     mode: image_generation
+
+  # - model_name: runpod/wai-nsfw
+  #   litellm_params:
+  #     model: openai/sdxl-wai-nsfw-illustrious
+  #     api_base: https://<POD_ID>-8012.proxy.runpod.net/v1
+  #     api_key: not-needed
+  #   model_info:
+  #     description: WAI NSFW Illustrious v14 — Illustrious XL SDXL fine-tune, explicit/anatomy-tuned. 28-step euler ancestral.
+  #       ~16s/image. via ComfyUI shim - RunPod
+  #     mode: image_generation
+
+  # - model_name: runpod/pony
+  #   litellm_params:
+  #     model: openai/sdxl-pony-v6
+  #     api_base: https://<POD_ID>-8012.proxy.runpod.net/v1
+  #     api_key: not-needed
+  #   model_info:
+  #     description: Pony Diffusion V6 XL — stylized character/illustration SDXL fine-tune. 28-step euler ancestral. via ComfyUI
+  #       shim - RunPod
+  #     mode: image_generation
+
+  # - model_name: runpod/illustrious
+  #   litellm_params:
+  #     model: openai/sdxl-illustrious-xl
+  #     api_base: https://<POD_ID>-8012.proxy.runpod.net/v1
+  #     api_key: not-needed
+  #   model_info:
+  #     description: Illustrious XL v0.1 — anime/illustration SDXL base (OnomaAI Research). 28-step euler ancestral. via ComfyUI
+  #       shim - RunPod
+  #     mode: image_generation
+
+  # - model_name: runpod/juggernaut
+  #   litellm_params:
+  #     model: openai/sdxl-juggernaut-xl-v9
+  #     api_base: https://<POD_ID>-8012.proxy.runpod.net/v1
+  #     api_key: not-needed
+  #   model_info:
+  #     description: Juggernaut XL v9 — photoreal SDXL fine-tune (RunDiffusion). 28-step euler ancestral. via ComfyUI shim - RunPod
+  #     mode: image_generation
+
+  # - model_name: runpod/illustrious-lora
+  #   litellm_params:
+  #     model: openai/sdxl-illustrious-lora-demo
+  #     api_base: https://<POD_ID>-8012.proxy.runpod.net/v1
+  #     api_key: not-needed
+  #   model_info:
+  #     description: Illustrious XL + stacked LoRAs (anime-detailer 1.0 + midsommar-cartoon 0.8) — worked example of LoraLoader
+  #       chaining. via ComfyUI shim - RunPod
+  #     mode: image_generation
+  # >>> mac-sdlc-node-runpod:auto-generated:end <<<
 
 general_settings:
   master_key: "os.environ/LITELLM_MASTER_KEY"

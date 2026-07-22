@@ -1,5 +1,0 @@
-# Modelfile for a dedicated embedding model configuration
-# Usage: ollama create embedding-server -f config/ollama/modelfile.embedding
-FROM nomic-embed-text:latest
-
-PARAMETER num_ctx 8192

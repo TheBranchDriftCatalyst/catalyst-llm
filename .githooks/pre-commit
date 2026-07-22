@@ -2,7 +2,7 @@
 # pre-commit:
 #   (1) ruff --fix on staged Python files; auto-fixed changes get re-staged
 #       into the same commit. Unfixable violations abort the commit.
-#   (2) keep k8s/base/litellm/config.yaml in sync with packages/mac-node/models.yaml.
+#   (2) keep k8s/base/litellm/config.yaml in sync with ../mac-sdlc-node/models.yaml.
 #
 # Strategy for (1): stash unstaged work (--keep-index) so the autofix only
 # touches what was actually staged, run ruff --fix on the staged paths,
@@ -83,13 +83,13 @@ fi
 # ─────────────────────────────────────────────────────────────────────
 # (2) LiteLLM config sync (models.yaml → k8s/base/litellm/config.yaml)
 # ─────────────────────────────────────────────────────────────────────
-GEN="${REPO}/packages/mac-node/scripts/gen-litellm.py"
-SRC="${REPO}/packages/mac-node/models.yaml"
+GEN="${REPO}/../mac-sdlc-node/scripts/gen-litellm.py"
+SRC="${REPO}/../mac-sdlc-node/models.yaml"
 TARGET="${REPO}/k8s/base/litellm/config.yaml"
 
 # Only run when something we care about is staged. Cheap exit otherwise.
 staged=$(git diff --cached --name-only)
-if ! echo "$staged" | grep -qE '^(packages/mac-node/(models\.yaml|scripts/gen-litellm\.py)|k8s/base/litellm/config\.yaml)$'; then
+if ! echo "$staged" | grep -qE '^(../mac-sdlc-node/(models\.yaml|scripts/gen-litellm\.py)|k8s/base/litellm/config\.yaml)$'; then
   exit 0
 fi
 

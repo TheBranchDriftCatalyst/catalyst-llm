@@ -1,7 +1,7 @@
 # tilt/common.tiltfile — shared button factories + banners
 #
 # Model tags / choices / download bundles come from tilt/models.tiltfile
-# (which reads packages/mac-node/models.yaml — the only source of truth).
+# (which reads ../mac-sdlc-node/models.yaml — the only source of truth).
 
 load('ext://uibutton', 'cmd_button', 'location', 'text_input', 'choice_input')
 load('./models.tiltfile',
@@ -79,9 +79,9 @@ def setup_ollama_buttons():
             argv=['sh', '-c', '''
 set -eu
 cd $(git rev-parse --show-toplevel)
-PY="$(test -x packages/mac-node/.venv/bin/python && echo packages/mac-node/.venv/bin/python || echo python3)"
+PY="$(test -x ../mac-sdlc-node/.venv/bin/python && echo ../mac-sdlc-node/.venv/bin/python || echo python3)"
 echo "==> DL category '%s' (%d models): %s"
-"$PY" packages/mac-node/scripts/download-models.py --only "%s"
+"$PY" ../mac-sdlc-node/scripts/download-models.py --only "%s"
 echo ""
 ollama list
 ''' % (cat, len(aliases), only_arg, only_arg)],
@@ -146,7 +146,7 @@ def print_dev_banner():
 ║  Ollama:    native Metal GPU @ :11434                         ║
 ║  UIs:       deployed to k3d cluster (k8s/local overlay)       ║
 ║  LiteLLM:   remote @ http://litellm.talos00                   ║
-║  Models:    edit packages/mac-node/models.yaml                ║
+║  Models:    edit ../mac-sdlc-node/models.yaml                ║
 ╚═══════════════════════════════════════════════════════════════╝
 """)
 
@@ -157,7 +157,7 @@ Quick Start:
   1. Wait for all services (green checkmarks).
   2. Pull models: use "Pull Model" or "DL Category" buttons on the
      'ollama' resource, OR run:
-       task -d packages/mac-node models:download
+       task -d ../mac-sdlc-node models:download
   3. Open the playground:  http://localhost:5174
 
 Service URLs (dev cluster ingress, k3d Traefik):
@@ -179,7 +179,7 @@ All chat traffic routes through the LiteLLM proxy:
            http://litellm.talos00 with no key; auth will 401 if you
            skip the key.
 
-Models: packages/mac-node/models.yaml is the only list.
+Models: ../mac-sdlc-node/models.yaml is the only list.
         Tilt buttons, LiteLLM config, tests, and download scripts
-        all read it. Edit there → run `task -d packages/mac-node generate`.
+        all read it. Edit there → run `task -d ../mac-sdlc-node generate`.
 """)

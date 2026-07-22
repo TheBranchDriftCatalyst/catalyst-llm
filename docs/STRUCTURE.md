@@ -11,10 +11,12 @@ packages/        Service code (Python + TypeScript)
   catalyst-langgraph/    LangGraph agent runtime (FastAPI; SSE event stream)
   catalyst-llm-sdk/      TS client SDK + React components + playground
   tool-host/             FastAPI sidecar — tool execution surface
-  mac-node/              Local M-series Mac inference (Ollama + MLX + shims)
-    services/comfyui-shim/  FastAPI shim for ComfyUI image gen
-    services/mflux-shim/    FastAPI shim for MFlux (Flux.1-schnell)
   openclaw/        Obsidian-style knowledge vault (markdown — not buildable)
+```
+
+> **Note:** local M-series Mac inference (Ollama + MLX + comfyui-shim + mflux-shim) used to live at `packages/mac-node/`. It was promoted to its own workspace-rooted monorepo at `../mac-sdlc-node/` (bd `llm-czq`). catalyst-llm consumes its model registry via the dashboard's `/api/config` endpoint.
+
+```
 k8s/             Kubernetes manifests
   base/                  Host-agnostic baseline
     claw-runtime/  Deployed agent runtime (Composio-backed; opt-in per env)
@@ -54,7 +56,7 @@ These were considered by the SDLC council and intentionally pushed out:
 
 | Decision | Tracking | Why deferred |
 |---|---|---|
-| Promote `mac-node/services/*` (comfyui-shim, mflux-shim) to first-class `packages/*` | `llm-5pn` | Only 2 services today — Red Team correctly flagged it as taxonomy churn. Revisit when a 3rd mac-only service emerges. |
+| Promote `mac-sdlc-node/services/*` (comfyui-shim, mflux-shim) to first-class sub-packages | `llm-5pn` | Only 2 services today — Red Team correctly flagged it as taxonomy churn. Revisit when a 3rd mac-only service emerges. (mac-node was moved + renamed to `../mac-sdlc-node/` per `llm-czq`.) |
 | ~~Add SSE replay test for `/api/chat/stream`~~ | ~~`llm-8i8`~~ | Done. `tests/test_chat_stream_replay.py` pins the wire shape against `tests/fixtures/chat_stream_canonical.json`. Regen: delete the fixture and re-run pytest. |
 | Further split `catalyst-langgraph/server/__init__.py` (still ~925 lines) | — | Most of the remaining size is `_produce_agent_events` + Pydantic response models — touching either risks the cancel signal bus / depth-aware routing / OpenAPI shape. File when a concrete need surfaces. |
 | Shared `catalyst-core` Python package for FastAPI boilerplate | — | Rejected outright. 4 services × ~30 LOC of boilerplate each isn't enough duplication to justify the maintenance overhead. |

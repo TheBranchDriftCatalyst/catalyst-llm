@@ -35,7 +35,7 @@ or fan out from repo root (`task test:unit` runs all packages in parallel).
 | `packages/catalyst-langgraph` | pytest | `uv run --with 'pytest>=7.0' ... pytest tests/ -m unit` |
 | `packages/tool-host`          | pytest | `uv run --with 'pytest>=8.0' ... pytest tests/ -m unit` |
 | `packages/catalyst-llm-sdk`   | vitest | `yarn test` (or `yarn test:junit` for XML output) |
-| `packages/mac-node`           | pytest collect-only | `uv run --project tests/python pytest --collect-only -q` |
+| `../mac-sdlc-node`           | pytest collect-only | `uv run --project tests/python pytest --collect-only -q` |
 
 ## Unified report (`task test:report`)
 

@@ -485,8 +485,8 @@ packages/docker/runpod-ollama/
 └── README.md               This file
 ```
 
-`scripts/pull-models.sh` is generated from `packages/mac-node/models.yaml` via
-`python3 packages/mac-node/scripts/gen-pull-models.py --target runpod`.
+`scripts/pull-models.sh` is generated from `../mac-sdlc-node/models.yaml` via
+`python3 ../mac-sdlc-node/scripts/gen-pull-models.py --target runpod`.
 
 ## Cost Notes
 

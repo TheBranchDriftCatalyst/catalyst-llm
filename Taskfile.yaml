@@ -5,12 +5,12 @@
 version: '3'
 
 # Per-package Taskfiles are mounted as namespaces here. Invoke nested
-# tasks as `task <ns>:<task>` (e.g. `task mac-node:test:smoke`). The
+# tasks as `task <ns>:<task>` (e.g. `task mac-sdlc-node:test:smoke`). The
 # `dir:` setting makes each task run with the package as its cwd.
 includes:
-  mac-node:
-    taskfile: ./packages/mac-node/Taskfile.yaml
-    dir: ./packages/mac-node
+  mac-sdlc-node:
+    taskfile: ./../mac-sdlc-node/Taskfile.yaml
+    dir: ./../mac-sdlc-node
   sdk:
     taskfile: ./packages/catalyst-llm-sdk/Taskfile.yaml
     dir: ./packages/catalyst-llm-sdk
@@ -46,7 +46,7 @@ tasks:
   test:lint:
     desc: "L1: typecheck + lint across all packages (no services, fast)"
     deps:
-      - mac-node:test:lint
+      - mac-sdlc-node:test:lint
       - sdk:test:lint
       - langgraph:test:lint
       - tool-host:test:lint
@@ -54,7 +54,7 @@ tasks:
   test:unit:
     desc: "L2: pure unit tests across all packages (no services, parallel)"
     deps:
-      - mac-node:test:unit
+      - mac-sdlc-node:test:unit
       - sdk:test:unit
       - langgraph:test:unit
       - tool-host:test:unit
@@ -63,7 +63,7 @@ tasks:
     desc: "L3: unit + service-health smoke across all packages (requires local services)"
     cmds:
       - task: test:unit
-      - task: mac-node:test:smoke
+      - task: mac-sdlc-node:test:smoke
       - task: sdk:test:smoke
 
   test:full:
@@ -71,7 +71,7 @@ tasks:
     cmds:
       - task: test:lint
       - task: test:unit
-      - task: mac-node:test:full
+      - task: mac-sdlc-node:test:full
       - task: sdk:test:full
 
   # Unified HTML report across every package's junit XML. Powers the
@@ -181,18 +181,18 @@ tasks:
     cmds:
       - argocd app get {{.ARGO_APP}}
 
-  # ─── Model registry (delegates into packages/mac-node) ───────────────
+  # ─── Model registry (delegates into ../mac-sdlc-node) ───────────────
   models:
     desc: Regenerate everything that derives from models.yaml (litellm config, pull scripts)
     cmds:
-      - task -d packages/mac-node generate
+      - task -d ../mac-sdlc-node generate
 
   models:download:
     desc: Pull all mac-targeted models from models.yaml (CONCURRENCY=N, ONLY=alias,..., SKIP=alias,...)
     cmds:
-      - task -d packages/mac-node models:download {{.CLI_ARGS}}
+      - task -d ../mac-sdlc-node models:download {{.CLI_ARGS}}
 
   models:plan:
     desc: Dry-run of models:download
     cmds:
-      - task -d packages/mac-node models:download:plan
+      - task -d ../mac-sdlc-node models:download:plan
