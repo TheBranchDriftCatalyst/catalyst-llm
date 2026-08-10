@@ -12,6 +12,14 @@ metadata:
   labels:
     app.kubernetes.io/name: open-webui
     app.kubernetes.io/part-of: catalyst-llm
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: "Open WebUI"
+    gethomepage.dev/description: "Chat UI for local & API LLMs"
+    gethomepage.dev/group: "AI & LLM"
+    gethomepage.dev/icon: "open-webui.png"
+    gethomepage.dev/href: "http://openwebui.talos00"
+    gethomepage.dev/siteMonitor: "http://open-webui.catalyst-llm.svc.cluster.local:8080"
 spec:
   entryPoints:
     - web
@@ -29,6 +37,14 @@ metadata:
   labels:
     app.kubernetes.io/name: lobe-chat
     app.kubernetes.io/part-of: catalyst-llm
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: "Lobe Chat"
+    gethomepage.dev/description: "Modern LLM chat framework"
+    gethomepage.dev/group: "AI & LLM"
+    gethomepage.dev/icon: "lobe-chat.png"
+    gethomepage.dev/href: "http://lobechat.talos00"
+    gethomepage.dev/siteMonitor: "http://lobe-chat.catalyst-llm.svc.cluster.local:3210"
 spec:
   entryPoints:
     - web
@@ -46,6 +62,14 @@ metadata:
   labels:
     app.kubernetes.io/name: sillytavern
     app.kubernetes.io/part-of: catalyst-llm
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: "SillyTavern"
+    gethomepage.dev/description: "LLM roleplay frontend"
+    gethomepage.dev/group: "AI & LLM"
+    gethomepage.dev/icon: "sillytavern.png"
+    gethomepage.dev/href: "http://sillytavern.talos00"
+    gethomepage.dev/siteMonitor: "http://sillytavern.catalyst-llm.svc.cluster.local:8000"
 spec:
   entryPoints:
     - web
@@ -63,6 +87,14 @@ metadata:
   labels:
     app.kubernetes.io/name: searxng
     app.kubernetes.io/part-of: catalyst-llm
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: "SearXNG"
+    gethomepage.dev/description: "Private metasearch engine"
+    gethomepage.dev/group: "AI & LLM"
+    gethomepage.dev/icon: "searxng.png"
+    gethomepage.dev/href: "http://searxng.talos00"
+    gethomepage.dev/siteMonitor: "http://searxng.catalyst-llm.svc.cluster.local:8080"
 spec:
   entryPoints:
     - web

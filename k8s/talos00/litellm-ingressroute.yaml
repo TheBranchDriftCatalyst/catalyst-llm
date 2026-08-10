@@ -19,6 +19,14 @@ metadata:
     app: litellm
     app.kubernetes.io/name: litellm
     app.kubernetes.io/part-of: catalyst-llm
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: "LiteLLM"
+    gethomepage.dev/description: "LLM API gateway & proxy"
+    gethomepage.dev/group: "AI & LLM"
+    gethomepage.dev/icon: "litellm.png"
+    gethomepage.dev/href: "http://litellm.talos00"
+    gethomepage.dev/siteMonitor: "http://litellm.catalyst-llm.svc.cluster.local:4000"
 spec:
   entryPoints:
     - web
