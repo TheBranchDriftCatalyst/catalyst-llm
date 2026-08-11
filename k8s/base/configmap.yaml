@@ -120,8 +120,10 @@ data:
     # Security
     basicAuthMode: false
 
-    # Enable all user features
-    enableUserAccounts: true
+    # User accounts disabled: SSO is enforced at the ingress by the Authentik
+    # forward-auth middleware (sister-apps-blueprint.yaml, TALOS-xgrl.14), so
+    # ST's own account layer would only add a second login. Single SSO.
+    enableUserAccounts: false
     enableExtensions: true
 
     # Autorun settings
