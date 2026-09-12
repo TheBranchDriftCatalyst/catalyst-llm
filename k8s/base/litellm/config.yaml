@@ -802,11 +802,31 @@ general_settings:
   database_url: "os.environ/DATABASE_URL"
   store_model_in_db: true
   store_prompts_in_spend_logs: true
-  # SSO Configuration - allow both SSO and master key login
+  # SSO Configuration
   ui_access_mode: "all"
-  # Make SSO users proxy admins by default
-  default_user_params:
-    user_role: "proxy_admin"
+  # Disable Admin UI login with UI_USERNAME/UI_PASSWORD -- and, because UI_PASSWORD
+  # is unset here, the MASTER-KEY fallback that is otherwise always live. Without
+  # this, anyone holding the master key signs in to the UI as a full proxy admin
+  # using a shared static secret.
+  #
+  # Remaining UI login paths (both verified working BEFORE this was enabled):
+  #   1. Authentik SSO -- role comes from the litellm_role claim; requires
+  #      GENERIC_SCOPE to actually request that scope (see deployment.yaml).
+  #   2. breakglass@litellm.talos00 -- DB user `breakglass-admin`, proxy_admin,
+  #      with its own scrypt-hashed password. The documented lockout escape for
+  #      when Authentik is unavailable. Password lives in 1Password.
+  #
+  # The master key still works for the API (Authorization: Bearer <key>); that
+  # path never goes through authenticate_user(), so admin control is never lost.
+  # To restore env-credential login: unset this and let the pod roll.
+  disable_env_credential_login: true
+  #
+  # NOTE: `default_user_params: {user_role: "proxy_admin"}` used to sit here,
+  # commented "Make SSO users proxy admins by default". It was a DEAD key --
+  # nothing in litellm reads general_settings.default_user_params, which is why
+  # SSO users still landed on internal_user_viewer. Do NOT "fix" it by moving to
+  # litellm_settings.default_internal_user_params: that key IS live and would
+  # grant EVERY SSO user proxy_admin. Roles come from the Authentik claim.
 
 litellm_settings:
   drop_params: true
