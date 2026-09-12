@@ -4,12 +4,15 @@ model_list:
   # ───────────────────────────────────────────────────────────────────
 
   # --- Anthropic (Claude) ---
-  # May 2026: Opus 4.7 (released 2026-04-16, 87.6% SWE-bench Verified) is
-  # the flagship — replaces opus-4 + sonnet-4 from May 2025. Haiku 4.5 is
-  # the budget pair. SOTA shortlist lives in ../mac-sdlc-node/AGENTS.md.
-  - model_name: "claude-opus-4-7"
+  # Sep 2026 (refreshed): Claude 5 family. Opus 5 flagship, Sonnet 5 mid-tier,
+  # Haiku 4.5 budget. (Was opus-4-7.) Verified in api.anthropic.com/v1/models.
+  - model_name: "claude-opus-5"
     litellm_params:
-      model: "anthropic/claude-opus-4-7"
+      model: "anthropic/claude-opus-5"
+      api_key: "os.environ/ANTHROPIC_API_KEY"
+  - model_name: "claude-sonnet-5"
+    litellm_params:
+      model: "anthropic/claude-sonnet-5"
       api_key: "os.environ/ANTHROPIC_API_KEY"
   - model_name: "claude-haiku-4-5-20251001"
     litellm_params:
@@ -17,28 +20,25 @@ model_list:
       api_key: "os.environ/ANTHROPIC_API_KEY"
 
   # --- OpenAI (GPT) ---
-  # May 2026: gpt-5.5 (GA 2026-04-24, 1M context) replaces gpt-4o + 4o-mini.
-  # o3-mini stays as the OpenAI reasoning option (NOTE: it can return empty
-  # content if max_tokens is small — reasoning tokens count against the cap.
-  # Clients should send max_tokens >= 4096 when targeting it).
-  - model_name: "gpt-5.5"
+  # Sep 2026 (refreshed): gpt-6 Astra flagship (GA 2026-09-03); gpt-5.6 Luna fast tier;
+  # gpt-5.4-mini cheap dev default; gpt-5-nano = CHEAPEST (honeypot / high-volume).
+  # o3-mini DROPPED (o-series retired 2026). All verified in api.openai.com/v1/models.
+  - model_name: "gpt-6-astra"
     litellm_params:
-      model: "openai/gpt-5.5"
+      model: "openai/gpt-6-astra"
       api_key: "os.environ/OPENAI_API_KEY"
-  # gpt-5.4-mini — same flagship lineage at fast-tier pricing. The
-  # dev-friendly equivalent of the old gpt-4o-mini, but on the 5-series
-  # so it inherits the 1M context window. Use this as the default for
-  # iterative extraction work (bill_claims, mention_extraction, etc.).
+  - model_name: "gpt-5.6-luna"
+    litellm_params:
+      model: "openai/gpt-5.6-luna"
+      api_key: "os.environ/OPENAI_API_KEY"
   - model_name: "gpt-5.4-mini"
     litellm_params:
       model: "openai/gpt-5.4-mini"
       api_key: "os.environ/OPENAI_API_KEY"
-  - model_name: "o3-mini"
+  - model_name: "gpt-5-nano"
     litellm_params:
-      model: "openai/o3-mini"
+      model: "openai/gpt-5-nano"
       api_key: "os.environ/OPENAI_API_KEY"
-      # Floor max_tokens so reasoning doesn't burn the budget and yield ""
-      max_tokens: 4096
 
   # --- OpenAI Embeddings ---
   - model_name: "text-embedding-3-small"
