@@ -80,6 +80,12 @@ spec:
               value: "http://authentik-server.authentik.svc.cluster.local/application/o/userinfo/"
             - name: GENERIC_CLIENT_STATE
               value: "litellm"
+            # Scopes requested at /authorize. LiteLLM defaults to
+            # "openid email profile" -- the custom litellm_role scope MUST be listed
+            # here or Authentik never emits the litellm_role claim in /userinfo, and
+            # every SSO user silently lands on internal_user_viewer.
+            - name: GENERIC_SCOPE
+              value: "openid email profile litellm_role"
             # Map Authentik's litellm_role claim to LiteLLM user roles
             # Requires Authentik property mapping (see docs/authentik-litellm-setup.md)
             - name: GENERIC_USER_ROLE_ATTRIBUTE
