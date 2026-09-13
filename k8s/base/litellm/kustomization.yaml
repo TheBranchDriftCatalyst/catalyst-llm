@@ -3,7 +3,12 @@ kind: Kustomization
 
 resources:
   - external-secret.yaml
+  # OLD co-pod postgres. Retained DELIBERATELY during the CNPG migration
+  # (TALOS-5nru) as the live rollback target -- removed only after the new cluster
+  # is verified serving. Do not delete this line and postgres-appdb.yaml's cutover
+  # in the same change.
   - postgresql.yaml
+  - postgres-appdb.yaml
   - deployment.yaml
   - service.yaml
   - backup-cronjob.yaml

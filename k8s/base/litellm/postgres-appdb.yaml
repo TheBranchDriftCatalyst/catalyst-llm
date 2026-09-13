@@ -1,0 +1,77 @@
+---
+# CNPG cluster for LiteLLM (TALOS-5nru).
+#
+# Replaces the hand-written co-pod postgres in postgresql.yaml -- a single-replica
+# Deployment on local-path, the LAST non-CNPG database in a fleet of fifteen. Its
+# only whole-volume protection was backup.velero.io/backup-volumes on a LIVE data
+# directory, which is crash-consistent at best, and the house rule is that postgres
+# restore is CNPG recovery, never Velero.
+#
+# Migrated by pg_dump/pg_restore following
+# applications/home-automation/base/linkwarden/MIGRATION-RUNBOOK.md (TALOS-3eui),
+# which did this exact co-pod -> CNPG move. Source PG 16.15 -> target 17.x; custom
+# format dumps restore forward across majors cleanly.
+#
+# COLLATION IS DELIBERATELY CONVERTED en_US.utf8 -> C (the composite default).
+#   The source database was created en_US.utf8/en_US.utf8. A logical dump/restore is
+#   the ONLY moment this can be changed -- initdb runs exactly once, so the collation
+#   a database is born with is the one it dies with. Converting during the migration
+#   costs nothing; converting later would mean doing this migration a second time.
+#
+#   Why C is the better answer here, not just the consistent one:
+#     - en_US.utf8 ordering is defined by GLIBC. A glibc bump in the operand image
+#       can silently change collation ordering and leave text indexes subtly corrupt
+#       until they are REINDEXed -- which is precisely why CNPG tracks
+#       collationVersion at all. C is byte-order and immune to that entire class of
+#       failure, so the database stops depending on a C library's version.
+#     - C lets LIKE 'prefix%' use ordinary B-tree indexes without text_pattern_ops.
+#     - All fourteen other clusters in the fleet run C/C; this stops being the one
+#       snowflake whose sort semantics differ from everything around it.
+#
+#   THE ONE BEHAVIOUR CHANGE, accepted knowingly: text ORDER BY becomes byte-order,
+#   so uppercase sorts before lowercase ('Z' < 'a') in UI listings of users, keys and
+#   models. Nothing in LiteLLM keys off linguistic ordering -- no business logic,
+#   uniqueness or constraint depends on it -- so this is cosmetic ordering only.
+#   Comparisons, joins, PKs and uniqueness are all unaffected.
+#
+# pgvector: NOT configured here, and no imageName override is needed. The default
+#   operand (ghcr.io/cloudnative-pg/postgresql:17.x) already ships vector 0.8.0 --
+#   verified directly, not assumed. The source had the extension installed at 0.8.2
+#   but UNUSED: its vector_stores/embeddings tables never existed, because the
+#   init-pgvector.sql ConfigMap mounted at /docker-entrypoint-initdb.d only runs on
+#   the FIRST init of an empty PGDATA and this database predated it. If vector
+#   stores are ever actually wanted, add a cnpg Database CR with spec.extensions --
+#   and set databaseReclaimPolicy: retain, since it defaults to `delete` and would
+#   otherwise drop the database with the CR.
+#
+# instances: 3 (the default, left explicit). local-path is WaitForFirstConsumer, so
+#   each PV pins to a node; a single instance is stranded by one node loss.
+#
+# 03:35 is a free backup slot -- the staggered fleet occupies 02:00-04:30, and
+#   04:45 is taken by this app's own belt-and-braces pg_dump CronJob.
+apiVersion: db.catalyst.io/v1alpha1
+kind: CatalystCNPGAppDB
+metadata:
+  name: litellm-postgres
+  labels:
+    app.kubernetes.io/name: litellm-postgres
+    app.kubernetes.io/part-of: catalyst-llm
+spec:
+  database: litellm
+  owner: litellm
+  instances: 3
+  # The live database is ~9GB, but 99.95% of that is LiteLLM_SpendLogs history that
+  # is deliberately NOT migrated (see backup-cronjob.yaml / TALOS-5nru). Everything
+  # else totals ~14MB. 10Gi leaves room for spend logs to accumulate again.
+  storageSize: 10Gi
+  storageClass: local-path
+  encoding: UTF8
+  # C/C, converted from the source's en_US.utf8 -- see the block comment above.
+  # Left explicit rather than relying on the default, so the conversion is visible
+  # in the manifest instead of being an invisible consequence of an omitted field.
+  localeCollate: C
+  localeCType: C
+  backupSchedule: "0 35 3 * * *"
+  resources:
+    requestsCpu: 100m
+    requestsMemory: 256Mi
