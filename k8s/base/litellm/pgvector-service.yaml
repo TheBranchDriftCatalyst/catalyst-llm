@@ -2,6 +2,20 @@
 # LiteLLM PGVector Service
 # OpenAI-compatible vector store endpoints using PGVector
 # https://github.com/BerriAI/litellm-pgvector
+#
+# NOT DEPLOYED. This manifest is listed in NO kustomization, so nothing applies it --
+# which is exactly why the vector_stores/embeddings tables never existed despite
+# postgresql.yaml shipping an init-pgvector.sql. Kept for reference only.
+#
+# BEFORE ENABLING IT, two things are required (TALOS-5nru):
+#   1. Add the `vector` extension to the CNPG database. It is NOT installed: the
+#      composite renders no Database CR, so add a cnpg Database CR with
+#      spec.extensions: [{name: vector}] AND databaseReclaimPolicy: retain -- that
+#      field defaults to `delete` and would drop the database with the CR. The
+#      operand image already ships pgvector 0.8.6, so no imageName override.
+#   2. Create the vector_stores/embeddings schema this service expects. The old
+#      /docker-entrypoint-initdb.d path is gone with the co-pod postgres and would
+#      not have run anyway -- it only fires on first init of an empty PGDATA.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -28,12 +42,14 @@ spec:
           image: ghcr.io/berriai/litellm-pgvector:latest
           imagePullPolicy: Always
           env:
-            # Database connection (same postgres as LiteLLM)
+            # Database connection (same CNPG cluster as LiteLLM). Uses the
+            # operator-generated app secret, matching deployment.yaml -- the old
+            # hand-built litellm-secrets/database-url key no longer exists.
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: litellm-secrets
-                  key: database-url
+                  name: litellm-postgres-app
+                  key: uri
             # API key for authenticating requests to this service
             - name: SERVER_API_KEY
               valueFrom:

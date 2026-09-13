@@ -38,8 +38,8 @@ spec:
           command: ["sh", "-c"]
           args:
             - |
-              until pg_isready -h litellm-postgresql -p 5432 -U litellm -t 3; do
-                echo "waiting for litellm-postgresql to accept connections..."
+              until pg_isready -h litellm-postgres-rw -p 5432 -U litellm -t 3; do
+                echo "waiting for litellm-postgres-rw to accept connections..."
                 sleep 2
               done
               echo "postgres is ready"
@@ -80,12 +80,16 @@ spec:
                 secretKeyRef:
                   name: litellm-secrets
                   key: runpod-api-key
-            # PostgreSQL Database for SSO/User Management
+            # PostgreSQL (CNPG cluster litellm-postgres, TALOS-5nru).
+            # The whole connection string comes from the CNPG-GENERATED app secret,
+            # so the password is minted and rotated by the operator and never exists
+            # in git or 1Password. Replaces a hand-assembled URL that pointed at the
+            # retired co-pod postgres.
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: litellm-secrets
-                  key: database-url
+                  name: litellm-postgres-app
+                  key: uri
             # Authentik OIDC SSO Configuration
             - name: GENERIC_CLIENT_ID
               valueFrom:
