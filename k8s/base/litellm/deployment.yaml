@@ -22,6 +22,31 @@ spec:
         app: litellm
         app.kubernetes.io/name: litellm
     spec:
+      # litellm has NO wait-for-DB retry: if Prisma cannot reach postgres during
+      # startup it raises httpx.ConnectError, "Application startup failed", and the
+      # container EXITS (code 3) rather than backing off. Any transient DNS/network
+      # blip -- or simply losing the race against postgres on a co-scheduled restart
+      # -- turns into a CrashLoopBackOff that only clears on the next retry. Observed
+      # 2026-09-12 on a config rollout while postgres had been up 19 days, so this is
+      # a startup race, not a postgres outage.
+      #
+      # Gate startup on the database actually accepting connections. Reuses the
+      # pgvector image the postgres pod already runs, so there is no extra pull.
+      initContainers:
+        - name: wait-for-postgres
+          image: pgvector/pgvector:pg16
+          command: ["sh", "-c"]
+          args:
+            - |
+              until pg_isready -h litellm-postgresql -p 5432 -U litellm -t 3; do
+                echo "waiting for litellm-postgresql to accept connections..."
+                sleep 2
+              done
+              echo "postgres is ready"
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
       containers:
         - name: litellm
           image: ghcr.io/berriai/litellm:main-latest

@@ -1,0 +1,166 @@
+---
+# Logical (pg_dump) backup for litellm-postgresql.
+#
+# WHY THIS EXISTS. litellm-postgresql is the last plain-Deployment postgres in the
+# fleet -- every other database (14+) is a CNPG Cluster with a ScheduledBackup to
+# MinIO. Its only prior protection was the Velero annotation on the Deployment
+# (backup.velero.io/backup-volumes: data), which copies a LIVE postgres data
+# directory. That is crash-consistent at best, and the house rule is explicit that
+# postgres restore is CNPG recovery, never Velero. So the namespace was "covered"
+# by a mechanism nobody should trust to restore.
+#
+# This closes that gap with a real, restorable dump until the CNPG migration lands
+# (see the CatalystCNPGAppDB composite + linkwarden's MIGRATION-RUNBOOK.md, which
+# did this exact co-pod -> CNPG move via pg_dump/pg_restore).
+#
+# The Velero annotation on the Deployment is deliberately LEFT IN PLACE: until the
+# migration, it is still the only whole-volume copy, and removing it would reduce
+# protection rather than increase it. This job is the trustworthy path alongside it.
+#
+# WHAT IS AT STAKE: the LiteLLM_UserTable (including the `breakglass-admin` account
+# that is the documented lockout escape when Authentik is down), virtual keys, teams
+# and spend history. Losing this database locks you out of the UI with no recovery
+# short of re-provisioning users.
+#
+# 04:45 is a free slot -- the staggered CNPG fleet occupies 02:00 through 04:30.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: litellm-postgresql-backup
+  labels:
+    app: litellm-postgresql
+    app.kubernetes.io/name: litellm-postgresql
+    app.kubernetes.io/component: backup
+    app.kubernetes.io/part-of: catalyst-llm
+spec:
+  accessModes:
+    - ReadWriteMany
+  # NFS, not local-path: a node-local backup sitting on the same node as the
+  # database it backs up is not a backup. fatboy-nfs-appdata is Retain, so the
+  # dumps survive the PVC being deleted.
+  storageClassName: fatboy-nfs-appdata
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: litellm-postgresql-backup
+  labels:
+    app: litellm-postgresql
+    app.kubernetes.io/name: litellm-postgresql
+    app.kubernetes.io/component: backup
+    app.kubernetes.io/part-of: catalyst-llm
+spec:
+  schedule: "45 4 * * *"
+  # Never let a slow dump overlap the next run against the same database.
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  # A job that cannot start within 2h has missed its window; do not fire it at a
+  # random later hour on top of other work.
+  startingDeadlineSeconds: 7200
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: litellm-postgresql
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            # 999 = postgres in the pgvector/postgres images; also owns the files
+            # written to the NFS export.
+            runAsUser: 999
+            runAsGroup: 999
+            fsGroup: 999
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: pg-dump
+              # Same image/major as the server (pg16). pg_dump refuses to dump from
+              # a server NEWER than itself, so these must not drift apart.
+              image: pgvector/pgvector:pg16
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              env:
+                - name: PGHOST
+                  value: litellm-postgresql
+                - name: PGUSER
+                  value: litellm
+                - name: PGDATABASE
+                  value: litellm
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: litellm-secrets
+                      key: postgres-password
+                # Keep this many daily dumps.
+                - name: RETENTION_DAYS
+                  value: "14"
+              command: ["bash", "-c"]
+              args:
+                - |
+                  set -euo pipefail
+
+                  stamp="$(date -u +%Y%m%d-%H%M%S)"
+                  out="/backup/litellm-${stamp}.dump"
+
+                  echo "==> waiting for postgres"
+                  until pg_isready -t 3; do sleep 2; done
+
+                  echo "==> dumping to ${out}"
+                  # -Fc custom format: compressed and pg_restore can do selective
+                  # restores from it. Write to .partial first so an interrupted run
+                  # never leaves a truncated file that looks like a good backup.
+                  pg_dump -Fc --no-owner --no-acl -f "${out}.partial"
+
+                  echo "==> verifying the dump is readable"
+                  # A dump that cannot be listed is not a backup. This catches
+                  # truncation and corruption NOW rather than during a restore.
+                  pg_restore --list "${out}.partial" > /dev/null
+
+                  # Sanity-check the table that actually matters for lockout
+                  # recovery is present in the archive.
+                  if ! pg_restore --list "${out}.partial" | grep -q 'LiteLLM_UserTable'; then
+                    echo "FATAL: LiteLLM_UserTable missing from dump -- refusing to keep it" >&2
+                    rm -f "${out}.partial"
+                    exit 1
+                  fi
+
+                  mv "${out}.partial" "${out}"
+                  echo "==> wrote $(du -h "${out}" | cut -f1) to ${out}"
+
+                  echo "==> pruning dumps older than ${RETENTION_DAYS}d"
+                  find /backup -maxdepth 1 -name 'litellm-*.dump' -type f \
+                    -mtime "+${RETENTION_DAYS}" -print -delete
+
+                  # Clean up any partials orphaned by a previous hard kill.
+                  find /backup -maxdepth 1 -name 'litellm-*.dump.partial' -type f \
+                    -mtime +1 -print -delete
+
+                  echo "==> current dumps:"
+                  ls -lh /backup/litellm-*.dump 2>/dev/null | tail -5
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+              volumeMounts:
+                - name: backup
+                  mountPath: /backup
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: backup
+              persistentVolumeClaim:
+                claimName: litellm-postgresql-backup
+            # readOnlyRootFilesystem: true, but pg_dump still needs scratch space.
+            - name: tmp
+              emptyDir: {}
