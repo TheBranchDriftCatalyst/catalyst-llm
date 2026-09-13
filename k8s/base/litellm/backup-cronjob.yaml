@@ -14,6 +14,13 @@
 #
 # 04:45 is a free slot -- the staggered CNPG fleet occupies 02:00 through 04:30, and
 # this cluster's own MinIO backup runs at 03:35.
+#
+# THE `-postgresql-` NAMES BELOW ARE LEFT ALONE ON PURPOSE. They predate the CNPG
+# migration and no longer match the cluster name (litellm-postgres), which is ugly
+# but harmless. Renaming the PVC would provision a NEW nfs-subdir directory and
+# ORPHAN every existing dump -- including PREMIGRATION-preprune-*.dump, the only
+# copy of the 1,145,168 spend-log rows that were not migrated. Cosmetics are not
+# worth stranding the rollback artifact.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
