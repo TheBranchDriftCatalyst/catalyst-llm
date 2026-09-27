@@ -34,6 +34,11 @@ spec:
     - kind: Rule
       match: Host(`litellm.talos00`) && PathPrefix(`/litellm-asset-prefix`)
       middlewares:
+        # lan-only 2026-09-26 (TALOS-a8vo.4 / TALOS-k33m): WAN-reachable on web with
+        # no perimeter control; host-spoof reached it off-net. lan-only blocks off-LAN;
+        # litellm's own API-key auth still applies. NOT authentik (breaks API clients).
+        - name: lan-only
+          namespace: traefik
         - name: litellm-strip-prefix
       services:
         - name: litellm
@@ -41,6 +46,9 @@ spec:
           port: 4000
     - kind: Rule
       match: Host(`litellm.talos00`)
+      middlewares:
+        - name: lan-only
+          namespace: traefik
       services:
         - name: litellm
           namespace: catalyst-llm

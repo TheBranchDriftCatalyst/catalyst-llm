@@ -33,6 +33,12 @@ spec:
   routes:
     - match: Host(`openwebui.talos00`)
       kind: Rule
+      # lan-only 2026-09-26 (TALOS-a8vo.4 / TALOS-k33m): WAN-reachable on web with no
+      # perimeter control. lan-only blocks off-LAN; open-webui's own login still applies.
+      # NOT authentik (avoids a double-login in front of its auth).
+      middlewares:
+        - name: lan-only
+          namespace: traefik
       services:
         - name: open-webui
           port: 8080
