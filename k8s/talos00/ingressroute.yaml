@@ -37,7 +37,7 @@ spec:
       # perimeter control. lan-only blocks off-LAN; open-webui's own login still applies.
       # NOT authentik (avoids a double-login in front of its auth).
       middlewares:
-        - name: lan-only
+        - name: lan-only-strict
           namespace: traefik
       services:
         - name: open-webui
