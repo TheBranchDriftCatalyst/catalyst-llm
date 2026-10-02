@@ -67,7 +67,21 @@ RUN mkdir -p /var/run/sshd /root/.ssh && \
     ssh-keygen -A
 
 # ── Layer 2: PyTorch (huge, changes rarely — pinned) ─────────────
-RUN python3 -m venv /opt/venv
+# The venv inherits Ubuntu 22.04's python3.10 pip, whose resolver crashes on its own
+# internal assertion for some dependency graphs:
+#   pip/_internal/resolution/resolvelib/resolver.py get_topological_weights
+#   assert len(weights) == expected_node_count -> AssertionError
+# Not a dependency conflict - pip failing inside itself. It surfaced on the
+# faster-whisper layer (ctranslate2 + onnxruntime + av is a far messier graph) while
+# the pinned torch layer above installed fine, which is why this looked like a
+# faster-whisper problem rather than a pip one.
+# Upgraded in the SAME layer as the venv: this layer changes rarely, so it costs no
+# extra cache churn, and a separate RUN would add a layer for nothing.
+# Deliberately unpinned, unlike torch above. pip is build tooling, not a runtime
+# dependency - pinning it would mean carrying a bump whenever a resolver bug is fixed,
+# which is the opposite of what pinning is for here.
+RUN python3 -m venv /opt/venv \
+ && pip install --no-cache-dir --upgrade pip setuptools wheel
 RUN pip install --no-cache-dir \
     torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 \
     --index-url https://download.pytorch.org/whl/cu124
