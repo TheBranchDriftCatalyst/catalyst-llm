@@ -3,7 +3,7 @@
 # Access via: http://<service>.local.lan
 #
 # Add to /etc/hosts on the dev workstation:
-#   127.0.0.1  openwebui.local.lan lobechat.local.lan sillytavern.local.lan searxng.local.lan litellm.local.lan
+#   127.0.0.1  openwebui.local.lan lobechat.local.lan searxng.local.lan litellm.local.lan
 
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute

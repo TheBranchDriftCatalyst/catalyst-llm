@@ -2,7 +2,7 @@
 # Traefik IngressRoutes — talos00 overlay
 # Access via: https://<service>.talos00
 #
-# lobe-chat / sillytavern / searxng are gated by the `authentik` forward-auth
+# lobe-chat / searxng are gated by the `authentik` forward-auth
 # middleware (SSO via Authentik forward_single providers — blueprint owned by
 # talos-homelab infrastructure/base/authentik/sister-apps-blueprint.yaml,
 # TALOS-xgrl.14). Each has: websecure route w/ authentik mw + tls:{} (default
@@ -10,7 +10,7 @@
 # open-webui keeps its own auth and is left on plain HTTP.
 #
 # Requires /etc/hosts entry (or wildcard DNS) on dev workstations:
-#   192.168.1.54  openwebui.talos00 lobechat.talos00 sillytavern.talos00 searxng.talos00
+#   192.168.1.54  openwebui.talos00 lobechat.talos00 searxng.talos00
 
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
@@ -91,55 +91,12 @@ spec:
       services:
         - name: lobe-chat
           port: 3210
----
-apiVersion: traefik.io/v1alpha1
-kind: IngressRoute
-metadata:
-  name: sillytavern
-  labels:
-    app.kubernetes.io/name: sillytavern
-    app.kubernetes.io/part-of: catalyst-llm
-  annotations:
-    gethomepage.dev/enabled: "true"
-    gethomepage.dev/name: "SillyTavern"
-    gethomepage.dev/description: "LLM roleplay frontend"
-    gethomepage.dev/group: "AI & LLM"
-    gethomepage.dev/icon: "sillytavern.png"
-    gethomepage.dev/href: "https://sillytavern.talos00"
-    gethomepage.dev/siteMonitor: "http://sillytavern.catalyst-llm.svc.cluster.local:8000"
-spec:
-  entryPoints:
-    - websecure
-  routes:
-    - match: Host(`sillytavern.talos00`)
-      kind: Rule
-      middlewares:
-        - name: authentik
-          namespace: authentik
-      services:
-        - name: sillytavern
-          port: 8000
-  tls: {}
----
-apiVersion: traefik.io/v1alpha1
-kind: IngressRoute
-metadata:
-  name: sillytavern-http
-  labels:
-    app.kubernetes.io/name: sillytavern
-    app.kubernetes.io/part-of: catalyst-llm
-spec:
-  entryPoints:
-    - web
-  routes:
-    - match: Host(`sillytavern.talos00`)
-      kind: Rule
-      middlewares:
-        - name: redirect-https
-          namespace: traefik
-      services:
-        - name: sillytavern
-          port: 8000
+# sillytavern was disabled in db47d6c ('needs reimplementation') -- the Deployment was
+# commented out of k8s/base/kustomization.yaml but these two IngressRoutes were left
+# behind, so Traefik retried a Service that no longer exists ~3,000 times an HOUR
+# (24% of the whole cluster's error-log volume, TALOS-qzbh.2). Removed rather than
+# commented: the route is trivial to rewrite and a commented block would have been
+# just as easy to miss the second time.
 ---
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
