@@ -4,7 +4,7 @@
 # with context=./packages so this Dockerfile can pull in sibling
 # path-source deps (catalyst-exgraph, catalyst-contracts-core).
 # Injected into the k3d dev cluster.
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
