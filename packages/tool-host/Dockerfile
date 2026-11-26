@@ -2,7 +2,7 @@
 # image (mcr.microsoft.com/playwright:v1.50-jammy or similar) so we
 # can ship Chromium for browse_page. For now (just web_search →
 # SearXNG) plain python:3.12-slim is plenty.
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
