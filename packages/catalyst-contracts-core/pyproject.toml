@@ -9,13 +9,13 @@ description = "Shared enums (MentionType, AlignmentType, ExtractionMethod) and P
 requires-python = ">=3.10"
 license = { text = "MIT" }
 dependencies = [
-    "pydantic>=2.9",
+    "pydantic>=2.14.4",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.0",
-    "hypothesis>=6.0",
+    "pytest>=8.4.2",
+    "hypothesis>=6.170.17",
 ]
 
 [tool.hatch.build.targets.wheel]

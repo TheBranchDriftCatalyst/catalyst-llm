@@ -2,19 +2,19 @@
 name = "catalyst-tool-host"
 version = "0.1.0"
 description = "Sidecar service that executes catalyst-llm-sdk tool calls server-side (web_search, browse_page, ...)"
-requires-python = ">=3.12"
+requires-python = ">=3.15.2"
 dependencies = [
-    "fastapi>=0.115",
-    "uvicorn[standard]>=0.32",
-    "httpx>=0.27",
-    "pydantic>=2.9",
+    "fastapi>=0.165.0",
+    "uvicorn[standard]>=0.54.0",
+    "httpx>=0.29.0",
+    "pydantic>=2.14.4",
     # browse_page (Pass 2):
     # "playwright>=1.50",
     # "trafilatura>=2.0",   # readability-style extraction for browse_page
 ]
 
 [dependency-groups]
-dev = ["pytest>=8.0", "httpx>=0.27"]
+dev = ["pytest>=9.2.0", "httpx>=0.29.0"]
 
 [project.scripts]
 tool-host = "tool_host.server:main"
