@@ -14,19 +14,19 @@ authors = [
 ]
 
 dependencies = [
-    "langchain-openai>=0.1.0",
-    "langchain-core>=0.2.0",
-    "langgraph>=0.2.0",
-    "httpx>=0.24.0",
-    "fastapi>=0.115.0",
-    "uvicorn[standard]>=0.30.0",
-    "sse-starlette>=2.1.0",
-    "pydantic>=2.7.0",
+    "langchain-openai>=0.3.35",
+    "langchain-core>=0.3.86",
+    "langgraph>=0.6.11",
+    "httpx>=0.29.0",
+    "fastapi>=0.165.0",
+    "uvicorn[standard]>=0.54.0",
+    "sse-starlette>=2.4.1",
+    "pydantic>=2.14.4",
     # DuckDB powers the event trace store — every yielded SSE event is
     # async-written to a queryable file so we can debug runaway loops,
     # measure cost-per-run, and (eventually) replay individual steps.
     # Modelled on langgraph-dev's api/app/persistence/event_store.py.
-    "duckdb>=1.0.0",
+    "duckdb>=1.5.6",
     # Per-node Pydantic config schemas + extraction-domain models live
     # in catalyst-exgraph. agents/extraction.py imports them at module
     # load via the auto-import in agents/__init__.py. Path-source in
@@ -36,11 +36,11 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0",
-    "pytest-cov>=4.0",
+    "pytest>=7.4.4",
+    "pytest-cov>=4.1.0",
     # Property-based testing — used by tests/test_amr_parser_qa.py to
     # fuzz invariants on the AmrParserClient splitter/offset bookkeeping.
-    "hypothesis>=6.0",
+    "hypothesis>=6.170.17",
 ]
 # Optional AMR parser dep. amrlib is t5-based and pulls a ~500 MB
 # checkpoint on first model load — opt-in only. The AmrParserClient

@@ -9,8 +9,8 @@ description = "MCP server enforcing extraction-domain contracts (validators sour
 requires-python = ">=3.10"
 license = { text = "MIT" }
 dependencies = [
-    "mcp>=1.0",
-    "pydantic>=2.9",
+    "mcp>=1.30.0",
+    "pydantic>=2.14.4",
     # Validators + models for the extraction domain live in
     # catalyst-exgraph. This package is just the deployable MCP
     # service wrapper around them — a thin tools layer + the
@@ -20,8 +20,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.0",
-    "pytest-cov>=6.0",
+    "pytest>=8.4.2",
+    "pytest-cov>=6.3.0",
 ]
 
 [project.scripts]
